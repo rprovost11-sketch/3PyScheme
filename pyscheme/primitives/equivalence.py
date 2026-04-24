@@ -1,0 +1,103 @@
+"""Equivalence primitives: eq?, eqv?, equal?.
+
+Semantics (loose R7RS alignment):
+    eq?    - Identity for pairs/strings/closures; tag+payload equality for
+             symbols, booleans, and nil.  Ignores trailing src on atoms.
+    eqv?   - Like eq? plus numeric value-and-exactness equality:
+             (eqv? 2 2) -> #t; (eqv? 2 2.0) -> #f.
+    equal? - Recursive structural equality; walks ConsCell chains and
+             compares atoms by tag+payload (ignoring src).
+"""
+
+from pyscheme.primitives import register_primitive
+from pyscheme.AST import (
+   is_cons, is_nil, is_void,
+   is_symbol, is_boolean, is_string, is_character,
+   is_integer, is_real, is_rational, is_complex,
+   as_symbol, as_boolean, as_string, as_character,
+   as_integer, as_real,
+   as_rational_num, as_rational_den,
+   as_complex_real, as_complex_imag,
+   make_boolean, eqv_atom,
+)
+
+
+CATEGORY = 'equivalence'
+
+
+def _prim_eq_p(ctx, env, args, app_node):
+   a = args[0]
+   b = args[1]
+   if a is b:
+      return make_boolean(True)
+   if is_symbol(a) and is_symbol(b):
+      return make_boolean(as_symbol(a) == as_symbol(b))
+   if is_boolean(a) and is_boolean(b):
+      return make_boolean(as_boolean(a) is as_boolean(b))
+   if is_nil(a) and is_nil(b):
+      return make_boolean(True)
+   return make_boolean(False)
+
+
+def _prim_eqv_p(ctx, env, args, app_node):
+   return make_boolean(eqv_atom(args[0], args[1]))
+
+
+def _value_equal(a, b):
+   """Structural equality ignoring trailing src on atoms.
+   Walks ConsCell chains recursively."""
+   if is_cons(a):
+      if not is_cons(b):
+         return False
+      return _value_equal(a.car, b.car) and _value_equal(a.cdr, b.cdr)
+   if is_cons(b):
+      return False
+   if a is b:
+      return True
+   if is_nil(a) and is_nil(b):
+      return True
+   if is_void(a) and is_void(b):
+      return True
+   if is_symbol(a) and is_symbol(b):
+      return as_symbol(a) == as_symbol(b)
+   if is_integer(a) and is_integer(b):
+      return as_integer(a) == as_integer(b)
+   if is_real(a) and is_real(b):
+      return as_real(a) == as_real(b)
+   if is_rational(a) and is_rational(b):
+      return (as_rational_num(a) == as_rational_num(b)
+              and as_rational_den(a) == as_rational_den(b))
+   if is_complex(a) and is_complex(b):
+      return (as_complex_real(a) == as_complex_real(b)
+              and as_complex_imag(a) == as_complex_imag(b))
+   if is_boolean(a) and is_boolean(b):
+      return as_boolean(a) is as_boolean(b)
+   if is_string(a) and is_string(b):
+      return as_string(a) == as_string(b)
+   if is_character(a) and is_character(b):
+      return as_character(a) == as_character(b)
+   return False
+
+
+def _prim_equal_p(ctx, env, args, app_node):
+   return make_boolean(_value_equal(args[0], args[1]))
+
+
+def register():
+   register_primitive('eq?', (2, 2), _prim_eq_p,
+      doc=(
+         "Return #t if a and b are the same object.  Symbols with the same\n"
+         "name, booleans with the same truth value, and empty lists are always\n"
+         "eq?.  For pairs, strings, and vectors eq? tests allocation identity."),
+      category=CATEGORY)
+   register_primitive('eqv?', (2, 2), _prim_eqv_p,
+      doc=(
+         "Like eq?, but also returns #t for numbers with the same value and\n"
+         "exactness.  (eqv? 2 2) is #t; (eqv? 2 2.0) is #f."),
+      category=CATEGORY)
+   register_primitive('equal?', (2, 2), _prim_equal_p,
+      doc=(
+         "Recursive structural equality.  Two pairs are equal? if their cars\n"
+         "and cdrs are equal?; two atoms are equal? if their tag+payload match\n"
+         "(ignoring source position)."),
+      category=CATEGORY)

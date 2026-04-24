@@ -1,0 +1,63 @@
+;;; ============================================================
+;;; test03-variadic.log
+;;; Variadic lambda forms (pure rest-var + fixed prefix + dotted
+;;; rest) and dotted quoted data.  Uses list primitives (cons) in a
+;;; couple of cases so it is placed after the core machinery but
+;;; before the broader primitive suite.
+;;; ============================================================
+
+;;; -------- variadic lambda (pure var + rest param) --------
+
+>>> ((lambda args args) 1 2 3)
+==> (1 2 3)
+
+>>> ((lambda args args))
+==> ()
+
+>>> ((lambda (a . rest) rest) 1 2 3)
+==> (2 3)
+
+>>> ((lambda (a . rest) rest) 1)
+==> ()
+
+>>> ((lambda (a b . rest) (cons a rest)) 1 2 3 4)
+==> (1 3 4)
+
+>>> (define (f . args) args)
+==> #<procedure>
+
+>>> (f 1 2 3)
+==> (1 2 3)
+
+>>> (f)
+==> ()
+
+>>> (define (g x . rest) rest)
+==> #<procedure>
+
+>>> (g 1 2 3)
+==> (2 3)
+
+>>> (g 1)
+==> ()
+
+>>> ((lambda (a b . rest) rest) 1)
+%%% SchemeArityError: line 1, col 1: 1 argument provided; at least 2 expected
+%%% ((lambda (a b . rest) rest) 1)
+%%% ^
+
+>>> (lambda (x . x) x)
+%%% line 1, col 14: rest parameter name conflicts with fixed parameter: x
+%%% (lambda (x . x) x)
+%%%              ^
+
+;;; -------- dotted quoted data --------
+
+>>> '(a . b)
+==> (a . b)
+
+>>> '(1 2 . 3)
+==> (1 2 . 3)
+
+>>> '((a . b) c)
+==> ((a . b) c)

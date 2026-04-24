@@ -1,0 +1,1219 @@
+;;; ============================================================
+;;; test05-R7RS-derived.log
+;;; R7RS section 4.2 derived forms: begin, when/unless, and/or,
+;;; cond (all three clause forms including arrow), let / let* /
+;;; letrec / letrec*, and named let.  Each form has its own
+;;; dedicated EXPR_* / FRAME_* in the CEK machine.
+;;; ============================================================
+
+;;; -------- begin (R7RS 4.2.3 sequencing) --------
+
+>>> (begin 1 2 3)
+==> 3
+
+>>> (begin 42)
+==> 42
+
+>>> (define counter 0)
+==> 0
+
+>>> (begin (set! counter 1) (set! counter 2) counter)
+==> 2
+
+;;; -------- when / unless (R7RS 4.2.1) --------
+
+>>> (when #t 1 2 3)
+==> 3
+
+>>> (when #f 99)
+==> #<void>
+
+>>> (when 0 'truthy)
+==> truthy
+
+>>> (when (null? (list)) (cons 1 (list)))
+==> (1)
+
+>>> (unless #f 1 2 3)
+==> 3
+
+>>> (unless #t 99)
+==> #<void>
+
+>>> (unless (null? (list 1)) 'runs)
+==> runs
+
+;;; -------- and / or (R7RS 4.2.1) --------
+
+>>> (and)
+==> #t
+
+>>> (and 1)
+==> 1
+
+>>> (and 1 2 3)
+==> 3
+
+>>> (and #f 99)
+==> #f
+
+>>> (and 1 #f 3)
+==> #f
+
+>>> (or)
+==> #f
+
+>>> (or 1)
+==> 1
+
+>>> (or #f #f 3)
+==> 3
+
+>>> (or #f #f #f)
+==> #f
+
+>>> (or 1 'would-not-evaluate)
+==> 1
+
+;;; -------- cond (R7RS 4.2.1) - all three clause forms --------
+
+>>> (cond (#t 1))
+==> 1
+
+>>> (cond (#f 1) (#t 2) (else 3))
+==> 2
+
+>>> (cond (#f 1) (#f 2) (else 'fallback))
+==> fallback
+
+>>> (cond (#f 1))
+==> #<void>
+
+>>> (cond (42))
+==> 42
+
+>>> (cond (#f) (else 99))
+==> 99
+
+>>> (cond ((cons 1 2) => car))
+==> 1
+
+>>> (cond (#f => car) (else 'skipped))
+==> skipped
+
+>>> (cond ((cons 10 20) => cdr) (else 0))
+==> 20
+
+;;; -------- case (R7RS 4.2.1) - eqv?-based literal dispatch --------
+
+>>> (case 2 ((1 2 3) 'small) ((4 5) 'med) (else 'big))
+==> small
+
+>>> (case 5 ((1 2 3) 'small) ((4 5) 'med) (else 'big))
+==> med
+
+>>> (case 99 ((1 2 3) 'small) ((4 5) 'med) (else 'big))
+==> big
+
+;;; Symbol datums are implicitly quoted.
+>>> (case 'b ((a) 1) ((b c) 2) (else 3))
+==> 2
+
+;;; No match, no else - unspecified value.
+>>> (case 99 ((1) 'one))
+==> #<void>
+
+;;; Multi-expression bodies (last value returned).
+>>> (case 2 ((1 2) 'a 'b 'c) (else 'd))
+==> c
+
+;;; Single-datum singleton clause.
+>>> (case 7 ((7) 'found) (else 'missing))
+==> found
+
+;;; Numeric exactness: eqv? distinguishes 2 and 2.0.
+>>> (case 2 ((2.0) 'real) (else 'int))
+==> int
+
+>>> (case 2.0 ((2) 'int) (else 'real))
+==> real
+
+;;; Shape errors caught by the analyzer.
+>>> (case)
+%%% line 1, col 1: case requires a key and at least one clause
+%%% (case)
+%%% ^
+
+>>> (case 1 (else 1) (else 2))
+%%% line 1, col 9: case 'else' clause must be the last clause
+%%% (case 1 (else 1) (else 2))
+%%%         ^
+
+>>> (case 1 (else 1) ((2) 'b))
+%%% line 1, col 9: case 'else' clause must be the last clause
+%%% (case 1 (else 1) ((2) 'b))
+%%%         ^
+
+>>> (case 1 ())
+%%% line 1, col 9: case clause must be (<datum-list> <expr>...) or (else <expr>...), got ()
+%%% (case 1 ())
+%%%         ^
+
+;;; -------- let (R7RS 4.2.2) --------
+
+>>> (let ((x 1)) x)
+==> 1
+
+>>> (let () 42)
+==> 42
+
+>>> (let ((x 1) (y 2)) (cons x y))
+==> (1 . 2)
+
+>>> (let ((a 1) (b 2) (c 3)) (list a b c))
+==> (1 2 3)
+
+>>> (define outer 10)
+==> 10
+
+>>> (let ((outer 1)) outer)
+==> 1
+
+>>> outer
+==> 10
+
+;;; let binds vals in OUTER env - (y x) sees outer x, not the new x.
+>>> (let ((x 99) (y outer)) (cons x y))
+==> (99 . 10)
+
+;;; -------- let* (R7RS 4.2.2) --------
+
+>>> (let* ((x 1) (y x)) y)
+==> 1
+
+>>> (let* ((x 1) (y (cons x (list)))) y)
+==> (1)
+
+>>> (let* ((a 1) (b (cons a (list))) (c (cons 2 b))) c)
+==> (2 1)
+
+;;; -------- letrec / letrec* (R7RS 4.2.2) --------
+
+>>> (letrec ((f (lambda (x) x))) (f 42))
+==> 42
+
+>>> (letrec ((last (lambda (lst) (if (null? (cdr lst)) (car lst) (last (cdr lst)))))) (last (list 1 2 3 4)))
+==> 4
+
+;;; Mutual recursion via letrec
+>>> (letrec ((p? (lambda (lst) (if (null? lst) #t (q? (cdr lst))))) (q? (lambda (lst) (if (null? lst) #f (p? (cdr lst)))))) (p? (list 1 2 3 4)))
+==> #t
+
+>>> (letrec* ((f (lambda (x) x)) (g (lambda (x) (f x)))) (g 99))
+==> 99
+
+;;; -------- named let (R7RS 4.2.4) --------
+
+>>> (let loop ((lst (list 1 2 3))) (if (null? lst) 'done (loop (cdr lst))))
+==> done
+
+>>> (let loop ((lst (list 1 2 3)) (acc (list))) (if (null? lst) acc (loop (cdr lst) (cons (car lst) acc))))
+==> (3 2 1)
+
+;;; -------- do (R7RS 4.2.4) - iteration --------
+
+>>> (do ((i 0 (+ i 1))) ((= i 5) i))
+==> 5
+
+;;; Multiple bindings, single result expression.
+>>> (do ((i 0 (+ i 1)) (s 0 (+ s i))) ((= i 5) s))
+==> 10
+
+;;; Empty result list - unspecified value.
+>>> (do ((i 0 (+ i 1))) ((= i 3)))
+==> #<void>
+
+;;; Accumulator using cons; steps see current binding of i.
+>>> (do ((i 0 (+ i 1)) (acc (list) (cons i acc))) ((= i 4) acc))
+==> (3 2 1 0)
+
+;;; Steps run in parallel (like let, not let*): both a and b see old values.
+>>> (do ((a 1 b) (b 2 (+ a b))) ((> a 10) a))
+==> 13
+
+;;; A binding with no step: variable keeps its initial value.
+>>> (do ((i 0 (+ i 1)) (v 'a)) ((= i 2) v))
+==> a
+
+;;; Zero-iteration case: test true immediately.
+>>> (do ((x 'hi)) (#t x))
+==> hi
+
+;;; Multi-expression result (last value returned).
+>>> (do ((i 0 (+ i 1))) ((= i 3) 'first 'second 'third))
+==> third
+
+;;; Shape errors caught by the analyzer.
+>>> (do)
+%%% line 1, col 1: do requires a binding list and a test clause
+%%% (do)
+%%% ^
+
+>>> (do () ())
+%%% line 1, col 8: do test clause must be a list starting with a test expression
+%%% (do () ())
+%%%        ^
+
+>>> (do ((i)) ((= i 0) i))
+%%% line 1, col 6: do binding must be (var init) or (var init step), got (i)
+%%% (do ((i)) ((= i 0) i))
+%%%      ^
+
+>>> (do ((1 0)) ((= 1 0)))
+%%% line 1, col 7: expected an identifier in do binding, got 1
+%%% (do ((1 0)) ((= 1 0)))
+%%%       ^
+
+>>> (do ((i 0 (+ i 1)) (i 0)) ((= i 5) i))
+%%% line 1, col 21: duplicate variable name in do bindings: i
+%%% (do ((i 0 (+ i 1)) (i 0)) ((= i 5) i))
+%%%                     ^
+
+;;; -------- cond-expand (R7RS 5.6.2) - compile-time feature dispatch --------
+
+>>> (cond-expand (r7rs 'yes-r7rs) (else 'no))
+==> yes-r7rs
+
+>>> (cond-expand (nosuch-feature 'no) (else 'fallback))
+==> fallback
+
+>>> (cond-expand ((and r7rs pyscheme) 'both) (else 'partial))
+==> both
+
+>>> (cond-expand ((or nosuch r7rs) 'matched) (else 'no))
+==> matched
+
+>>> (cond-expand ((not nosuch) 'yes) (else 'no))
+==> yes
+
+>>> (cond-expand ((library (srfi 1)) 'have-srfi) (else 'no-srfi))
+==> no-srfi
+
+;;; Definitions spliced at top level persist.
+>>> (cond-expand (r7rs (define sq (lambda (x) (* x x)))) (else 'skip)) (sq 9)
+==> 81
+
+;;; Shape errors.
+>>> (cond-expand)
+%%% line 1, col 1: cond-expand requires at least one clause
+%%% (cond-expand)
+%%% ^
+
+>>> (cond-expand (nosuch 1))
+%%% line 1, col 1: cond-expand: no clause matched
+%%% (cond-expand (nosuch 1))
+%%% ^
+
+;;; -------- case-lambda (R7RS 4.2.9) - arity-dispatched lambda --------
+
+>>> (define f (case-lambda ((x) (list 'one x)) ((x y) (list 'two x y)) ((x y . rest) (list 'many x y rest)))) (f 1)
+==> (one 1)
+
+>>> (define f (case-lambda ((x) (list 'one x)) ((x y) (list 'two x y)) ((x y . rest) (list 'many x y rest)))) (f 10 20)
+==> (two 10 20)
+
+>>> (define f (case-lambda ((x) (list 'one x)) ((x y) (list 'two x y)) ((x y . rest) (list 'many x y rest)))) (f 1 2 3 4 5)
+==> (many 1 2 (3 4 5))
+
+;;; Nullary and unary clauses.
+>>> (define g (case-lambda (() 'zero) ((a) a))) (g)
+==> zero
+
+>>> (define g (case-lambda (() 'zero) ((a) a))) (g 42)
+==> 42
+
+;;; case-lambda values are procedures.
+>>> (procedure? (case-lambda ((x) x)))
+==> #t
+
+;;; apply dispatches through case-lambda too.
+>>> (apply (case-lambda ((x) 'one) ((x y z) 'three)) '(1 2 3))
+==> three
+
+;;; No matching clause - runtime error.
+>>> (define g (case-lambda (() 'zero) ((a) a))) (g 1 2 3)
+%%% SchemeArityError: line 1, col 45: case-lambda: no clause matches 3 arguments
+%%% (define g (case-lambda (() 'zero) ((a) a))) (g 1 2 3)
+%%%                                             ^
+
+;;; Shape errors.
+>>> (case-lambda)
+%%% line 1, col 1: case-lambda requires at least one clause
+%%% (case-lambda)
+%%% ^
+
+>>> (case-lambda (() . body))
+%%% line 1, col 14: case-lambda clause must have formals and a non-empty body, got (() . body)
+%%% (case-lambda (() . body))
+%%%              ^
+
+;;; -------- quasiquote (R7RS 4.2.8) - template construction --------
+
+;;; Bare quasiquote with no holes is the same as quote.
+>>> `(a b c)
+==> (a b c)
+
+>>> `()
+==> ()
+
+>>> `42
+==> 42
+
+;;; Unquote with ,
+>>> (define x 42) `(x is ,x)
+==> (x is 42)
+
+>>> `(,(+ 1 2) ,(* 3 4))
+==> (3 12)
+
+;;; Unquote-splicing with ,@
+>>> `(a ,@(list 1 2 3) b)
+==> (a 1 2 3 b)
+
+>>> `(,@(list 1 2) ,@(list 3 4))
+==> (1 2 3 4)
+
+;;; Leading ,@ with no prefix.
+>>> `(,@(list 1 2) z)
+==> (1 2 z)
+
+;;; Trailing ,@ works.
+>>> `(start ,@(list 1 2))
+==> (start 1 2)
+
+;;; Expressions inside unquote can be arbitrary.
+>>> (define xs '(10 20 30)) `(first is ,(car xs) rest ,@(cdr xs))
+==> (first is 10 rest 20 30)
+
+;;; Nested quasiquote - inner form stays literal except for one-level
+;;; unquotes at outer level 1.
+>>> (define c 100) `(a `b ,c)
+==> (a (quasiquote b) 100)
+
+;;; Double-unquote inside nested quasiquote reaches the outer level.
+>>> (define c 100) `(a `(b ,,c))
+==> (a (quasiquote (b (unquote 100))))
+
+;;; Single unquote inside nested quasiquote stays literal.
+>>> (define c 100) `(a `(b ,c))
+==> (a (quasiquote (b (unquote c))))
+
+;;; `,x is (quasiquote (unquote x)) which reduces to x's value.
+>>> (define v 7) `,v
+==> 7
+
+;;; Unquote outside quasiquote is a shape error.
+>>> (unquote 5)
+%%% line 1, col 1: unquote is only valid inside a quasiquote template
+%%% (unquote 5)
+%%% ^
+
+>>> (unquote-splicing (list 1 2))
+%%% line 1, col 1: unquote-splicing is only valid inside a quasiquote template
+%%% (unquote-splicing (list 1 2))
+%%% ^
+
+;;; -------- delay / delay-force / force / make-promise (R7RS 4.2.5, 6.10) --------
+
+;;; Basic delay + force.
+>>> (force (delay 42))
+==> 42
+
+>>> (force (delay (+ 1 2 3)))
+==> 6
+
+;;; delay produces a promise; force unwraps it.
+>>> (promise? (delay 1))
+==> #t
+
+>>> (promise? 1)
+==> #f
+
+>>> (promise? "hi")
+==> #f
+
+>>> (promise? (lambda () 1))
+==> #f
+
+;;; A forced promise stays a promise (still answers #t to promise?).
+>>> (define p (delay 7)) (force p) (promise? p)
+==> #t
+
+;;; Memoization: the thunk runs at most once.  We count effects by set!-ing
+;;; a counter in the delayed body.
+>>> (define c 0) (define p (delay (begin (set! c (+ c 1)) 42))) (force p) (force p) (force p) c
+==> 1
+
+;;; The value is cached across forces.
+>>> (define c 0) (define p (delay (begin (set! c (+ c 1)) 99))) (force p) (force p)
+==> 99
+
+;;; make-promise: already-forced, no thunk ever runs.
+>>> (force (make-promise 100))
+==> 100
+
+>>> (promise? (make-promise 5))
+==> #t
+
+;;; make-promise + force is idempotent.
+>>> (define q (make-promise 'hello)) (force q) (force q)
+==> hello
+
+;;; Closure captures the env at delay time.
+>>> (define x 10) (define p (delay (* x x))) (set! x 99) (force p)
+==> 9801
+
+;;; A promise whose body yields another promise unwraps transparently.
+>>> (force (delay (delay 42)))
+==> 42
+
+>>> (force (delay (make-promise 'inner)))
+==> inner
+
+;;; delay-force - same observable semantics as delay in our implementation.
+>>> (force (delay-force 42))
+==> 42
+
+>>> (force (delay-force (delay 17)))
+==> 17
+
+;;; Stack-safe iterative forcing: a long chain of delay-force collapses
+;;; without building native stack.  100k is well past the recursion limit.
+>>> (define (loop n) (if (zero? n) (delay 'done) (delay-force (loop (- n 1))))) (force (loop 100000))
+==> done
+
+;;; force on a non-promise is an error (R7RS leaves this implementation-defined;
+;;; pyscheme chooses to be strict).
+>>> (force 5)
+%%% SchemeTypeError: line 1, col 1: force: argument must be a promise
+%%% (force 5)
+%%% ^
+
+>>> (force '(1 2 3))
+%%% SchemeTypeError: line 1, col 1: force: argument must be a promise
+%%% (force '(1 2 3))
+%%% ^
+
+;;; Shape errors.
+>>> (delay)
+%%% line 1, col 1: delay requires exactly 1 argument, got 0
+%%% (delay)
+%%% ^
+
+>>> (delay 1 2)
+%%% line 1, col 1: delay requires exactly 1 argument, got 2
+%%% (delay 1 2)
+%%% ^
+
+>>> (delay-force)
+%%% line 1, col 1: delay-force requires exactly 1 argument, got 0
+%%% (delay-force)
+%%% ^
+
+;;; help visible for both special forms and procedures.
+>>> (help delay)
+Special Form  |  args: unevaluated
+
+   Usage: (delay <expr>)
+
+   Return a promise whose forced value is the value of <expr>.
+   <expr> is not evaluated until the promise is forced; its value is
+   then cached so subsequent forces are O(1).  R7RS 4.2.5.  Use force
+   to retrieve the value.
+==> #<void>
+
+>>> (help force)
+Primitive  |  args: pre-evaluated
+
+   Usage: (force a)
+
+   Force a promise, returning its value.  The promise's thunk runs
+   at most once; subsequent forces return the cached value.  If the
+   thunk yields another promise, force follows the chain iteratively,
+   so (delay-force ...) promise chains run in constant stack.
+==> #<void>
+
+;;; -------- values / call-with-values / let-values / let*-values / define-values (R7RS 4.2.2, 5.3.3, 6.10) --------
+
+;;; (values) returns an empty multi-values.
+>>> (values)
+==> #<values>
+
+;;; Single-value (values x) unwraps to x.
+>>> (values 42)
+==> 42
+
+>>> (values "hi")
+==> "hi"
+
+;;; Two+ values wrap into a multi-values container.
+>>> (values 1 2 3)
+==> #<values 1 2 3>
+
+;;; call-with-values unpacks multi-values into the consumer's args.
+>>> (call-with-values (lambda () (values 10 20 30)) +)
+==> 60
+
+>>> (call-with-values (lambda () (values 1 2)) list)
+==> (1 2)
+
+;;; Single-value producer: consumer gets one argument.
+>>> (call-with-values (lambda () 42) (lambda (x) (* x 2)))
+==> 84
+
+;;; Zero-value producer: consumer must take zero args.
+>>> (call-with-values (lambda () (values)) (lambda () 'ok))
+==> ok
+
+;;; Primitive producer and consumer work too.
+>>> (call-with-values (lambda () (values 3 4)) (lambda (a b) (* a b)))
+==> 12
+
+;;; Consumer can be variadic.
+>>> (call-with-values (lambda () (values 1 2 3 4)) (lambda args args))
+==> (1 2 3 4)
+
+;;; -------- let-values: parallel semantics --------
+
+>>> (let-values (((a b) (values 1 2))) (+ a b))
+==> 3
+
+>>> (let-values (((a b) (values 10 20)) ((c) (values 30))) (list a b c))
+==> (10 20 30)
+
+;;; Parallel: init2 does NOT see clause-1 bindings.  Define x in the
+;;; outer env; let-values shadows with its own x only when the body runs.
+>>> (define x 100) (let-values (((x) (values 1)) ((y) (values x))) (list x y))
+==> (1 100)
+
+;;; Variadic rest in formals: rest gets the tail of the value list.
+>>> (let-values (((head . rest) (values 1 2 3 4))) (list head rest))
+==> (1 (2 3 4))
+
+;;; Pure-variadic formals: the single identifier gets the whole value list.
+>>> (let-values ((all (values 'a 'b 'c))) all)
+==> (a b c)
+
+;;; Empty bindings degenerates to begin.
+>>> (let-values () 1 2 3)
+==> 3
+
+;;; Zero-value init is legal when formals is ().
+>>> (let-values ((() (values))) 'body-ran)
+==> body-ran
+
+;;; -------- let*-values: sequential semantics --------
+
+>>> (let*-values (((a b) (values 1 2)) ((c) (values (+ a b)))) c)
+==> 3
+
+>>> (let*-values (((x) (values 10)) ((x) (values (* x x)))) x)
+==> 100
+
+;;; -------- define-values --------
+
+>>> (define-values (p q r) (values 1 2 3)) (list p q r)
+==> (1 2 3)
+
+;;; define-values with dotted rest.
+>>> (define-values (head . tail) (values 10 20 30 40)) (list head tail)
+==> (10 (20 30 40))
+
+;;; define-values with pure-variadic formals.
+>>> (define-values all (values 'x 'y 'z)) all
+==> (x y z)
+
+;;; Single-value init becomes single binding.
+>>> (define-values (solo) 77) solo
+==> 77
+
+;;; -------- multi-values as single-value error --------
+
+;;; Delivering multi-values into an argument slot is an error.
+>>> (+ 1 (values 2 3))
+%%% SchemeTypeError: multiple values delivered to a single-value context
+
+;;; Same in an if-test.
+>>> (if (values 1 2) 'yes 'no)
+%%% SchemeTypeError: multiple values delivered to a single-value context
+
+;;; Same in a let init.
+>>> (let ((x (values 1 2))) x)
+%%% SchemeTypeError: multiple values delivered to a single-value context
+
+;;; -------- shape errors --------
+
+>>> (let-values)
+%%% SchemeArityError: line 1, col 1: let-values: 0 arguments provided; at least 2 expected
+%%% (let-values)
+%%% ^
+
+>>> (define-values)
+%%% SchemeArityError: line 1, col 1: define-values: 0 arguments provided; 2 expected
+%%% (define-values)
+%%% ^
+
+;;; -------- define-record-type (R7RS 5.5) --------
+
+;;; Basic: constructor, predicate, accessors.
+>>> (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (point-x (make-point 3 4))
+==> 3
+
+>>> (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (point-y (make-point 3 4))
+==> 4
+
+;;; Predicate distinguishes records from other values.
+>>> (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (point? (make-point 0 0))
+==> #t
+
+>>> (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (point? 42)
+==> #f
+
+>>> (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (point? '(3 4))
+==> #f
+
+>>> (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (point? "hi")
+==> #f
+
+;;; pair? and null? reject records (disjoint type).
+>>> (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (pair? (make-point 1 2))
+==> #f
+
+>>> (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (null? (make-point 1 2))
+==> #f
+
+;;; Mutator changes the field.
+>>> (define-record-type box (make-box v) box? (v box-v set-box-v!)) (define b (make-box 10)) (set-box-v! b 99) (box-v b)
+==> 99
+
+;;; Mutator returns void.
+>>> (define-record-type box (make-box v) box? (v box-v set-box-v!)) (define b (make-box 10)) (set-box-v! b 42)
+==> #<void>
+
+;;; Records print inline with their field values.
+>>> (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (make-point 3 4)
+==> #<point 3 4>
+
+;;; Field spec with no mutator: accessor works, no mutator bound.
+>>> (define-record-type box (make-box v) box? (v box-v)) (box-v (make-box 7))
+==> 7
+
+>>> (define-record-type bag (make-bag v) bag? (v bag-v)) set-bag-v!
+%%% line 1, col 54: unbound variable: set-bag-v!
+%%% (define-record-type bag (make-bag v) bag? (v bag-v)) set-bag-v!
+%%%                                                      ^
+
+;;; A field not in the constructor's list defaults to void.
+>>> (define-record-type rec (make-rec a) rec? (a rec-a) (b rec-b set-rec-b!)) (rec-b (make-rec 1))
+==> #<void>
+
+;;; set! on that uninitialized field works.
+>>> (define-record-type rec (make-rec a) rec? (a rec-a) (b rec-b set-rec-b!)) (define r (make-rec 1)) (set-rec-b! r 22) (rec-b r)
+==> 22
+
+;;; Distinct record types are distinct even with same shape.
+>>> (define-record-type a (make-a v) a? (v a-v)) (define-record-type b (make-b v) b? (v b-v)) (a? (make-b 1))
+==> #f
+
+>>> (define-record-type a (make-a v) a? (v a-v)) (define-record-type b (make-b v) b? (v b-v)) (b? (make-a 1))
+==> #f
+
+>>> (define-record-type a (make-a v) a? (v a-v)) (define-record-type b (make-b v) b? (v b-v)) (a? (make-a 5))
+==> #t
+
+;;; Accessor rejects a record of the wrong type at runtime.  (The reported
+;;; position is the define-record-type form's position, not the call site,
+;;; because the synthesized accessor body inherits its src from the form.)
+>>> (define-record-type a (make-a v) a? (v a-v)) (define-record-type b (make-b v) b? (v b-v)) (a-v (make-b 7))
+%%% SchemeTypeError: line 1, col 1: %record-ref: record is not of the expected type a
+%%% (define-record-type a (make-a v) a? (v a-v)) (define-record-type b (make-b v) b? (v b-v)) (a-v (make-b 7))
+%%% ^
+
+;;; Accessor rejects a non-record.
+>>> (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (point-x 42)
+%%% SchemeTypeError: line 1, col 1: %record-ref: record is not of the expected type point
+%%% (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (point-x 42)
+%%% ^
+
+;;; Record with no fields.
+>>> (define-record-type tag (make-tag) tag?) (tag? (make-tag))
+==> #t
+
+>>> (define-record-type tag (make-tag) tag?) (make-tag)
+==> #<tag>
+
+;;; -------- make-parameter / parameterize (R7RS 4.2.6, 6.10) --------
+
+;;; make-parameter returns a parameter object.
+>>> (make-parameter 10)
+==> #<parameter>
+
+>>> (parameter? (make-parameter 10))
+==> #t
+
+>>> (parameter? 42)
+==> #f
+
+;;; parameter? sits with the type predicates; procedure? also says yes.
+>>> (procedure? (make-parameter 10))
+==> #t
+
+;;; Reading a parameter: 0-arg call returns the current dynamic value.
+>>> (define p (make-parameter 10)) (p)
+==> 10
+
+;;; parameterize binds dynamically for the body's extent.
+>>> (define p (make-parameter 10)) (parameterize ((p 99)) (p))
+==> 99
+
+;;; After parameterize returns, the old value is restored.
+>>> (define p (make-parameter 10)) (parameterize ((p 99)) (p)) (p)
+==> 10
+
+;;; Nested parameterize: the inner binding wins, then is restored.
+>>> (define p (make-parameter 1)) (parameterize ((p 2)) (parameterize ((p 3)) (p)))
+==> 3
+
+>>> (define p (make-parameter 1)) (parameterize ((p 2)) (parameterize ((p 3)) (p)) (p))
+==> 2
+
+;;; Multiple parameters in one parameterize.
+>>> (define p (make-parameter 1)) (define q (make-parameter 2)) (parameterize ((p 10) (q 20)) (+ (p) (q)))
+==> 30
+
+;;; Converter applied at make-parameter time and at each parameterize binding.
+>>> (define c (make-parameter 3 (lambda (x) (* x x)))) (c)
+==> 9
+
+>>> (define c (make-parameter 3 (lambda (x) (* x x)))) (parameterize ((c 5)) (c))
+==> 25
+
+;;; Converter applies to each parameterize value, not just once.
+>>> (define c (make-parameter 1 (lambda (x) (+ x 100)))) (list (c) (parameterize ((c 2)) (c)) (parameterize ((c 3)) (c)) (c))
+==> (101 102 103 101)
+
+;;; Exception safety: parameterize restores even when body raises.
+>>> (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom"))
+%%% SchemeUserError: line 1, col 54: boom
+%%% (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom"))
+%%%                                                      ^
+
+>>> (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom")) (p)
+%%% SchemeUserError: line 1, col 54: boom
+%%% (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom")) (p)
+%%%                                                      ^
+
+;;; After catching such an error (here just reading p on a fresh line), p
+;;; is back to its original value.
+>>> (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom")) #f (p)
+%%% SchemeUserError: line 1, col 54: boom
+%%% (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom")) #f (p)
+%%%                                                      ^
+
+;;; Calling a parameter with arguments is an error.
+>>> (define p (make-parameter 10)) (p 1 2)
+%%% SchemeArityError: line 1, col 32: parameter: 2 arguments provided; 0 expected
+%%% (define p (make-parameter 10)) (p 1 2)
+%%%                                ^
+
+;;; make-parameter's converter must be a procedure.
+>>> (make-parameter 1 42)
+%%% SchemeTypeError: line 1, col 1: make-parameter: converter must be a procedure
+%%% (make-parameter 1 42)
+%%% ^
+
+;;; parameterize's binding list must bind actual parameter objects.
+>>> (parameterize ((42 10)) 'body)
+%%% SchemeTypeError: line 1, col 1: %with-parameters: non-parameter in parameterize binding
+%%% (parameterize ((42 10)) 'body)
+%%% ^
+
+;;; -------- raise / with-exception-handler / guard / error objects (R7RS 4.2.7, 6.11) --------
+
+;;; raise + with-exception-handler: handler receives the raised value.
+>>> (with-exception-handler (lambda (v) (list 'caught v)) (lambda () (raise 'boom)))
+==> (caught boom)
+
+;;; Raised value can be anything - symbol, number, string, list, record.
+>>> (with-exception-handler (lambda (v) v) (lambda () (raise 42)))
+==> 42
+
+>>> (with-exception-handler (lambda (v) v) (lambda () (raise "oops")))
+==> "oops"
+
+>>> (with-exception-handler (lambda (v) v) (lambda () (raise '(1 2 3))))
+==> (1 2 3)
+
+;;; Thunk runs normally when no raise fires.
+>>> (with-exception-handler (lambda (v) 'never) (lambda () (+ 1 2 3)))
+==> 6
+
+;;; error primitive produces an error object catchable as any other raise.
+>>> (with-exception-handler (lambda (v) (error-object? v)) (lambda () (error "bad" 1 2 3)))
+==> #t
+
+>>> (with-exception-handler (lambda (v) (error-object-message v)) (lambda () (error "bad thing")))
+==> "bad thing"
+
+>>> (with-exception-handler (lambda (v) (error-object-irritants v)) (lambda () (error "bad" 1 2 3)))
+==> (1 2 3)
+
+;;; error without irritants: irritants is the empty list.
+>>> (with-exception-handler (lambda (v) (error-object-irritants v)) (lambda () (error "oops")))
+==> ()
+
+;;; error-object? on non-error-object.
+>>> (error-object? 42)
+==> #f
+
+>>> (error-object? "string")
+==> #f
+
+;;; error-object-message on a non-error-object is a type error.
+>>> (error-object-message 42)
+%%% SchemeTypeError: line 1, col 1: error-object-message: not an error object
+%%% (error-object-message 42)
+%%% ^
+
+;;; raise-continuable: handler's result becomes the with-exception-handler's
+;;; return (our implementation always unwinds; see limitations).
+>>> (with-exception-handler (lambda (v) (+ v 1)) (lambda () (raise-continuable 100)))
+==> 101
+
+;;; guard: first matching clause wins, its body is the guard's return.
+>>> (guard (e ((symbol? e) (list 'sym e)) ((number? e) (list 'num e))) (raise 'alpha))
+==> (sym alpha)
+
+>>> (guard (e ((symbol? e) (list 'sym e)) ((number? e) (list 'num e))) (raise 42))
+==> (num 42)
+
+;;; guard: no matching clause and no else -> re-raise the original value.
+>>> (guard (e ((string? e) 'got-string)) (raise 99))
+%%% SchemeRaised: line 1, col 1: 99
+%%% (guard (e ((string? e) 'got-string)) (raise 99))
+%%% ^
+
+;;; guard: explicit else catches anything not matched above.
+>>> (guard (e ((symbol? e) 'sym) (else (list 'other e))) (raise 3.14))
+==> (other 3.14)
+
+;;; guard around error: the handler receives an error-object.
+>>> (guard (e ((error-object? e) (error-object-message e))) (error "bad" 1 2))
+==> "bad"
+
+;;; guard body returns normally when no exception fires.
+>>> (guard (e (else 'never)) (+ 1 2 3))
+==> 6
+
+;;; guard composes: inner guard catches, outer sees nothing.
+>>> (guard (e (else 'outer-caught)) (guard (e (else (list 'inner e))) (raise 'boom)))
+==> (inner boom)
+
+;;; guard re-raises to outer guard when inner has no match.
+>>> (guard (e ((number? e) (list 'outer-num e))) (guard (e ((symbol? e) (list 'inner-sym e))) (raise 42)))
+==> (outer-num 42)
+
+;;; Handler of with-exception-handler can itself raise; the new raise
+;;; propagates to the next outer handler.
+>>> (guard (e (else (list 'outer e))) (with-exception-handler (lambda (v) (raise (list 'wrapped v))) (lambda () (raise 'inner))))
+==> (outer (wrapped inner))
+
+;;; An ErrorObject survives through the pretty-printer as a readable form.
+>>> (guard (e (else e)) (error "fail" 'a 1))
+==> #<error-object "fail" (a 1)>
+
+;;; Arity errors are NOT caught by guard (internal errors are uncatchable).
+>>> (guard (e (else 'caught)) (car))
+%%% SchemeArityError: line 1, col 27: car: 0 arguments provided; 1 expected
+%%% (guard (e (else 'caught)) (car))
+%%%                           ^
+
+;;; -------- call/cc / call-with-current-continuation (R7RS 6.10) --------
+
+;;; No invocation: the thunk's normal return is the call/cc result.
+>>> (call/cc (lambda (k) (+ 1 2 3)))
+==> 6
+
+;;; Invoking the continuation escapes past the surrounding context.
+>>> (call/cc (lambda (k) (+ 1 (k 99) 1000)))
+==> 99
+
+;;; Escape from inside a deeply nested expression.
+>>> (call/cc (lambda (k) (list 'a 'b (k 'escape) 'c 'd)))
+==> escape
+
+;;; Capture then escape from a loop.
+>>> (+ 1 (call/cc (lambda (k) (let loop ((n 0)) (if (= n 5) (k n) (loop (+ n 1)))))))
+==> 6
+
+;;; Save continuation in a global; re-invoke later.
+>>> (define cc #f) (+ 10 (call/cc (lambda (k) (set! cc k) 5)))
+==> 15
+
+>>> (cc 200)
+==> 210
+
+;;; Continuation invoked with zero args: void.
+>>> (define cc #f) (call/cc (lambda (k) (set! cc k) 'first)) (cc)
+==> #<void>
+
+;;; Continuation invoked with multiple args at a position with no remaining
+;;; frames delivers a multi-values container (printed verbatim at top level).
+>>> (define cc #f) (call/cc (lambda (k) (set! cc k) 'first)) (cc 1 2 3)
+==> #<values 1 2 3>
+
+;;; Multi-values flowing into a single-value position (here the + call that
+;;; contains the original call/cc) errors as designed.
+>>> (define cc #f) (+ 0 (call/cc (lambda (k) (set! cc k) 0))) (cc 1 2)
+%%% SchemeTypeError: multiple values delivered to a single-value context
+
+;;; Alias works.
+>>> (call-with-current-continuation (lambda (k) (+ 10 (k 5))))
+==> 5
+
+;;; Continuations are procedures.
+>>> (call/cc (lambda (k) (procedure? k)))
+==> #t
+
+;;; continuation? predicate.
+>>> (call/cc (lambda (k) (continuation? k)))
+==> #t
+
+>>> (continuation? (lambda (x) x))
+==> #f
+
+>>> (continuation? 42)
+==> #f
+
+;;; Continuation pretty-prints as #<continuation>.
+>>> (define cc #f) (call/cc (lambda (k) (set! cc k) 0)) cc
+==> #<continuation>
+
+;;; Classic use: first-class exit from a generator-like computation.
+>>> (define (find-first pred xs) (call/cc (lambda (return) (let loop ((ys xs)) (cond ((null? ys) #f) ((pred (car ys)) (return (car ys))) (else (loop (cdr ys)))))))) (find-first odd? '(2 4 6 7 8))
+==> 7
+
+>>> (define (find-first pred xs) (call/cc (lambda (return) (let loop ((ys xs)) (cond ((null? ys) #f) ((pred (car ys)) (return (car ys))) (else (loop (cdr ys)))))))) (find-first odd? '(2 4 6 8))
+==> #f
+
+;;; Arity errors (static).
+>>> (call/cc 1 2 3)
+%%% SchemeArityError: line 1, col 1: call/cc: 3 arguments provided; 1 expected
+%%% (call/cc 1 2 3)
+%%% ^
+
+>>> (call/cc)
+%%% SchemeArityError: line 1, col 1: call/cc: 0 arguments provided; 1 expected
+%%% (call/cc)
+%%% ^
+
+;;; -------- dynamic-wind (R7RS 6.10) --------
+
+;;; Normal flow: before, thunk, after run in order; thunk's value is returned.
+>>> (define log '()) (dynamic-wind (lambda () (set! log (cons 'before log))) (lambda () (set! log (cons 'body log)) 'result) (lambda () (set! log (cons 'after log))))
+==> result
+
+>>> (define log '()) (dynamic-wind (lambda () (set! log (cons 'before log))) (lambda () (set! log (cons 'body log)) 'result) (lambda () (set! log (cons 'after log)))) log
+==> (after body before)
+
+;;; after runs even when thunk raises.
+>>> (define log '()) (guard (e (else 'caught)) (dynamic-wind (lambda () (set! log (cons 'b log))) (lambda () (raise 'boom)) (lambda () (set! log (cons 'a log))))) log
+==> (a b)
+
+;;; Nested dynamic-winds: outer before, inner before, inner after, outer after.
+>>> (define log '()) (dynamic-wind (lambda () (set! log (cons 'outer-before log))) (lambda () (dynamic-wind (lambda () (set! log (cons 'inner-before log))) (lambda () (set! log (cons 'body log)) 'ok) (lambda () (set! log (cons 'inner-after log))))) (lambda () (set! log (cons 'outer-after log)))) log
+==> (outer-after inner-after body inner-before outer-before)
+
+;;; Jumping OUT via a continuation: inner after fires before the outer
+;;; receives the continuation's value.
+>>> (define log '()) (define k-out #f) (+ 100 (call/cc (lambda (k) (set! k-out k) 0))) (set! log '()) (dynamic-wind (lambda () (set! log (cons 'before log))) (lambda () (k-out 42)) (lambda () (set! log (cons 'after log)))) log
+==> (after before)
+
+;;; Re-entering a dynamic-wind via a continuation re-runs before; exit
+;;; after re-runs after.
+>>> (define log '()) (define k-in #f) (dynamic-wind (lambda () (set! log (cons 'before log))) (lambda () (call/cc (lambda (c) (set! k-in c))) (set! log (cons 'body log)) 'first) (lambda () (set! log (cons 'after log)))) (set! log '()) (k-in 'again) log
+==> (after body before)
+
+;;; dynamic-wind result is the thunk's value (not before/after).
+>>> (dynamic-wind (lambda () 'ignored-before) (lambda () 42) (lambda () 'ignored-after))
+==> 42
+
+;;; Arity error on bad call count.
+>>> (dynamic-wind (lambda () 1) (lambda () 2))
+%%% SchemeArityError: line 1, col 1: dynamic-wind: 2 arguments provided; 3 expected
+%%% (dynamic-wind (lambda () 1) (lambda () 2))
+%%% ^
+
+;;; -------- define-library / import / export (R7RS 5.6) --------
+
+;;; Top-level import of the standard library is a no-op since primitives
+;;; are already bound globally.
+>>> (import (scheme base))
+==> #<void>
+
+;;; Library body is isolated: imported names must be explicit.
+>>> (define-library (t1) (import (scheme base)) (export add) (begin (define (add a b) (+ a b)))) (import (t1)) (add 3 4)
+==> 7
+
+;;; Without (import (scheme base)) inside, the library body can't see +.
+>>> (define-library (t2) (export bad) (begin (define (bad x) (+ x 1))))
+==> #<void>
+
+;;; The error fires when bad is actually called (not at define-library time
+;;; in our impl, because + is looked up at call time via env chain).
+;;; The error position refers to the + reference inside the library source
+;;; where the closure body was captured.
+>>> (import (t2)) (bad 5)
+%%% line 1, col 59: unbound variable: +
+%%% (define-library (t2) (export bad) (begin (define (bad x) (+ x 1))))
+%%%                                                           ^
+
+;;; export rename: internal name differs from external.
+>>> (define-library (t3) (import (scheme base)) (export (rename private public)) (begin (define private 99))) (import (t3)) public
+==> 99
+
+;;; The internal name is NOT imported when (rename ...) is used in export.
+>>> (define-library (t3) (import (scheme base)) (export (rename private public)) (begin (define private 99))) (import (t3)) private
+%%% line 1, col 121: unbound variable: private
+%%% (define-library (t3) (import (scheme base)) (export (rename private public)) (begin (define private 99))) (import (t3)) private
+%%%                                                                                                                         ^
+
+;;; Import subset: only.
+>>> (define-library (t4) (import (scheme base)) (export a b c) (begin (define a 1) (define b 2) (define c 3))) (import (only (t4) a c)) (list a c)
+==> (1 3)
+
+;;; Import subset: except (drop b).
+>>> (define-library (t5) (import (scheme base)) (export a b c) (begin (define a 1) (define b 2) (define c 3))) (import (except (t5) b)) (list a c)
+==> (1 3)
+
+;;; Import subset: rename.
+>>> (define-library (t6) (import (scheme base)) (export a) (begin (define a 10))) (import (rename (t6) (a alpha))) alpha
+==> 10
+
+;;; Import subset: prefix.
+>>> (define-library (t7) (import (scheme base)) (export a) (begin (define a 'pfx))) (import (prefix (t7) lib:)) lib:a
+==> pfx
+
+;;; Exporting a name not defined in the library is a declaration-time error.
+>>> (define-library (t8) (import (scheme base)) (export missing))
+%%% line 1, col 1: define-library: exported name not defined: missing
+%%% (define-library (t8) (import (scheme base)) (export missing))
+%%% ^
+
+;;; import error on unknown library name.
+>>> (import (no such library))
+%%% line 1, col 9: import: library not found: (no such library)
+%%% (import (no such library))
+%%%         ^
+
+;;; Chained redefinition: a library can define then re-export from another.
+>>> (define-library (base-a) (import (scheme base)) (export a) (begin (define a 'from-base-a))) (define-library (pass) (import (base-a)) (export a)) (import (pass)) a
+==> from-base-a
+
+;;; Definitions inside (begin ...) inside define-library are expanded:
+;;; (define (f x) ...) sugar works.
+>>> (define-library (sugar) (import (scheme base)) (export sq) (begin (define (sq x) (* x x)))) (import (sugar)) (sq 9)
+==> 81
+
+;;; (only ...) referencing an undeclared name is an import-time error.
+>>> (define-library (t9) (import (scheme base)) (export a) (begin (define a 1))) (import (only (t9) nonexistent))
+%%% line 1, col 86: import: 'only' references name not in library: nonexistent
+%%% (define-library (t9) (import (scheme base)) (export a) (begin (define a 1))) (import (only (t9) nonexistent))
+%%%                                                                                      ^
+
+;;; -------- define-syntax / syntax-rules (R7RS 4.3) --------
+
+;;; Basic pattern + template.
+>>> (define-syntax my-when (syntax-rules () ((_ test body ...) (if test (begin body ...) #f)))) (my-when #t 1 2 3)
+==> 3
+
+>>> (define-syntax my-when (syntax-rules () ((_ test body ...) (if test (begin body ...) #f)))) (my-when #f 'never)
+==> #f
+
+;;; Variadic ellipsis: zero or more arguments.
+>>> (define-syntax my-list (syntax-rules () ((_ x ...) (list x ...)))) (my-list 1 2 3)
+==> (1 2 3)
+
+>>> (define-syntax my-list (syntax-rules () ((_ x ...) (list x ...)))) (my-list)
+==> ()
+
+;;; Multiple rules match by shape.
+>>> (define-syntax pick (syntax-rules () ((_) 'none) ((_ x) (list 'one x)) ((_ x y) (list 'two x y)))) (pick)
+==> none
+
+>>> (define-syntax pick (syntax-rules () ((_) 'none) ((_ x) (list 'one x)) ((_ x y) (list 'two x y)))) (pick 1)
+==> (one 1)
+
+>>> (define-syntax pick (syntax-rules () ((_) 'none) ((_ x) (list 'one x)) ((_ x y) (list 'two x y)))) (pick 1 2)
+==> (two 1 2)
+
+;;; Literals match exact symbols in the form.
+>>> (define-syntax my-when-even (syntax-rules (then) ((_ test then body) (if test body #f)))) (my-when-even #t then 99)
+==> 99
+
+;;; Hygiene: a template temporary doesn't capture a user name of the
+;;; same name at the use site.
+>>> (define-syntax swap! (syntax-rules () ((_ a b) (let ((tmp a)) (set! a b) (set! b tmp))))) (define tmp 'user) (define x 10) (define y 20) (swap! x y) (list x y tmp)
+==> (20 10 user)
+
+;;; Free identifiers in templates (like list, +) resolve to their
+;;; definition-time values, not the use-site bindings.
+>>> (define-syntax one-more (syntax-rules () ((_ n) (+ n 1)))) (let ((+ -)) (one-more 5))
+==> 6
+
+;;; Recursive macros via letrec-syntax.
+>>> (letrec-syntax ((my-or (syntax-rules () ((_) #f) ((_ a) a) ((_ a b ...) (let ((t a)) (if t t (my-or b ...))))))) (my-or #f #f 42 #f))
+==> 42
+
+>>> (letrec-syntax ((my-or (syntax-rules () ((_) #f) ((_ a) a) ((_ a b ...) (let ((t a)) (if t t (my-or b ...))))))) (my-or #f #f))
+==> #f
+
+;;; Recursive macro via define-syntax.
+>>> (define-syntax my-and (syntax-rules () ((_) #t) ((_ a) a) ((_ a b ...) (if a (my-and b ...) #f)))) (my-and 1 2 3 4)
+==> 4
+
+>>> (define-syntax my-and (syntax-rules () ((_) #t) ((_ a) a) ((_ a b ...) (if a (my-and b ...) #f)))) (my-and 1 #f 3)
+==> #f
+
+>>> (define-syntax my-and (syntax-rules () ((_) #t) ((_ a) a) ((_ a b ...) (if a (my-and b ...) #f)))) (my-and)
+==> #t
+
+;;; let-syntax: local transformer, isolated from siblings.
+>>> (let-syntax ((sq (syntax-rules () ((_ x) (* x x))))) (sq 9))
+==> 81
+
+;;; let-syntax with multiple bindings; each body scope sees all of them.
+>>> (let-syntax ((sq (syntax-rules () ((_ x) (* x x)))) (cb (syntax-rules () ((_ x) (* x x x))))) (list (sq 3) (cb 3)))
+==> (9 27)
+
+;;; No matching pattern: positioned error.
+>>> (define-syntax only-pairs (syntax-rules () ((_ (a b)) (list a b)))) (only-pairs 1)
+%%% line 1, col 69: syntax-rules: no matching pattern for 'only-pairs'
+%%% (define-syntax only-pairs (syntax-rules () ((_ (a b)) (list a b)))) (only-pairs 1)
+%%%                                                                     ^
+
+;;; Shape error: transformer must be (syntax-rules ...).
+>>> (define-syntax bad 42)
+%%% line 1, col 20: define-syntax: transformer must be (syntax-rules ...)
+%%% (define-syntax bad 42)
+%%%                    ^
+
+;;; (define-syntax foo ...) binds foo in the MACRO environment only -
+;;; it is not a runtime variable; attempting to reference the name
+;;; outside head position is an unbound-variable error.  (This matches
+;;; R7RS semantics for syntax transformers.)
+
+
+
+
+

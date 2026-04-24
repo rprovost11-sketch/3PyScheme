@@ -1,0 +1,150 @@
+;;; ============================================================
+;;; test11-meta.log
+;;; Meta-operations: error, apply, eval.
+;;; R7RS 6.10 (apply), 6.11 (error), 6.12 (eval).
+;;; ============================================================
+
+;;; -------- apply (R7RS 6.10) --------
+
+;;; Basic: apply a primitive to a list of args.
+>>> (apply + '(1 2 3))
+==> 6
+
+>>> (apply + '())
+==> 0
+
+>>> (apply * '(2 3 4))
+==> 24
+
+;;; Leading args are prepended to the list contents.
+>>> (apply + 10 20 '(3 4))
+==> 37
+
+>>> (apply + 1 2 3 '(4 5 6))
+==> 21
+
+;;; Single-arg list.
+>>> (apply - '(100))
+==> -100
+
+;;; Apply a user-defined procedure.
+>>> (apply (lambda (x y) (+ x y)) '(100 200))
+==> 300
+
+>>> (apply (lambda args args) '(1 2 3 4 5))
+==> (1 2 3 4 5)
+
+>>> (apply (lambda (x . rest) (cons x rest)) '(head a b c))
+==> (head a b c)
+
+;;; Apply to an empty list with a nullary closure.
+>>> (apply (lambda () 42) '())
+==> 42
+
+;;; car applied to a quoted pair.
+>>> (apply car '((1 2)))
+==> 1
+
+;;; Result is a pair.
+>>> (apply cons '(1 2))
+==> (1 . 2)
+
+;;; Nested apply.
+>>> (apply apply (list + (list 1 2 3)))
+==> 6
+
+;;; Type errors.
+>>> (apply + 'not-a-list)
+%%% SchemeTypeError: line 1, col 1: apply: last argument must be a proper list
+%%% (apply + 'not-a-list)
+%%% ^
+
+>>> (apply 1 '(2 3))
+%%% SchemeTypeError: line 1, col 1: apply: first argument must be a procedure
+%%% (apply 1 '(2 3))
+%%% ^
+
+;;; Arity propagates from the underlying procedure.
+>>> (apply (lambda (x y) (+ x y)) '(1))
+%%% SchemeArityError: line 1, col 1: 1 argument provided; 2 expected
+%%% (apply (lambda (x y) (+ x y)) '(1))
+%%% ^
+
+;;; -------- eval (R7RS 6.12) --------
+
+;;; Self-evaluating values.
+>>> (eval 42)
+==> 42
+
+>>> (eval "hello")
+==> "hello"
+
+>>> (eval #t)
+==> #t
+
+;;; Basic expressions.
+>>> (eval '(+ 1 2))
+==> 3
+
+>>> (eval '(* 3 4))
+==> 12
+
+>>> (eval '(if #t 'yes 'no))
+==> yes
+
+;;; Let bindings inside eval.
+>>> (eval '(let ((x 5)) (* x x)))
+==> 25
+
+;;; Definitions persist into the global environment.
+>>> (eval '(define xx 99)) xx
+==> 99
+
+;;; Calling a previously defined procedure.
+>>> (define (double x) (* x 2)) (eval '(double 21))
+==> 42
+
+;;; Nested eval.
+>>> (eval '(eval '(+ 100 1)))
+==> 101
+
+;;; Second argument is accepted but ignored.
+>>> (eval '(+ 2 3) 'ignored)
+==> 5
+
+;;; Shape errors inside the evaluated datum surface normally.  The
+;;; position points at the source location of the offending datum
+;;; inside the quote, since positioned NIL carries the opening '('.
+>>> (eval '())
+%%% line 1, col 8: empty list () is not a valid expression; use (quote ()) for the empty list
+%%% (eval '())
+%%%        ^
+
+;;; -------- error (R7RS 6.11) --------
+
+>>> (error "oops")
+%%% SchemeUserError: line 1, col 1: oops
+%%% (error "oops")
+%%% ^
+
+>>> (error "bad input:" 42)
+%%% SchemeUserError: line 1, col 1: bad input: 42
+%%% (error "bad input:" 42)
+%%% ^
+
+>>> (error "wrong" 1 'two "three")
+%%% SchemeUserError: line 1, col 1: wrong 1 two "three"
+%%% (error "wrong" 1 'two "three")
+%%% ^
+
+;;; Non-string first arg.
+>>> (error 42)
+%%% SchemeTypeError: line 1, col 1: error: first argument must be a string
+%%% (error 42)
+%%% ^
+
+;;; error raised from inside a procedure body.
+>>> (define (sqrt-safe x) (if (negative? x) (error "sqrt of negative:" x) 'ok)) (sqrt-safe -1)
+%%% SchemeUserError: line 1, col 41: sqrt of negative: -1
+%%% (define (sqrt-safe x) (if (negative? x) (error "sqrt of negative:" x) 'ok)) (sqrt-safe -1)
+%%%                                         ^

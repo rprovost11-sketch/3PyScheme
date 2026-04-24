@@ -1,0 +1,14 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Generated test reports (re-created by ]test)
+testing/runs/
+
+# Editor / OS cruft
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

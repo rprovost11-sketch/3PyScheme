@@ -1,0 +1,34 @@
+Scheme Syntax Reference
+=======================
+
+Literals
+--------
+  42          integer
+  -3.14       real number
+  3/4         rational
+  #t #f       booleans (only #f is false)
+  "hello"     string
+  #\a         character
+  'x          quoted symbol (same as (quote x))
+  '(a b)      quoted list
+  (a . b)     dotted pair
+
+Special forms
+-------------
+  (lambda <formals> <body>...)
+  (define <name> <value>)
+  (set! <name> <value>)
+  (if <test> <then> [<else>])
+  (when <test> <body>...)
+  (unless <test> <body>...)
+  (cond <clause>...)
+  (and <expr>...)
+  (or <expr>...)
+  (begin <expr>...)
+  (let [<name>] (<binding>...) <body>...)
+  (let* (<binding>...) <body>...)
+  (letrec (<binding>...) <body>...)
+  (letrec* (<binding>...) <body>...)
+  (quote <datum>)
+
+Type (help <name>) on any one of these for details.

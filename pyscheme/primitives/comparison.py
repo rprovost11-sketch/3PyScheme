@@ -1,0 +1,102 @@
+"""Numeric comparison primitives: =, <, >, <=, >=.
+
+R7RS 6.2.6: each accepts one or more arguments.  The predicate is true
+iff the arguments are (respectively) equal, strictly increasing,
+strictly decreasing, non-decreasing, or non-increasing.  With a single
+argument, all are vacuously #t.
+"""
+
+from pyscheme.primitives import register_primitive
+from pyscheme.AST import is_integer, is_real, as_integer, as_real, make_boolean
+from pyscheme.Environment import SchemeTypeError
+
+
+CATEGORY = 'comparison'
+
+
+def _num(v, name, app_node, i):
+   if is_integer(v):
+      return as_integer(v)
+   if is_real(v):
+      return as_real(v)
+   raise SchemeTypeError(
+      '%s: argument %d is not a number' % (name, i),
+      app_node)
+
+
+def _prim_num_eq(ctx, env, args, app_node):
+   prev = _num(args[0], '=', app_node, 1)
+   i = 1
+   while i < len(args):
+      cur = _num(args[i], '=', app_node, i + 1)
+      if prev != cur:
+         return make_boolean(False)
+      prev = cur
+      i = i + 1
+   return make_boolean(True)
+
+
+def _prim_num_lt(ctx, env, args, app_node):
+   prev = _num(args[0], '<', app_node, 1)
+   i = 1
+   while i < len(args):
+      cur = _num(args[i], '<', app_node, i + 1)
+      if not (prev < cur):
+         return make_boolean(False)
+      prev = cur
+      i = i + 1
+   return make_boolean(True)
+
+
+def _prim_num_gt(ctx, env, args, app_node):
+   prev = _num(args[0], '>', app_node, 1)
+   i = 1
+   while i < len(args):
+      cur = _num(args[i], '>', app_node, i + 1)
+      if not (prev > cur):
+         return make_boolean(False)
+      prev = cur
+      i = i + 1
+   return make_boolean(True)
+
+
+def _prim_num_le(ctx, env, args, app_node):
+   prev = _num(args[0], '<=', app_node, 1)
+   i = 1
+   while i < len(args):
+      cur = _num(args[i], '<=', app_node, i + 1)
+      if not (prev <= cur):
+         return make_boolean(False)
+      prev = cur
+      i = i + 1
+   return make_boolean(True)
+
+
+def _prim_num_ge(ctx, env, args, app_node):
+   prev = _num(args[0], '>=', app_node, 1)
+   i = 1
+   while i < len(args):
+      cur = _num(args[i], '>=', app_node, i + 1)
+      if not (prev >= cur):
+         return make_boolean(False)
+      prev = cur
+      i = i + 1
+   return make_boolean(True)
+
+
+def register():
+   register_primitive('=', (1, None), _prim_num_eq,
+      doc='Return #t if all arguments are numerically equal.',
+      category=CATEGORY)
+   register_primitive('<', (1, None), _prim_num_lt,
+      doc='Return #t if the arguments are monotonically strictly increasing.',
+      category=CATEGORY)
+   register_primitive('>', (1, None), _prim_num_gt,
+      doc='Return #t if the arguments are monotonically strictly decreasing.',
+      category=CATEGORY)
+   register_primitive('<=', (1, None), _prim_num_le,
+      doc='Return #t if the arguments are monotonically non-decreasing.',
+      category=CATEGORY)
+   register_primitive('>=', (1, None), _prim_num_ge,
+      doc='Return #t if the arguments are monotonically non-increasing.',
+      category=CATEGORY)

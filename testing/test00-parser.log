@@ -1,0 +1,39 @@
+;;; ============================================================
+;;; test00-parser.log
+;;; Parser subsystem: lexical errors and malformed dotted syntax.
+;;; These tests exercise the reader before any evaluation happens.
+;;; ============================================================
+
+;;; -------- Parser rejects (lexical / syntactic errors) --------
+
+>>> 1abc
+%%% line 1, col 1: malformed number or identifier: '1abc'
+%%% 1abc
+%%% ^
+
+>>> #z
+%%% line 1, col 1: unknown #-syntax: '#z'
+%%% #z
+%%% ^
+
+>>> #\unknown
+%%% line 1, col 1: unknown character name: #\unknown
+%%% #\unknown
+%%% ^
+
+;;; -------- Parser rejects malformed dotted --------
+
+>>> (.)
+%%% line 1, col 2: dot must be preceded by at least one element
+%%% (.)
+%%%  ^
+
+>>> (a .)
+%%% line 1, col 5: dot must be followed by an expression
+%%% (a .)
+%%%     ^
+
+>>> (a . b c)
+%%% line 1, col 8: expected ')' after dotted tail
+%%% (a . b c)
+%%%        ^

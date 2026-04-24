@@ -1,0 +1,35 @@
+Scheme Basics
+=============
+
+pyscheme is a small R7RS-style Scheme interpreter.  Start with
+self-evaluating values:
+
+  42            -> 42
+  "hello"       -> "hello"
+  #t            -> #t
+  '(1 2 3)      -> (1 2 3)
+
+Bind a name:
+
+  (define x 5)
+
+Call a primitive:
+
+  (+ 1 2 3)      -> 6
+  (cons 1 '())   -> (1)
+
+Define a procedure:
+
+  (define (square n) (* n n))
+  (square 7)     -> 49
+
+Procedures can take a docstring - the first body expression, provided
+there is at least one more form after it, is treated as documentation:
+
+  (define (double n)
+    "Return twice its argument."
+    (* n 2))
+
+  (help double)
+
+Try (help) for the full list of forms and primitives.
