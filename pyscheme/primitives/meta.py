@@ -95,6 +95,22 @@ def _prim_dynamic_wind_unreached(ctx, env, args, app_node):
       app_node)
 
 
+def _prim_file_error_p(ctx, env, args, app_node):
+   # R7RS allows always returning #f when the impl does not distinguish
+   # file errors from other errors.  pyScheme does not tag SchemeUserError
+   # objects by source (yet); a future enhancement could mark file-related
+   # errors at construction time.
+   from pyscheme.AST import make_boolean
+   return make_boolean(False)
+
+
+def _prim_read_error_p(ctx, env, args, app_node):
+   # Same caveat as file-error?: SchemeSyntaxError raised from read
+   # propagates as an error-object but is not tagged distinctly.
+   from pyscheme.AST import make_boolean
+   return make_boolean(False)
+
+
 def _prim_error_object_message(ctx, env, args, app_node):
    obj = args[0]
    if not is_error_object(obj):
@@ -552,6 +568,16 @@ def register():
    register_primitive('error-object-irritants', (1, 1),
       _prim_error_object_irritants,
       doc='Return the irritants list of an error object.  R7RS 6.11.',
+      category=CATEGORY)
+   register_primitive('file-error?', (1, 1), _prim_file_error_p,
+      doc=('(file-error? obj) returns #t if obj is an error raised by a '
+           'file-related operation.  pyScheme does not currently tag file '
+           'errors distinctly, so this always returns #f (R7RS allows).'),
+      category=CATEGORY)
+   register_primitive('read-error?', (1, 1), _prim_read_error_p,
+      doc=('(read-error? obj) returns #t if obj is an error raised during '
+           'parsing by read.  Same caveat as file-error?: always returns '
+           '#f for now.'),
       category=CATEGORY)
 
    # First-class continuations

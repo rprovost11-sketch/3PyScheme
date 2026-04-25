@@ -740,6 +740,25 @@ def _prim_current_error_port(ctx, env, args, app_node):
    return as_parameter_value(_current_error_param[0])
 
 
+def _prim_call_with_port(ctx, env, args, app_node):
+   # (call-with-port port proc) calls (proc port) and closes port before
+   # returning the result.  R7RS 6.13.
+   from pyscheme.primitives.meta import _apply_scheme_proc
+   port_val = args[0]
+   proc     = args[1]
+   p = _check_port(port_val, 'call-with-port', app_node)
+   try:
+      result = _apply_scheme_proc(proc, [port_val], ctx, None, app_node)
+   finally:
+      if p.is_open and p.file_h is not None:
+         try:
+            p.file_h.close()
+         except OSError:
+            pass
+      p.is_open = False
+   return result
+
+
 def register():
    # Predicates
    register_primitive('port?', (1, 1), _prim_port_p,
@@ -904,4 +923,8 @@ def register():
       category=CATEGORY)
    register_primitive('current-error-port', (0, 0), _prim_current_error_port,
       doc='Return the current error port.  R7RS 6.13.',
+      category=CATEGORY)
+   register_primitive('call-with-port', (2, 2), _prim_call_with_port,
+      doc=('(call-with-port port proc) calls (proc port), closes port '
+           'before returning, and returns proc\'s result.  R7RS 6.13.'),
       category=CATEGORY)

@@ -221,6 +221,55 @@ def _prim_string_downcase(ctx, env, args, app_node):
    return make_string(s.lower())
 
 
+def _prim_string_map(ctx, env, args, app_node):
+   from pyscheme.primitives.meta import _apply_scheme_proc
+   from pyscheme.AST              import is_character, as_character
+   if len(args) < 2:
+      raise SchemeTypeError(
+         'string-map: at least one string is required', src_of(app_node))
+   proc    = args[0]
+   strings = []
+   i = 1
+   while i < len(args):
+      strings.append(_check_string(args[i], 'string-map', app_node, i + 1))
+      i = i + 1
+   shortest = min(len(s) for s in strings)
+   chars = []
+   i = 0
+   while i < shortest:
+      arg_row = [make_character(s[i]) for s in strings]
+      result  = _apply_scheme_proc(proc, arg_row, ctx, None, app_node)
+      if not is_character(result):
+         raise SchemeTypeError(
+            'string-map: proc must return a character', src_of(app_node))
+      chars.append(as_character(result))
+      i = i + 1
+   return make_string(''.join(chars))
+
+
+def _prim_string_for_each(ctx, env, args, app_node):
+   from pyscheme.primitives.meta import _apply_scheme_proc
+   from pyscheme.AST              import VOID_VALUE
+   if len(args) < 2:
+      raise SchemeTypeError(
+         'string-for-each: at least one string is required',
+         src_of(app_node))
+   proc    = args[0]
+   strings = []
+   i = 1
+   while i < len(args):
+      strings.append(
+         _check_string(args[i], 'string-for-each', app_node, i + 1))
+      i = i + 1
+   shortest = min(len(s) for s in strings)
+   i = 0
+   while i < shortest:
+      arg_row = [make_character(s[i]) for s in strings]
+      _apply_scheme_proc(proc, arg_row, ctx, None, app_node)
+      i = i + 1
+   return VOID_VALUE
+
+
 def register():
    register_primitive('string-length', (1, 1), _prim_string_length,
       doc='Return the number of characters in the string.  R7RS 6.7.',
@@ -278,4 +327,13 @@ def register():
       category=CATEGORY)
    register_primitive('string-downcase', (1, 1), _prim_string_downcase,
       doc='Return the string with each character downcased.  R7RS 6.7.',
+      category=CATEGORY)
+   register_primitive('string-map', (2, None), _prim_string_map,
+      doc=('(string-map proc str1 str2 ...) returns a string built by '
+           'applying proc element-wise across the strings.  proc must '
+           'return a character.  R7RS 6.7.'),
+      category=CATEGORY)
+   register_primitive('string-for-each', (2, None), _prim_string_for_each,
+      doc=('(string-for-each proc str1 str2 ...) applies proc element-'
+           'wise for effect; returns an unspecified value.  R7RS 6.7.'),
       category=CATEGORY)
