@@ -1,10 +1,13 @@
-"""List and pair primitives: cons, car, cdr, pair?, null?, list."""
+"""List and pair primitives: cons, car, cdr, pair?, null?, list,
+append, length, reverse, list-tail, list-ref, list-copy, list?,
+member / memv / memq, assoc / assv / assq, map, for-each."""
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
-   alloc_cons, NIL_VALUE, is_cons, is_nil, src_of, make_boolean,
+   alloc_cons, NIL_VALUE, is_cons, is_nil, is_integer, as_integer,
+   src_of, make_boolean, make_integer, eqv_atom,
 )
-from pyscheme.Environment import SchemeTypeError
+from pyscheme.Environment import SchemeTypeError, SchemeArityError, arity_mismatch_msg
 
 
 CATEGORY = 'lists'
@@ -45,6 +48,230 @@ def _prim_list(ctx, env, args, app_node):
       result = alloc_cons(args[i], result, None)
       i = i - 1
    return result
+
+
+def _proper_list_p(v):
+   """True if v is a proper list (terminated by NIL).  Cycle-detection
+   omitted; pyScheme has no shared-tail mutators that create cycles in
+   practice, but list? in R7RS treats cyclic lists as non-lists."""
+   cur = v
+   while is_cons(cur):
+      cur = cur.cdr
+   return is_nil(cur)
+
+
+def _prim_list_p(ctx, env, args, app_node):
+   return make_boolean(_proper_list_p(args[0]))
+
+
+def _prim_length(ctx, env, args, app_node):
+   v = args[0]
+   n = 0
+   cur = v
+   while is_cons(cur):
+      n = n + 1
+      cur = cur.cdr
+   if not is_nil(cur):
+      raise SchemeTypeError(
+         'length: argument must be a proper list', src_of(app_node))
+   return make_integer(n)
+
+
+def _prim_reverse(ctx, env, args, app_node):
+   v = args[0]
+   result = NIL_VALUE
+   cur = v
+   while is_cons(cur):
+      result = alloc_cons(cur.car, result, None)
+      cur = cur.cdr
+   if not is_nil(cur):
+      raise SchemeTypeError(
+         'reverse: argument must be a proper list', src_of(app_node))
+   return result
+
+
+def _prim_list_tail(ctx, env, args, app_node):
+   v   = args[0]
+   k_v = args[1]
+   if not is_integer(k_v):
+      raise SchemeTypeError(
+         'list-tail: index must be an integer', src_of(app_node))
+   k = as_integer(k_v)
+   if k < 0:
+      raise SchemeTypeError(
+         'list-tail: index must be non-negative', src_of(app_node))
+   cur = v
+   i = 0
+   while i < k:
+      if not is_cons(cur):
+         raise SchemeTypeError(
+            'list-tail: index out of range', src_of(app_node))
+      cur = cur.cdr
+      i = i + 1
+   return cur
+
+
+def _prim_list_ref(ctx, env, args, app_node):
+   v   = args[0]
+   k_v = args[1]
+   if not is_integer(k_v):
+      raise SchemeTypeError(
+         'list-ref: index must be an integer', src_of(app_node))
+   k = as_integer(k_v)
+   if k < 0:
+      raise SchemeTypeError(
+         'list-ref: index must be non-negative', src_of(app_node))
+   cur = v
+   i = 0
+   while i < k:
+      if not is_cons(cur):
+         raise SchemeTypeError(
+            'list-ref: index out of range', src_of(app_node))
+      cur = cur.cdr
+      i = i + 1
+   if not is_cons(cur):
+      raise SchemeTypeError(
+         'list-ref: index out of range', src_of(app_node))
+   return cur.car
+
+
+def _prim_list_copy(ctx, env, args, app_node):
+   v = args[0]
+   if is_nil(v):
+      return NIL_VALUE
+   if not is_cons(v):
+      return v
+   collected = []
+   cur = v
+   while is_cons(cur):
+      collected.append(cur.car)
+      cur = cur.cdr
+   tail = cur
+   i = len(collected) - 1
+   while i >= 0:
+      tail = alloc_cons(collected[i], tail, None)
+      i = i - 1
+   return tail
+
+
+def _make_member_search(name, equality_predicate):
+   def search(ctx, env, args, app_node):
+      target = args[0]
+      cur    = args[1]
+      while is_cons(cur):
+         if equality_predicate(target, cur.car):
+            return cur
+         cur = cur.cdr
+      if not is_nil(cur):
+         raise SchemeTypeError(
+            name + ': second argument must be a proper list',
+            src_of(app_node))
+      return make_boolean(False)
+   search.__name__ = '_prim_' + name
+   return search
+
+
+def _make_assoc_search(name, equality_predicate):
+   def search(ctx, env, args, app_node):
+      target = args[0]
+      cur    = args[1]
+      while is_cons(cur):
+         pair = cur.car
+         if not is_cons(pair):
+            raise SchemeTypeError(
+               name + ': alist entries must be pairs', src_of(app_node))
+         if equality_predicate(target, pair.car):
+            return pair
+         cur = cur.cdr
+      if not is_nil(cur):
+         raise SchemeTypeError(
+            name + ': second argument must be a proper list',
+            src_of(app_node))
+      return make_boolean(False)
+   search.__name__ = '_prim_' + name
+   return search
+
+
+def _eq(a, b):
+   return a is b or eqv_atom(a, b)
+
+
+def _eqv(a, b):
+   return eqv_atom(a, b) or a is b
+
+
+def _equal(a, b):
+   from pyscheme.primitives.equivalence import _value_equal
+   return _value_equal(a, b)
+
+
+def _prim_map(ctx, env, args, app_node):
+   from pyscheme.primitives.meta import _apply_scheme_proc
+   if len(args) < 2:
+      raise SchemeArityError(
+         arity_mismatch_msg('map', 2, None, len(args)),
+         src_of(app_node))
+   proc  = args[0]
+   lists = args[1:]
+   collected = []
+   while True:
+      ready = True
+      for lst in lists:
+         if not is_cons(lst):
+            ready = False
+            break
+      if not ready:
+         break
+      arg_row = []
+      next_lists = []
+      for lst in lists:
+         arg_row.append(lst.car)
+         next_lists.append(lst.cdr)
+      collected.append(_apply_scheme_proc(proc, arg_row, ctx, None, app_node))
+      lists = next_lists
+   for lst in lists:
+      if not is_nil(lst):
+         raise SchemeTypeError(
+            'map: list arguments must be proper lists',
+            src_of(app_node))
+   result = NIL_VALUE
+   i = len(collected) - 1
+   while i >= 0:
+      result = alloc_cons(collected[i], result, None)
+      i = i - 1
+   return result
+
+
+def _prim_for_each(ctx, env, args, app_node):
+   from pyscheme.primitives.meta import _apply_scheme_proc
+   from pyscheme.AST import VOID_VALUE
+   if len(args) < 2:
+      raise SchemeArityError(
+         arity_mismatch_msg('for-each', 2, None, len(args)),
+         src_of(app_node))
+   proc  = args[0]
+   lists = args[1:]
+   while True:
+      ready = True
+      for lst in lists:
+         if not is_cons(lst):
+            ready = False
+            break
+      if not ready:
+         break
+      arg_row = []
+      next_lists = []
+      for lst in lists:
+         arg_row.append(lst.car)
+         next_lists.append(lst.cdr)
+      _apply_scheme_proc(proc, arg_row, ctx, None, app_node)
+      lists = next_lists
+   for lst in lists:
+      if not is_nil(lst):
+         raise SchemeTypeError(
+            'for-each: list arguments must be proper lists',
+            src_of(app_node))
+   return VOID_VALUE
 
 
 def _prim_append(ctx, env, args, app_node):
@@ -108,4 +335,56 @@ def register():
          "Return a list that is the concatenation of its arguments.  All\n"
          "but the last argument must be proper lists; the last may be any\n"
          "value (forming the final cdr).  R7RS 6.4."),
+      category=CATEGORY)
+   register_primitive('list?', (1, 1), _prim_list_p,
+      doc='Return #t if a is a proper list (terminated by ()).  R7RS 6.4.',
+      category=CATEGORY)
+   register_primitive('length', (1, 1), _prim_length,
+      doc=('Return the number of elements in the list.  Argument must '
+           'be a proper list.  R7RS 6.4.'),
+      category=CATEGORY)
+   register_primitive('reverse', (1, 1), _prim_reverse,
+      doc=('Return a newly allocated list of the elements of list in '
+           'reverse order.  R7RS 6.4.'),
+      category=CATEGORY)
+   register_primitive('list-tail', (2, 2), _prim_list_tail,
+      doc=('(list-tail list k) returns the sublist obtained by omitting '
+           'the first k elements.  R7RS 6.4.'),
+      category=CATEGORY)
+   register_primitive('list-ref', (2, 2), _prim_list_ref,
+      doc=('(list-ref list k) returns the kth element of list (zero-based).  '
+           'R7RS 6.4.'),
+      category=CATEGORY)
+   register_primitive('list-copy', (1, 1), _prim_list_copy,
+      doc=('Return a newly allocated copy of the spine of the list, '
+           'sharing element values.  R7RS 6.4.'),
+      category=CATEGORY)
+   register_primitive('member', (2, 2), _make_member_search('member', _equal),
+      doc=('(member obj list) returns the first sublist of list whose car '
+           'is equal? to obj, or #f if no such sublist exists.  R7RS 6.4.'),
+      category=CATEGORY)
+   register_primitive('memv', (2, 2), _make_member_search('memv', _eqv),
+      doc=('Like member but uses eqv? for comparison.  R7RS 6.4.'),
+      category=CATEGORY)
+   register_primitive('memq', (2, 2), _make_member_search('memq', _eq),
+      doc=('Like member but uses eq? for comparison.  R7RS 6.4.'),
+      category=CATEGORY)
+   register_primitive('assoc', (2, 2), _make_assoc_search('assoc', _equal),
+      doc=('(assoc obj alist) returns the first pair in alist whose car is '
+           'equal? to obj, or #f if no such pair exists.  R7RS 6.4.'),
+      category=CATEGORY)
+   register_primitive('assv', (2, 2), _make_assoc_search('assv', _eqv),
+      doc=('Like assoc but uses eqv? for comparison.  R7RS 6.4.'),
+      category=CATEGORY)
+   register_primitive('assq', (2, 2), _make_assoc_search('assq', _eq),
+      doc=('Like assoc but uses eq? for comparison.  R7RS 6.4.'),
+      category=CATEGORY)
+   register_primitive('map', (2, None), _prim_map,
+      doc=('(map proc list1 list2 ...) applies proc element-wise to '
+           'each list in parallel and returns a list of the results.  '
+           'All lists must be the same length.  R7RS 6.10.'),
+      category=CATEGORY)
+   register_primitive('for-each', (2, None), _prim_for_each,
+      doc=('(for-each proc list1 list2 ...) applies proc element-wise '
+           'for effect and returns an unspecified value.  R7RS 6.10.'),
       category=CATEGORY)

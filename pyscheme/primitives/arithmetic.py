@@ -1,5 +1,8 @@
 """Arithmetic primitives: +, -, *, /, abs, quotient, remainder, modulo,
-min, max.
+min, max, gcd, lcm, expt, sqrt, square, floor, ceiling, truncate,
+round, exact?, inexact?, exact, inexact, exact->inexact,
+inexact->exact, exact-integer?, numerator, denominator,
+number->string, string->number.
 
 First-cut numeric tower: INTEGER and REAL only.  Results follow Python's
 own promotion (int + int -> int; anything + float -> float), wrapped back
@@ -7,9 +10,12 @@ into the tagged value.  RATIONAL and COMPLEX support can be layered in
 without changing the API.
 """
 
+import math
+
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
-   is_integer, is_real, as_integer, as_real, make_integer, make_real,
+   is_integer, is_real, is_string, as_integer, as_real, as_string,
+   make_integer, make_real, make_boolean, make_string,
 )
 from pyscheme.Environment import SchemeTypeError
 
@@ -174,6 +180,211 @@ def _prim_max(ctx, env, args, app_node):
    return _wrap(result)
 
 
+def _prim_gcd(ctx, env, args, app_node):
+   if len(args) == 0:
+      return make_integer(0)
+   result = abs(_check_int(args[0], 'gcd', app_node, 1))
+   i = 1
+   while i < len(args):
+      result = math.gcd(result, abs(_check_int(args[i], 'gcd', app_node, i + 1)))
+      i = i + 1
+   return make_integer(result)
+
+
+def _prim_lcm(ctx, env, args, app_node):
+   if len(args) == 0:
+      return make_integer(1)
+   result = abs(_check_int(args[0], 'lcm', app_node, 1))
+   i = 1
+   while i < len(args):
+      v = abs(_check_int(args[i], 'lcm', app_node, i + 1))
+      if result == 0 or v == 0:
+         result = 0
+      else:
+         result = result * v // math.gcd(result, v)
+      i = i + 1
+   return make_integer(result)
+
+
+def _prim_expt(ctx, env, args, app_node):
+   base = _num(args[0], 'expt', app_node, 1)
+   exp  = _num(args[1], 'expt', app_node, 2)
+   if isinstance(base, int) and isinstance(exp, int) and exp >= 0:
+      return make_integer(base ** exp)
+   return _wrap(float(base) ** float(exp))
+
+
+def _prim_sqrt(ctx, env, args, app_node):
+   v = _num(args[0], 'sqrt', app_node, 1)
+   if isinstance(v, int) and v >= 0:
+      r = math.isqrt(v)
+      if r * r == v:
+         return make_integer(r)
+   return make_real(math.sqrt(float(v)))
+
+
+def _prim_square(ctx, env, args, app_node):
+   v = _num(args[0], 'square', app_node, 1)
+   return _wrap(v * v)
+
+
+def _prim_floor(ctx, env, args, app_node):
+   v = _num(args[0], 'floor', app_node, 1)
+   if isinstance(v, int):
+      return make_integer(v)
+   return make_real(math.floor(v))
+
+
+def _prim_ceiling(ctx, env, args, app_node):
+   v = _num(args[0], 'ceiling', app_node, 1)
+   if isinstance(v, int):
+      return make_integer(v)
+   return make_real(math.ceil(v))
+
+
+def _prim_truncate(ctx, env, args, app_node):
+   v = _num(args[0], 'truncate', app_node, 1)
+   if isinstance(v, int):
+      return make_integer(v)
+   return make_real(math.trunc(v))
+
+
+def _prim_round(ctx, env, args, app_node):
+   v = _num(args[0], 'round', app_node, 1)
+   if isinstance(v, int):
+      return make_integer(v)
+   # R7RS specifies banker's rounding (round half to even); Python's round() does this.
+   return make_real(round(v))
+
+
+def _prim_exact_p(ctx, env, args, app_node):
+   return make_boolean(is_integer(args[0]))
+
+
+def _prim_inexact_p(ctx, env, args, app_node):
+   return make_boolean(is_real(args[0]))
+
+
+def _prim_exact(ctx, env, args, app_node):
+   v = args[0]
+   if is_integer(v):
+      return v
+   if is_real(v):
+      f = as_real(v)
+      if f.is_integer():
+         return make_integer(int(f))
+      raise SchemeTypeError(
+         'exact: cannot convert non-integer real to exact', app_node)
+   raise SchemeTypeError(
+      'exact: argument must be a number', app_node)
+
+
+def _prim_inexact(ctx, env, args, app_node):
+   v = args[0]
+   if is_real(v):
+      return v
+   if is_integer(v):
+      return make_real(float(as_integer(v)))
+   raise SchemeTypeError(
+      'inexact: argument must be a number', app_node)
+
+
+def _prim_exact_integer_p(ctx, env, args, app_node):
+   return make_boolean(is_integer(args[0]))
+
+
+def _prim_numerator(ctx, env, args, app_node):
+   v = args[0]
+   if is_integer(v):
+      return v
+   if is_real(v):
+      f = as_real(v)
+      if f.is_integer():
+         return make_real(f)
+   raise SchemeTypeError(
+      'numerator: argument must be an integer or integer-valued real',
+      app_node)
+
+
+def _prim_denominator(ctx, env, args, app_node):
+   v = args[0]
+   if is_integer(v):
+      return make_integer(1)
+   if is_real(v):
+      f = as_real(v)
+      if f.is_integer():
+         return make_real(1.0)
+   raise SchemeTypeError(
+      'denominator: argument must be an integer or integer-valued real',
+      app_node)
+
+
+def _prim_number_to_string(ctx, env, args, app_node):
+   v = args[0]
+   radix = 10
+   if len(args) >= 2:
+      r = args[1]
+      if not is_integer(r):
+         raise SchemeTypeError(
+            'number->string: radix must be an integer', app_node)
+      radix = as_integer(r)
+   if is_integer(v):
+      n = as_integer(v)
+      if radix == 10:
+         return make_string(str(n))
+      if radix == 2:
+         return make_string(bin(n)[2:] if n >= 0 else '-' + bin(-n)[2:])
+      if radix == 8:
+         return make_string(oct(n)[2:] if n >= 0 else '-' + oct(-n)[2:])
+      if radix == 16:
+         return make_string(hex(n)[2:] if n >= 0 else '-' + hex(-n)[2:])
+      raise SchemeTypeError(
+         'number->string: radix must be 2, 8, 10, or 16', app_node)
+   if is_real(v):
+      if radix != 10:
+         raise SchemeTypeError(
+            'number->string: only radix 10 is supported for inexact numbers',
+            app_node)
+      f = as_real(v)
+      if f != f:
+         return make_string('+nan.0')
+      if f == float('inf'):
+         return make_string('+inf.0')
+      if f == float('-inf'):
+         return make_string('-inf.0')
+      s = repr(f)
+      if '.' not in s and 'e' not in s:
+         s = s + '.0'
+      return make_string(s)
+   raise SchemeTypeError(
+      'number->string: argument must be a number', app_node)
+
+
+def _prim_string_to_number(ctx, env, args, app_node):
+   v = args[0]
+   if not is_string(v):
+      raise SchemeTypeError(
+         'string->number: first argument must be a string', app_node)
+   s = as_string(v).strip()
+   radix = 10
+   if len(args) >= 2:
+      r = args[1]
+      if not is_integer(r):
+         raise SchemeTypeError(
+            'string->number: radix must be an integer', app_node)
+      radix = as_integer(r)
+   try:
+      return make_integer(int(s, radix))
+   except (ValueError, TypeError):
+      pass
+   if radix == 10:
+      try:
+         return make_real(float(s))
+      except (ValueError, TypeError):
+         pass
+   return make_boolean(False)
+
+
 def register():
    register_primitive('+', (0, None), _prim_add,
       doc=(
@@ -220,4 +431,65 @@ def register():
       doc=(
          "Return the largest of its numeric arguments.  If any argument is\n"
          "inexact (a REAL), the result is inexact."),
+      category=CATEGORY)
+   register_primitive('gcd', (0, None), _prim_gcd,
+      doc=('Return the greatest common divisor of the integer arguments.  '
+           'With zero arguments, returns 0.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('lcm', (0, None), _prim_lcm,
+      doc=('Return the least common multiple of the integer arguments.  '
+           'With zero arguments, returns 1.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('expt', (2, 2), _prim_expt,
+      doc=('Return base raised to the exponent.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('sqrt', (1, 1), _prim_sqrt,
+      doc=('Return the principal square root of the argument.  Returns an '
+           'exact integer when the argument is a perfect square; otherwise '
+           'a real.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('square', (1, 1), _prim_square,
+      doc='Return (* x x).  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('floor', (1, 1), _prim_floor,
+      doc='Return the largest integer not greater than x.  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('ceiling', (1, 1), _prim_ceiling,
+      doc='Return the smallest integer not less than x.  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('truncate', (1, 1), _prim_truncate,
+      doc='Return the integer part of x (toward zero).  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('round', (1, 1), _prim_round,
+      doc=('Return the integer closest to x; ties go to the nearest even '
+           'integer (banker\'s rounding).  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('exact?', (1, 1), _prim_exact_p,
+      doc='Return #t if obj is an exact number (an integer in our impl).',
+      category=CATEGORY)
+   register_primitive('inexact?', (1, 1), _prim_inexact_p,
+      doc='Return #t if obj is an inexact number (a real in our impl).',
+      category=CATEGORY)
+   register_primitive('exact', (1, 1), _prim_exact,
+      doc=('Convert a number to its exact form.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('inexact', (1, 1), _prim_inexact,
+      doc=('Convert a number to its inexact form.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('exact-integer?', (1, 1), _prim_exact_integer_p,
+      doc='Return #t if obj is an exact integer.  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('numerator', (1, 1), _prim_numerator,
+      doc='Return the numerator of a rational number.  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('denominator', (1, 1), _prim_denominator,
+      doc='Return the denominator of a rational number.  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('number->string', (1, 2), _prim_number_to_string,
+      doc=('(number->string number [radix]) returns a string representation. '
+           'Radix may be 2, 8, 10, or 16; default 10.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('string->number', (1, 2), _prim_string_to_number,
+      doc=('(string->number string [radix]) parses a string; returns the '
+           'number on success, #f on failure.  R7RS 6.2.6.'),
       category=CATEGORY)
