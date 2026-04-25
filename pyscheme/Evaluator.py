@@ -727,16 +727,14 @@ def _try_load_library_file(name_sexpr, ctx):
 
 def _process_import(sets_cons, env, ctx=None):
    """Top-level (import <import-set>...).  Resolves each set and binds
-   every exported name into env.  Imported SyntaxTransformer values are
-   additionally installed in the Expander's macro env so subsequent
-   uses of the imported macro name expand correctly.  When an import
-   set names a library that is not yet registered, this attempts to
-   load it from a .sld file on the SCHEME_LIBRARY_PATH search path.
-   Raises SchemeSyntaxError (positioned) on shape or lookup errors."""
+   every exported name into env.  Macros (SyntaxTransformer values) are
+   bound the same way as runtime values; the Expander's _lookup_macro
+   walks the env chain to find them.  When an import set names a
+   library that is not yet registered, this attempts to load it from
+   a .sld file on the SCHEME_LIBRARY_PATH search path.  Raises
+   SchemeSyntaxError (positioned) on shape or lookup errors."""
    from pyscheme.library import resolve_import_set
    from pyscheme.Parser   import SchemeSyntaxError
-   from pyscheme.Expander import _macro_env
-   from pyscheme.AST      import is_syntax_transformer
    cur = sets_cons
    while is_cons(cur):
       import_set = cur.car
@@ -756,23 +754,18 @@ def _process_import(sets_cons, env, ctx=None):
          else:
             raise SchemeSyntaxError('import: ' + str(e), src_of(cur.car))
       for n in bindings:
-         val = bindings[n]
-         env.bind(n, val)
-         if is_syntax_transformer(val):
-            _macro_env[n] = val
+         env.bind(n, bindings[n])
       cur = cur.cdr
 
 
-def _process_one_lib_decl(decl, lib_env, lib_macro_scope, export_names, ctx):
+def _process_one_lib_decl(decl, lib_env, export_names, ctx):
    """Process a single library declaration in the context of an active
-   _process_define_library call.  Mutates lib_env / lib_macro_scope /
-   export_names in place.  Recursive: include-library-declarations and
-   cond-expand decls call back into this function for the forms they
-   produce."""
+   _process_define_library call.  Mutates lib_env / export_names in place.
+   Recursive: include-library-declarations and cond-expand decls call
+   back into this function for the forms they produce."""
    from pyscheme.library import resolve_import_set
    from pyscheme.Parser   import SchemeSyntaxError, parse
    from pyscheme.Expander import expand, _include_base_dir, _feature_req_matches
-   from pyscheme.AST      import is_syntax_transformer
    if not is_cons(decl) or not is_symbol(decl.car):
       raise SchemeSyntaxError(
          'define-library: declaration must be a list starting with a symbol',
@@ -800,10 +793,7 @@ def _process_one_lib_decl(decl, lib_env, lib_macro_scope, export_names, ctx):
                raise SchemeSyntaxError(
                   'define-library: import: ' + str(e), src_of(import_set))
          for n in bindings:
-            val = bindings[n]
-            lib_env.bind(n, val)
-            if is_syntax_transformer(val):
-               lib_macro_scope[n] = val
+            lib_env.bind(n, bindings[n])
          sets = sets.cdr
       return
 
@@ -860,8 +850,7 @@ def _process_one_lib_decl(decl, lib_env, lib_macro_scope, export_names, ctx):
          f.close()
          inner_forms = parse(source, resolved)
          for inner in inner_forms:
-            _process_one_lib_decl(
-               inner, lib_env, lib_macro_scope, export_names, ctx)
+            _process_one_lib_decl(inner, lib_env, export_names, ctx)
          paths = paths.cdr
       return
 
@@ -882,7 +871,7 @@ def _process_one_lib_decl(decl, lib_env, lib_macro_scope, export_names, ctx):
             cur_inner = body
             while is_cons(cur_inner):
                _process_one_lib_decl(
-                  cur_inner.car, lib_env, lib_macro_scope, export_names, ctx)
+                  cur_inner.car, lib_env, export_names, ctx)
                cur_inner = cur_inner.cdr
             return
       # No clause matched: silently produce no declarations (R7RS).
@@ -897,18 +886,17 @@ def _process_one_lib_decl(decl, lib_env, lib_macro_scope, export_names, ctx):
 
 def _process_define_library(C, ctx):
    """Top-level (define-library <name> <decl>...).  Creates a fresh
-   parentless env, processes decls in order, builds an exports env
-   per the export declarations, and registers under the library's key.
-   Macros declared via define-syntax inside the library's begin body
-   are captured into a per-library macro scope and transferred into
-   lib_env at the end as SyntaxTransformer values, so the export filter
-   exposes them like any other binding; _process_import detects
-   SyntaxTransformer values and also installs them in the macro env."""
+   parentless env, processes decls in order (with the runtime env
+   reference temporarily swapped to lib_env so define-syntax inside
+   the library's begin body installs transformers in lib_env, scoped
+   to this library), builds an exports env per the export declarations,
+   and registers under the library's key.  Macros become regular lib_env
+   bindings, so the export filter exposes them like any other binding."""
    from pyscheme.library import (
       library_name_to_key, library_register,
    )
    from pyscheme.Parser   import SchemeSyntaxError
-   from pyscheme.Expander import _macro_scopes
+   from pyscheme.Expander import _runtime_env_ref
    if not is_cons(C.cdr):
       raise SchemeSyntaxError('define-library: missing library name', src_of(C))
    name_sexpr = C.cdr.car
@@ -920,23 +908,17 @@ def _process_define_library(C, ctx):
 
    lib_env = Environment(parent=None)
    export_names = []          # Python list of (internal, external) pairs
-   # Push a fresh macro scope so define-syntax inside the library's
-   # begin body adds to this scope rather than the global macro env.
-   lib_macro_scope = {}
-   _macro_scopes.append(lib_macro_scope)
+   # Swap the runtime env to lib_env so define-syntax binds transformers
+   # into this library's env rather than into the surrounding env.
+   outer_env = _runtime_env_ref[0]
+   _runtime_env_ref[0] = lib_env
    try:
       d = decls_cons
       while is_cons(d):
-         _process_one_lib_decl(
-            d.car, lib_env, lib_macro_scope, export_names, ctx)
+         _process_one_lib_decl(d.car, lib_env, export_names, ctx)
          d = d.cdr
    finally:
-      _macro_scopes.pop()
-
-   # Macros captured during processing become regular lib_env bindings
-   # so the export filter handles them uniformly with runtime values.
-   for nm in lib_macro_scope:
-      lib_env.bind(nm, lib_macro_scope[nm])
+      _runtime_env_ref[0] = outer_env
 
    # Build exports env: copy each (internal, external) entry out of
    # lib_env; missing names are hard errors.

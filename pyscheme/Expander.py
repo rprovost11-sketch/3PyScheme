@@ -43,26 +43,18 @@ from pyscheme.AST import (
 from pyscheme.syntax_rules import hygiene_gensym
 
 
-# Module-level expand-time macro environment.  Shared across REPL top-level
-# calls so (define-syntax name ...) persists between inputs.  Maps name ->
-# SyntaxTransformer.  let-syntax / letrec-syntax push / pop a scope by
-# overlaying with a fresh dict that shadows outer bindings.
-_macro_env = {}
-
-# Stack of active local macro scopes (innermost last).  Empty at top level.
-# Each entry is a dict.  Lookup walks from innermost outward, falling back
-# to the module-level _macro_env.
-_macro_scopes = []
-
 # Runtime environment reference - the Interpreter installs this before
-# expansion so hygiene can look up free identifiers (like 'list' or '+')
-# in the actual runtime bindings.  None when no interpreter is wiring us.
+# expansion so define-syntax can bind transformers into the runtime env
+# (matching the C++ reference's design: macros live in the same env as
+# values, distinguished by their SyntaxTransformer tag).  let-syntax /
+# letrec-syntax temporarily swap this to a child env for their body.
+# None when no interpreter has wired us up yet.
 _runtime_env_ref = [None]
 
 
 def set_runtime_env(env):
-   """Install a reference to the current runtime env; used by hygiene to
-   resolve free identifiers in macro templates to their runtime values."""
+   """Install a reference to the current runtime env; used by define-syntax
+   to install transformers and by hygiene to resolve free identifiers."""
    _runtime_env_ref[0] = env
 
 
@@ -75,33 +67,37 @@ _MAX_EXPAND_ITER = 200
 
 
 def _lookup_macro(name):
-   """Return the SyntaxTransformer bound to `name`, or None."""
-   i = len(_macro_scopes) - 1
-   while i >= 0:
-      if name in _macro_scopes[i]:
-         return _macro_scopes[i][name]
-      i = i - 1
-   return _macro_env.get(name)
+   """Return the SyntaxTransformer bound to `name` in the current runtime
+   env (walking the env's parent chain), or None."""
+   from pyscheme.Environment import SchemeUnboundError
+   env = _runtime_env_ref[0]
+   if env is None:
+      return None
+   try:
+      val = env.lookup(name)
+   except SchemeUnboundError:
+      return None
+   if is_syntax_transformer(val):
+      return val
+   return None
 
 
 def _current_macro_env():
-   """Snapshot the current macro env as a flat dict for the transformer's
-   def_env field.  Innermost scopes shadow outer; module-level last.  Also
-   folds in live runtime env bindings so hygiene can resolve free ids to
-   their definition-time runtime values (e.g. `list` -> the list primitive).
-   Macro bindings win over runtime bindings when both are present."""
+   """Snapshot the current runtime env as a flat dict for the transformer's
+   def_env field.  Inner scopes shadow outer (env.lookup walks the parent
+   chain).  Used by hygiene to resolve free identifiers in macro templates."""
    merged = {}
-   rt = _runtime_env_ref[0]
-   if rt is not None:
-      for k in rt._bindings:
-         merged[k] = rt._bindings[k]
-   for k in _macro_env:
-      merged[k] = _macro_env[k]
-   i = 0
-   while i < len(_macro_scopes):
-      for k in _macro_scopes[i]:
-         merged[k] = _macro_scopes[i][k]
-      i = i + 1
+   env = _runtime_env_ref[0]
+   chain = []
+   while env is not None:
+      chain.append(env)
+      env = env._parent
+   # Walk outermost to innermost so inner bindings win.
+   i = len(chain) - 1
+   while i >= 0:
+      for k in chain[i]._bindings:
+         merged[k] = chain[i]._bindings[k]
+      i = i - 1
    return merged
 
 
@@ -149,7 +145,8 @@ def expand(sexpr):
 
 def _expand_define_syntax(sexpr):
    # (define-syntax <name> (syntax-rules ...))
-   # Install the transformer in the outermost macro env.  Emit a sentinel
+   # Install the transformer in the current runtime env so the same lookup
+   # path that finds runtime values also finds this macro.  Emit a sentinel
    # that evaluates to #<void> so the pipeline after us stays simple.
    from pyscheme.Parser import SchemeSyntaxError
    from pyscheme.syntax_rules import parse_syntax_rules
@@ -168,20 +165,23 @@ def _expand_define_syntax(sexpr):
          'define-syntax: transformer must be (syntax-rules ...)',
          src_of(tr_expr))
    t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), macro_name)
-   # If there's already a top-level scope, install there so it persists
-   # across REPL calls.  Otherwise install at the module level.
-   if _macro_scopes:
-      _macro_scopes[len(_macro_scopes) - 1][macro_name] = t
-   else:
-      _macro_env[macro_name] = t
+   env = _runtime_env_ref[0]
+   if env is not None:
+      env.bind(macro_name, t)
    return VOID_VALUE
 
 
 def _expand_let_syntax(sexpr, is_letrec):
    # (let-syntax ((name (syntax-rules ...))...) body...)
-   # Push a fresh scope, install each transformer, expand the body, pop.
+   # Build a fresh child env, bind each transformer in it, swap the active
+   # runtime env to the child while expanding the body so define-syntax /
+   # macro lookup inside the body see the local transformers.  Restore on
+   # exit.  After expansion, the body has been substituted via templates
+   # and no longer references the transformers, so the temporary child
+   # env can be dropped without affecting the result.
    from pyscheme.Parser import SchemeSyntaxError
    from pyscheme.syntax_rules import parse_syntax_rules
+   from pyscheme.Environment import Environment
    if not is_cons(sexpr.cdr):
       raise SchemeSyntaxError(
          'let-syntax: malformed', src_of(sexpr))
@@ -190,18 +190,17 @@ def _expand_let_syntax(sexpr, is_letrec):
    if not is_cons(body):
       raise SchemeSyntaxError(
          'let-syntax: empty body', src_of(sexpr))
-   scope = {}
-   # For letrec-syntax: def_env must include sibling macros in this scope.
-   # For let-syntax:    def_env is the outer scope.
-   _macro_scopes.append(scope)
+   outer_env = _runtime_env_ref[0]
+   if outer_env is None:
+      child_env = Environment()
+   else:
+      child_env = Environment(parent=outer_env)
+   # For letrec-syntax, transformer's def_env includes siblings (we
+   # temporarily swap to child_env BEFORE parsing so siblings get folded
+   # in).  For let-syntax, def_env is the outer env.
+   if is_letrec:
+      _runtime_env_ref[0] = child_env
    try:
-      if is_letrec:
-         outer_def_env = _current_macro_env()
-      else:
-         # Temporarily pop our scope so outer lookup doesn't see siblings.
-         _macro_scopes.pop()
-         outer_def_env = _current_macro_env()
-         _macro_scopes.append(scope)
       cur = bindings
       while is_cons(cur):
          b = cur.car
@@ -215,17 +214,12 @@ def _expand_let_syntax(sexpr, is_letrec):
             raise SchemeSyntaxError(
                'let-syntax: transformer must be (syntax-rules ...)',
                src_of(tr_expr))
-         # For letrec: we pass the about-to-be-populated scope so the
-         # transformer sees siblings defined later in the same binding list.
-         # For let-syntax: we pass the outer def_env (no siblings).
-         if is_letrec:
-            def_env_for_this = _current_macro_env()
-         else:
-            def_env_for_this = outer_def_env
-         t = parse_syntax_rules(tr_expr.cdr, def_env_for_this, bname)
-         scope[bname] = t
+         t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), bname)
+         child_env.bind(bname, t)
          cur = cur.cdr
-      # Expand the body in this scope.  Wrap multi-form body in (begin ...).
+      # Now expand the body with the child env active (for both let and
+      # letrec variants).
+      _runtime_env_ref[0] = child_env
       src = sexpr.src
       if is_cons(body.cdr):
          body_items = [make_symbol('begin', src)]
@@ -238,7 +232,7 @@ def _expand_let_syntax(sexpr, is_letrec):
          wrapped = body.car
       return expand(wrapped)
    finally:
-      _macro_scopes.pop()
+      _runtime_env_ref[0] = outer_env
 
 
 def _expand_list(cell):
