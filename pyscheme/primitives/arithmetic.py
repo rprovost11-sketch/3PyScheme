@@ -15,7 +15,7 @@ import math
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
    is_integer, is_real, is_string, as_integer, as_real, as_string,
-   make_integer, make_real, make_boolean, make_string,
+   make_integer, make_real, make_boolean, make_string, make_multi_values,
 )
 from pyscheme.Environment import SchemeTypeError
 
@@ -360,6 +360,95 @@ def _prim_number_to_string(ctx, env, args, app_node):
       'number->string: argument must be a number', app_node)
 
 
+def _floor_div(n, d):
+   """Floor division with R7RS sign convention: result has the sign of d.
+   Python's // is floor division for ints, matching Scheme floor/."""
+   if d == 0:
+      return None
+   return n // d
+
+
+def _floor_mod(n, d):
+   if d == 0:
+      return None
+   return n % d
+
+
+def _prim_floor_quotient(ctx, env, args, app_node):
+   n = _check_int(args[0], 'floor-quotient', app_node, 1)
+   d = _check_int(args[1], 'floor-quotient', app_node, 2)
+   if d == 0:
+      raise SchemeTypeError(
+         'floor-quotient: divide by zero', app_node)
+   return make_integer(n // d)
+
+
+def _prim_floor_remainder(ctx, env, args, app_node):
+   n = _check_int(args[0], 'floor-remainder', app_node, 1)
+   d = _check_int(args[1], 'floor-remainder', app_node, 2)
+   if d == 0:
+      raise SchemeTypeError(
+         'floor-remainder: divide by zero', app_node)
+   return make_integer(n % d)
+
+
+def _prim_floor_div(ctx, env, args, app_node):
+   n = _check_int(args[0], 'floor/', app_node, 1)
+   d = _check_int(args[1], 'floor/', app_node, 2)
+   if d == 0:
+      raise SchemeTypeError('floor/: divide by zero', app_node)
+   return make_multi_values([make_integer(n // d), make_integer(n % d)])
+
+
+def _prim_truncate_quotient(ctx, env, args, app_node):
+   n = _check_int(args[0], 'truncate-quotient', app_node, 1)
+   d = _check_int(args[1], 'truncate-quotient', app_node, 2)
+   if d == 0:
+      raise SchemeTypeError(
+         'truncate-quotient: divide by zero', app_node)
+   return make_integer(_trunc_div(n, d))
+
+
+def _prim_truncate_remainder(ctx, env, args, app_node):
+   n = _check_int(args[0], 'truncate-remainder', app_node, 1)
+   d = _check_int(args[1], 'truncate-remainder', app_node, 2)
+   if d == 0:
+      raise SchemeTypeError(
+         'truncate-remainder: divide by zero', app_node)
+   return make_integer(n - _trunc_div(n, d) * d)
+
+
+def _prim_truncate_div(ctx, env, args, app_node):
+   n = _check_int(args[0], 'truncate/', app_node, 1)
+   d = _check_int(args[1], 'truncate/', app_node, 2)
+   if d == 0:
+      raise SchemeTypeError('truncate/: divide by zero', app_node)
+   q = _trunc_div(n, d)
+   r = n - q * d
+   return make_multi_values([make_integer(q), make_integer(r)])
+
+
+def _prim_exact_integer_sqrt(ctx, env, args, app_node):
+   n = _check_int(args[0], 'exact-integer-sqrt', app_node, 1)
+   if n < 0:
+      raise SchemeTypeError(
+         'exact-integer-sqrt: argument must be non-negative', app_node)
+   r = math.isqrt(n)
+   return make_multi_values([make_integer(r), make_integer(n - r * r)])
+
+
+def _prim_features(ctx, env, args, app_node):
+   from pyscheme.AST import alloc_cons, NIL_VALUE, make_symbol
+   from pyscheme.Expander import _FEATURES
+   names = list(_FEATURES.keys())
+   result = NIL_VALUE
+   i = len(names) - 1
+   while i >= 0:
+      result = alloc_cons(make_symbol(names[i]), result, None)
+      i = i - 1
+   return result
+
+
 def _prim_string_to_number(ctx, env, args, app_node):
    v = args[0]
    if not is_string(v):
@@ -492,4 +581,34 @@ def register():
    register_primitive('string->number', (1, 2), _prim_string_to_number,
       doc=('(string->number string [radix]) parses a string; returns the '
            'number on success, #f on failure.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('floor-quotient', (2, 2), _prim_floor_quotient,
+      doc=('Integer floor division.  Result has the sign of the divisor.  '
+           'R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('floor-remainder', (2, 2), _prim_floor_remainder,
+      doc=('Integer floor remainder.  Result has the sign of the divisor.  '
+           'R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('floor/', (2, 2), _prim_floor_div,
+      doc=('(floor/ n d) returns two values: the floor quotient and '
+           'remainder.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('truncate-quotient', (2, 2), _prim_truncate_quotient,
+      doc=('Integer truncate division (toward zero).  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('truncate-remainder', (2, 2), _prim_truncate_remainder,
+      doc=('Integer truncate remainder.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('truncate/', (2, 2), _prim_truncate_div,
+      doc=('(truncate/ n d) returns two values: the truncate quotient '
+           'and remainder.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('exact-integer-sqrt', (1, 1), _prim_exact_integer_sqrt,
+      doc=('(exact-integer-sqrt n) returns two values: the integer floor '
+           'of sqrt(n) and the difference n - r*r.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('features', (0, 0), _prim_features,
+      doc=('Return a list of feature identifiers supported by this '
+           'implementation.  R7RS 5.6.2.'),
       category=CATEGORY)

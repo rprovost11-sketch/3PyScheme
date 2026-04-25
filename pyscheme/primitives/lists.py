@@ -1,11 +1,14 @@
 """List and pair primitives: cons, car, cdr, pair?, null?, list,
 append, length, reverse, list-tail, list-ref, list-copy, list?,
-member / memv / memq, assoc / assv / assq, map, for-each."""
+member / memv / memq, assoc / assv / assq, map, for-each, set-car!,
+set-cdr!, make-list, list-set!, plus the caar/cadr/cdar/cddr family."""
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
-   alloc_cons, NIL_VALUE, is_cons, is_nil, is_integer, as_integer,
-   src_of, make_boolean, make_integer, eqv_atom,
+   alloc_cons, NIL_VALUE, VOID_VALUE,
+   is_cons, is_nil, is_integer, as_integer,
+   src_of, set_car, set_cdr,
+   make_boolean, make_integer, eqv_atom,
 )
 from pyscheme.Environment import SchemeTypeError, SchemeArityError, arity_mismatch_msg
 
@@ -274,6 +277,90 @@ def _prim_for_each(ctx, env, args, app_node):
    return VOID_VALUE
 
 
+def _make_cxr(name, ops):
+   """Build a c..r primitive that walks a chain of car/cdr.  ops is a
+   string of 'a' and 'd' characters: caar -> "aa", cdadr -> "dad".
+   The string reads left-to-right matching the symbol's letters
+   between c and r."""
+   def fn(ctx, env, args, app_node):
+      v = args[0]
+      i = len(ops) - 1
+      while i >= 0:
+         if not is_cons(v):
+            raise SchemeTypeError(
+               '%s: chain hit a non-pair' % name, src_of(app_node))
+         if ops[i] == 'a':
+            v = v.car
+         else:
+            v = v.cdr
+         i = i - 1
+      return v
+   fn.__name__ = '_prim_' + name
+   return fn
+
+
+def _prim_set_car(ctx, env, args, app_node):
+   v = args[0]
+   if not is_cons(v):
+      raise SchemeTypeError(
+         'set-car!: argument must be a pair', src_of(app_node))
+   set_car(v, args[1])
+   return VOID_VALUE
+
+
+def _prim_set_cdr(ctx, env, args, app_node):
+   v = args[0]
+   if not is_cons(v):
+      raise SchemeTypeError(
+         'set-cdr!: argument must be a pair', src_of(app_node))
+   set_cdr(v, args[1])
+   return VOID_VALUE
+
+
+def _prim_make_list(ctx, env, args, app_node):
+   if not is_integer(args[0]):
+      raise SchemeTypeError(
+         'make-list: length must be an integer', src_of(app_node))
+   k = as_integer(args[0])
+   if k < 0:
+      raise SchemeTypeError(
+         'make-list: length must be non-negative', src_of(app_node))
+   fill = VOID_VALUE
+   if len(args) >= 2:
+      fill = args[1]
+   result = NIL_VALUE
+   i = 0
+   while i < k:
+      result = alloc_cons(fill, result, None)
+      i = i + 1
+   return result
+
+
+def _prim_list_set(ctx, env, args, app_node):
+   v   = args[0]
+   k_v = args[1]
+   if not is_integer(k_v):
+      raise SchemeTypeError(
+         'list-set!: index must be an integer', src_of(app_node))
+   k = as_integer(k_v)
+   if k < 0:
+      raise SchemeTypeError(
+         'list-set!: index must be non-negative', src_of(app_node))
+   cur = v
+   i = 0
+   while i < k:
+      if not is_cons(cur):
+         raise SchemeTypeError(
+            'list-set!: index out of range', src_of(app_node))
+      cur = cur.cdr
+      i = i + 1
+   if not is_cons(cur):
+      raise SchemeTypeError(
+         'list-set!: index out of range', src_of(app_node))
+   set_car(cur, args[2])
+   return VOID_VALUE
+
+
 def _prim_append(ctx, env, args, app_node):
    # (append list1 list2 ... listN) - all but the last must be proper
    # lists; the last may be any value and forms the final cdr.
@@ -388,3 +475,36 @@ def register():
       doc=('(for-each proc list1 list2 ...) applies proc element-wise '
            'for effect and returns an unspecified value.  R7RS 6.10.'),
       category=CATEGORY)
+   register_primitive('set-car!', (2, 2), _prim_set_car,
+      doc='(set-car! pair obj) replaces the car of pair with obj.  R7RS 6.4.',
+      category=CATEGORY)
+   register_primitive('set-cdr!', (2, 2), _prim_set_cdr,
+      doc='(set-cdr! pair obj) replaces the cdr of pair with obj.  R7RS 6.4.',
+      category=CATEGORY)
+   register_primitive('make-list', (1, 2), _prim_make_list,
+      doc=('(make-list k [fill]) returns a list of length k with each '
+           'element fill (default unspecified).  R7RS 6.4.'),
+      category=CATEGORY)
+   register_primitive('list-set!', (3, 3), _prim_list_set,
+      doc='(list-set! list k obj) replaces the kth element with obj.  R7RS 6.4.',
+      category=CATEGORY)
+   # car/cdr family - generated from string descriptions.  R7RS 6.4 base
+   # specifies caar / cadr / cdar / cddr; (scheme cxr) extends with the
+   # full 28-name family up to 4 deep.  We register the lot here since
+   # they are tiny and the (scheme cxr) library export filter picks up
+   # whichever names are bound.
+   _CXR_FAMILY = [
+      'caar',  'cadr',  'cdar',  'cddr',
+      'caaar', 'caadr', 'cadar', 'caddr',
+      'cdaar', 'cdadr', 'cddar', 'cdddr',
+      'caaaar','caaadr','caadar','caaddr',
+      'cadaar','cadadr','caddar','cadddr',
+      'cdaaar','cdaadr','cdadar','cdaddr',
+      'cddaar','cddadr','cdddar','cddddr',
+   ]
+   for _n in _CXR_FAMILY:
+      _ops = _n[1:-1]   # strip leading 'c' and trailing 'r'
+      register_primitive(_n, (1, 1), _make_cxr(_n, _ops),
+         doc=('(' + _n + ' x) is shorthand for the corresponding car/cdr '
+              'composition.  R7RS 6.4 / (scheme cxr).'),
+         category=CATEGORY)
