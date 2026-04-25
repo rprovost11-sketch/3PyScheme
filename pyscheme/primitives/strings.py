@@ -247,6 +247,23 @@ def _prim_string_map(ctx, env, args, app_node):
    return make_string(''.join(chars))
 
 
+def _prim_string_set_bang(ctx, env, args, app_node):
+   raise SchemeTypeError(
+      'string-set!: pyScheme strings are immutable - this primitive is '
+      'present so (help string-set!) works, but cannot mutate.  R7RS '
+      'allows impls to make strings immutable.', src_of(app_node))
+
+
+def _prim_string_fill_bang(ctx, env, args, app_node):
+   raise SchemeTypeError(
+      'string-fill!: pyScheme strings are immutable.', src_of(app_node))
+
+
+def _prim_string_copy_bang(ctx, env, args, app_node):
+   raise SchemeTypeError(
+      'string-copy!: pyScheme strings are immutable.', src_of(app_node))
+
+
 def _prim_string_for_each(ctx, env, args, app_node):
    from pyscheme.primitives.meta import _apply_scheme_proc
    from pyscheme.AST              import VOID_VALUE
@@ -336,4 +353,20 @@ def register():
    register_primitive('string-for-each', (2, None), _prim_string_for_each,
       doc=('(string-for-each proc str1 str2 ...) applies proc element-'
            'wise for effect; returns an unspecified value.  R7RS 6.7.'),
+      category=CATEGORY)
+   # The following three are part of R7RS 6.7 (mutable strings) but
+   # pyScheme strings wrap an immutable Python str.  We register
+   # erroring stubs so these names exist (for help, for portability
+   # checks via procedure?) rather than producing a confusing
+   # "unbound variable" error at use sites.
+   register_primitive('string-set!', (3, 3), _prim_string_set_bang,
+      doc=('(string-set! string k char) - pyScheme strings are immutable, '
+           'so this primitive raises an error if invoked.  R7RS 6.7 '
+           'allows immutable string implementations.'),
+      category=CATEGORY)
+   register_primitive('string-fill!', (2, 4), _prim_string_fill_bang,
+      doc='(string-fill! string char [start [end]]) - immutable in pyScheme.',
+      category=CATEGORY)
+   register_primitive('string-copy!', (3, 5), _prim_string_copy_bang,
+      doc='(string-copy! to at from [start [end]]) - immutable in pyScheme.',
       category=CATEGORY)
