@@ -680,31 +680,235 @@ def cek_eval(expr, env, ctx=None):
       raise
 
 
-def _process_import(sets_cons, env):
+def _library_load_path():
+   """Return the search path for .sld auto-discovery.  SCHEME_LIBRARY_PATH
+   environment variable is split on os.pathsep (':' on Unix, ';' on
+   Windows); the current working directory is always prepended so a
+   library file in cwd is found by default."""
+   import os
+   path_var = os.environ.get('SCHEME_LIBRARY_PATH', '')
+   parts = [p for p in path_var.split(os.pathsep) if p]
+   return ['.'] + parts
+
+
+def _try_load_library_file(name_sexpr, ctx):
+   """Try to find name_sexpr as a .sld file under the load path and
+   load it; the file is expected to contain a top-level (define-library
+   ...) form that registers the library.  Returns True if the library
+   ended up registered, False otherwise.  No exceptions on file-not-
+   found; an unknown library remains unresolvable."""
+   import os
+   from pyscheme.library import library_name_to_key, library_registered_p
+   from pyscheme.Parser   import parse
+   try:
+      key = library_name_to_key(name_sexpr)
+   except ValueError:
+      return False
+   if library_registered_p(key):
+      return True
+   parts = key.split('.')
+   relative = os.path.join(*parts) + '.sld'
+   for base in _library_load_path():
+      candidate = os.path.join(base, relative) if base else relative
+      try:
+         f = open(candidate, 'r')
+      except FileNotFoundError:
+         continue
+      source = f.read()
+      f.close()
+      forms = parse(source, candidate)
+      for form in forms:
+         from pyscheme.Expander import expand
+         cek_eval(expand(form), Environment(parent=None), ctx)
+      if library_registered_p(key):
+         return True
+   return False
+
+
+def _process_import(sets_cons, env, ctx=None):
    """Top-level (import <import-set>...).  Resolves each set and binds
-   every exported name into env.  Raises SchemeSyntaxError (positioned)
-   on shape or lookup errors."""
+   every exported name into env.  Imported SyntaxTransformer values are
+   additionally installed in the Expander's macro env so subsequent
+   uses of the imported macro name expand correctly.  When an import
+   set names a library that is not yet registered, this attempts to
+   load it from a .sld file on the SCHEME_LIBRARY_PATH search path.
+   Raises SchemeSyntaxError (positioned) on shape or lookup errors."""
    from pyscheme.library import resolve_import_set
-   from pyscheme.Parser import SchemeSyntaxError
+   from pyscheme.Parser   import SchemeSyntaxError
+   from pyscheme.Expander import _macro_env
+   from pyscheme.AST      import is_syntax_transformer
    cur = sets_cons
    while is_cons(cur):
+      import_set = cur.car
       try:
-         bindings = resolve_import_set(cur.car)
+         bindings = resolve_import_set(import_set)
       except ValueError as e:
-         raise SchemeSyntaxError('import: ' + str(e), src_of(cur.car))
+         # Try auto-discovery: if the import-set is a bare library name,
+         # look for an .sld file on the load path.
+         loaded = False
+         if is_cons(import_set) and ctx is not None:
+            loaded = _try_load_library_file(import_set, ctx)
+         if loaded:
+            try:
+               bindings = resolve_import_set(import_set)
+            except ValueError as e2:
+               raise SchemeSyntaxError('import: ' + str(e2), src_of(cur.car))
+         else:
+            raise SchemeSyntaxError('import: ' + str(e), src_of(cur.car))
       for n in bindings:
-         env.bind(n, bindings[n])
+         val = bindings[n]
+         env.bind(n, val)
+         if is_syntax_transformer(val):
+            _macro_env[n] = val
       cur = cur.cdr
+
+
+def _process_one_lib_decl(decl, lib_env, lib_macro_scope, export_names, ctx):
+   """Process a single library declaration in the context of an active
+   _process_define_library call.  Mutates lib_env / lib_macro_scope /
+   export_names in place.  Recursive: include-library-declarations and
+   cond-expand decls call back into this function for the forms they
+   produce."""
+   from pyscheme.library import resolve_import_set
+   from pyscheme.Parser   import SchemeSyntaxError, parse
+   from pyscheme.Expander import expand, _include_base_dir, _feature_req_matches
+   from pyscheme.AST      import is_syntax_transformer
+   if not is_cons(decl) or not is_symbol(decl.car):
+      raise SchemeSyntaxError(
+         'define-library: declaration must be a list starting with a symbol',
+         src_of(decl))
+   dsym  = as_symbol(decl.car)
+   dbody = decl.cdr
+
+   if dsym == 'import':
+      sets = dbody
+      while is_cons(sets):
+         import_set = sets.car
+         try:
+            bindings = resolve_import_set(import_set)
+         except ValueError as e:
+            loaded = False
+            if is_cons(import_set):
+               loaded = _try_load_library_file(import_set, ctx)
+            if loaded:
+               try:
+                  bindings = resolve_import_set(import_set)
+               except ValueError as e2:
+                  raise SchemeSyntaxError(
+                     'define-library: import: ' + str(e2), src_of(import_set))
+            else:
+               raise SchemeSyntaxError(
+                  'define-library: import: ' + str(e), src_of(import_set))
+         for n in bindings:
+            val = bindings[n]
+            lib_env.bind(n, val)
+            if is_syntax_transformer(val):
+               lib_macro_scope[n] = val
+         sets = sets.cdr
+      return
+
+   if dsym == 'export':
+      specs = dbody
+      while is_cons(specs):
+         spec = specs.car
+         specs = specs.cdr
+         if is_symbol(spec):
+            nm = as_symbol(spec)
+            export_names.append((nm, nm))
+         elif (is_cons(spec) and is_symbol(spec.car)
+               and as_symbol(spec.car) == 'rename'):
+            r = spec.cdr
+            if (not is_cons(r) or not is_symbol(r.car)
+                  or not is_cons(r.cdr) or not is_symbol(r.cdr.car)):
+               raise SchemeSyntaxError(
+                  'define-library: malformed export rename',
+                  src_of(spec))
+            export_names.append((as_symbol(r.car), as_symbol(r.cdr.car)))
+         else:
+            raise SchemeSyntaxError(
+               'define-library: malformed export spec', src_of(spec))
+      return
+
+   if dsym == 'begin':
+      forms = dbody
+      while is_cons(forms):
+         cek_eval(expand(forms.car), lib_env, ctx)
+         forms = forms.cdr
+      return
+
+   if dsym == 'include-library-declarations':
+      # (include-library-declarations <filename>...) - read each file,
+      # parse, and process its top-level forms as library declarations.
+      import os
+      base_dir = _include_base_dir(src_of(decl))
+      paths = dbody
+      while is_cons(paths):
+         path_val = paths.car
+         if not is_string(path_val):
+            raise SchemeSyntaxError(
+               'include-library-declarations: filename must be a string',
+               src_of(path_val))
+         requested = as_string(path_val)
+         resolved  = os.path.join(base_dir, requested) if base_dir else requested
+         try:
+            f = open(resolved, 'r')
+         except FileNotFoundError:
+            raise SchemeSyntaxError(
+               'include-library-declarations: file not found: ' + resolved,
+               src_of(decl))
+         source = f.read()
+         f.close()
+         inner_forms = parse(source, resolved)
+         for inner in inner_forms:
+            _process_one_lib_decl(
+               inner, lib_env, lib_macro_scope, export_names, ctx)
+         paths = paths.cdr
+      return
+
+   if dsym == 'cond-expand':
+      # (cond-expand <clause>...).  Each clause is (<feature-req> <decl>...)
+      # or (else <decl>...).  Pick the first matching clause and process
+      # its declarations recursively.
+      cur_clause = dbody
+      while is_cons(cur_clause):
+         clause = cur_clause.car
+         cur_clause = cur_clause.cdr
+         if not is_cons(clause):
+            raise SchemeSyntaxError(
+               'cond-expand: clause must be a list', src_of(clause))
+         req = clause.car
+         body = clause.cdr
+         if _feature_req_matches(req):
+            cur_inner = body
+            while is_cons(cur_inner):
+               _process_one_lib_decl(
+                  cur_inner.car, lib_env, lib_macro_scope, export_names, ctx)
+               cur_inner = cur_inner.cdr
+            return
+      # No clause matched: silently produce no declarations (R7RS).
+      return
+
+   # Unknown declaration keyword: expand and evaluate whole decl in
+   # lib_env.  Covers stray (define ...) forms or other top-level
+   # shapes; the expand step also routes define-syntax through the
+   # active per-library macro scope.
+   cek_eval(expand(decl), lib_env, ctx)
 
 
 def _process_define_library(C, ctx):
    """Top-level (define-library <name> <decl>...).  Creates a fresh
    parentless env, processes decls in order, builds an exports env
-   per the export declarations, and registers under the library's key."""
+   per the export declarations, and registers under the library's key.
+   Macros declared via define-syntax inside the library's begin body
+   are captured into a per-library macro scope and transferred into
+   lib_env at the end as SyntaxTransformer values, so the export filter
+   exposes them like any other binding; _process_import detects
+   SyntaxTransformer values and also installs them in the macro env."""
    from pyscheme.library import (
-      library_name_to_key, library_register, resolve_import_set,
+      library_name_to_key, library_register,
    )
-   from pyscheme.Parser import SchemeSyntaxError
+   from pyscheme.Parser   import SchemeSyntaxError
+   from pyscheme.Expander import _macro_scopes
    if not is_cons(C.cdr):
       raise SchemeSyntaxError('define-library: missing library name', src_of(C))
    name_sexpr = C.cdr.car
@@ -716,63 +920,23 @@ def _process_define_library(C, ctx):
 
    lib_env = Environment(parent=None)
    export_names = []          # Python list of (internal, external) pairs
-   d = decls_cons
-   while is_cons(d):
-      decl = d.car
-      d = d.cdr
-      if not is_cons(decl) or not is_symbol(decl.car):
-         raise SchemeSyntaxError(
-            'define-library: declaration must be a list starting with a symbol',
-            src_of(decl))
-      dsym = as_symbol(decl.car)
-      dbody = decl.cdr
+   # Push a fresh macro scope so define-syntax inside the library's
+   # begin body adds to this scope rather than the global macro env.
+   lib_macro_scope = {}
+   _macro_scopes.append(lib_macro_scope)
+   try:
+      d = decls_cons
+      while is_cons(d):
+         _process_one_lib_decl(
+            d.car, lib_env, lib_macro_scope, export_names, ctx)
+         d = d.cdr
+   finally:
+      _macro_scopes.pop()
 
-      if dsym == 'import':
-         sets = dbody
-         while is_cons(sets):
-            try:
-               bindings = resolve_import_set(sets.car)
-            except ValueError as e:
-               raise SchemeSyntaxError(
-                  'define-library: import: ' + str(e), src_of(sets.car))
-            for n in bindings:
-               lib_env.bind(n, bindings[n])
-            sets = sets.cdr
-         continue
-
-      if dsym == 'export':
-         specs = dbody
-         while is_cons(specs):
-            spec = specs.car
-            specs = specs.cdr
-            if is_symbol(spec):
-               nm = as_symbol(spec)
-               export_names.append((nm, nm))
-            elif (is_cons(spec) and is_symbol(spec.car)
-                  and as_symbol(spec.car) == 'rename'):
-               r = spec.cdr
-               if (not is_cons(r) or not is_symbol(r.car)
-                     or not is_cons(r.cdr) or not is_symbol(r.cdr.car)):
-                  raise SchemeSyntaxError(
-                     'define-library: malformed export rename',
-                     src_of(spec))
-               export_names.append((as_symbol(r.car), as_symbol(r.cdr.car)))
-            else:
-               raise SchemeSyntaxError(
-                  'define-library: malformed export spec', src_of(spec))
-         continue
-
-      if dsym == 'begin':
-         forms = dbody
-         while is_cons(forms):
-            cek_eval(forms.car, lib_env, ctx)
-            forms = forms.cdr
-         continue
-
-      # Unknown declaration keyword: evaluate whole decl in lib_env.
-      # Covers stray (define ...) forms the expander left after stripping
-      # a singleton begin, or other top-level shapes.
-      cek_eval(decl, lib_env, ctx)
+   # Macros captured during processing become regular lib_env bindings
+   # so the export filter handles them uniformly with runtime values.
+   for nm in lib_macro_scope:
+      lib_env.bind(nm, lib_macro_scope[nm])
 
    # Build exports env: copy each (internal, external) entry out of
    # lib_env; missing names are hard errors.
@@ -786,6 +950,7 @@ def _process_define_library(C, ctx):
             src_of(C))
       exports_env.bind(external, lib_env._bindings[internal])
       i = i + 1
+   exports_env.freeze()
    library_register(key, exports_env)
 
 
@@ -867,7 +1032,7 @@ def _cek_loop(expr, env, ctx):
                      if name == 'import':
                         # (import <import-set>...) - resolve each set and bind
                         # each exported name into the current env.  Returns VOID.
-                        _process_import(C.cdr, E)
+                        _process_import(C.cdr, E, ctx)
                         V = VOID_VALUE
                         break
 
@@ -1998,8 +2163,10 @@ if __name__ == '__main__':
          self.ctx        = ctx
 
    def fresh_state():
+      from pyscheme.library import register_standard_libraries
       env = Environment()
       install_primitives(env)
+      register_standard_libraries(env)
       static_env = dict(PRIMITIVE_ARITIES)
       ctx = Context()
       return TestState(env, static_env, ctx)
@@ -2063,6 +2230,33 @@ if __name__ == '__main__':
       print("[FAIL] %r: expected %s" % (source, expected_cls.__name__))
       n_fail = n_fail + 1
       i = i + 1
+
+   # -------- .sld auto-discovery (cat 6 item 4) --------
+   # Set SCHEME_LIBRARY_PATH temporarily so an unregistered library is
+   # found via testing/sld-test/lib4.sld.  Verifies that import auto-
+   # loads the .sld file and the imported procedure works.
+   import os
+   _saved_lp = os.environ.get('SCHEME_LIBRARY_PATH')
+   os.environ['SCHEME_LIBRARY_PATH'] = 'testing/sld-test'
+   try:
+      ts = fresh_state()
+      result = _eval_source(
+         '(import (lib4)) (greet)', ts.env, ts.static_env, ts.ctx)
+      if _to_text(result) == 'auto-discovered':
+         print("[ OK ] auto-discover lib4.sld via SCHEME_LIBRARY_PATH")
+         n_pass = n_pass + 1
+      else:
+         print("[FAIL] auto-discover lib4.sld: got %r, expected 'auto-discovered'"
+               % _to_text(result))
+         n_fail = n_fail + 1
+   except Exception as e:
+      print("[FAIL] auto-discover lib4.sld: %s: %s" % (type(e).__name__, e))
+      n_fail = n_fail + 1
+   finally:
+      if _saved_lp is None:
+         del os.environ['SCHEME_LIBRARY_PATH']
+      else:
+         os.environ['SCHEME_LIBRARY_PATH'] = _saved_lp
 
    print()
    print("%d passed, %d failed" % (n_pass, n_fail))

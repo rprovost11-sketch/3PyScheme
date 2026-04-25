@@ -12,3 +12,6 @@ testing/runs/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Local Claude Code settings (per-clone)
+.claude/

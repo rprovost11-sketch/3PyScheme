@@ -1243,36 +1243,13 @@ def _expand_guard(sexpr):
 
 
 def _expand_define_library(sexpr):
-   # (define-library <name> <decl>...) has its own structure.  Only the
-   # forms inside (begin ...) declarations need expansion; import, export,
-   # and include-library-declarations stay verbatim.  The library name is
-   # a datum (list of symbols/integers), not a form to expand.
-   if not is_cons(sexpr.cdr):
-      return sexpr
-   src = sexpr.src
-   name = sexpr.cdr.car
-   decls = sexpr.cdr.cdr
-   expanded_decls = []
-   cur = decls
-   while is_cons(cur):
-      decl = cur.car
-      cur = cur.cdr
-      if (is_cons(decl) and is_symbol(decl.car)
-            and as_symbol(decl.car) == 'begin'):
-         body_items = [make_symbol('begin', decl.src)]
-         body = decl.cdr
-         while is_cons(body):
-            body_items.append(expand(body.car))
-            body = body.cdr
-         expanded_decls.append(list_from_items(body_items, decl.src))
-      else:
-         expanded_decls.append(decl)
-   items = [make_symbol('define-library', src), name]
-   i = 0
-   while i < len(expanded_decls):
-      items.append(expanded_decls[i])
-      i = i + 1
-   return list_from_items(items, src)
+   # (define-library <name> <decl>...) has its own structure.  We deliberately
+   # do NOT expand begin / declaration bodies here: that has to happen at
+   # process time so the per-library macro scope is on top of _macro_scopes
+   # when define-syntax fires.  _process_define_library calls expand() on
+   # each form right before evaluating it.  The library name is a datum
+   # (list of symbols/integers), not a form to expand.
+   return sexpr
 
 
 def _expand_import(sexpr):

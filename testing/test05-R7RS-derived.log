@@ -1326,6 +1326,31 @@ Primitive  |  args: pre-evaluated
 %%% (define-library (t9) (import (scheme base)) (export a) (begin (define a 1))) (import (only (t9) nonexistent))
 %%%                                                                                      ^
 
+;;; Library bodies can export macros (R7RS 5.6).  define-syntax inside
+;;; the begin body installs the macro into a per-library scope; the
+;;; export filter exposes it; (import ...) installs it in the importer's
+;;; macro env so subsequent uses expand correctly.
+>>> (define-library (mw1) (import (scheme base)) (export my-when) (begin (define-syntax my-when (syntax-rules () ((_ test body ...) (if test (begin body ...) #f)))))) (import (mw1)) (my-when #t 'yes 'still-yes)
+==> still-yes
+
+>>> (define-library (mw2) (import (scheme base)) (export my-when) (begin (define-syntax my-when (syntax-rules () ((_ test body ...) (if test (begin body ...) #f)))))) (import (mw2)) (my-when #f 'never)
+==> #f
+
+;;; cond-expand as a library declaration: pick the first clause whose
+;;; feature requirement matches; the chosen clause's body forms become
+;;; library declarations.  pyscheme is one of the built-in features.
+>>> (define-library (ce1) (cond-expand (pyscheme (import (scheme base)) (export hello) (begin (define (hello) 'pyscheme))) (else (import (scheme base)) (export hello) (begin (define (hello) 'other))))) (import (ce1)) (hello)
+==> pyscheme
+
+;;; cond-expand else-clause when no feature matches.
+>>> (define-library (ce2) (cond-expand (no-such-feature (import (scheme base)) (export tag) (begin (define tag 'first))) (else (import (scheme base)) (export tag) (begin (define tag 'fallback))))) (import (ce2)) tag
+==> fallback
+
+;;; include-library-declarations: read declarations from a file and
+;;; splice them into the library body.
+>>> (define-library (ild1) (include-library-declarations "testing/lib3-decls.sld")) (import (ild1)) (greet)
+==> hi-from-include
+
 ;;; -------- define-syntax / syntax-rules (R7RS 4.3) --------
 
 ;;; Basic pattern + template.
