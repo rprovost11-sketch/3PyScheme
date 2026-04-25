@@ -123,6 +123,19 @@ FRAME_POP_HANDLER        = 20
 FRAME_REINSTALL_HANDLER  = 21
 
 
+# Frames that are not single-value continuations: FRAME_CWV_CONSUMER
+# unpacks multi-values; FRAME_SEQ discards V (begin/body sequencing);
+# the wind / handler pop frames forward V transparently to the next
+# frame.  Multi-values may legitimately arrive at any of these.
+_MULTI_VALUES_OK_FRAMES = frozenset([
+   FRAME_CWV_CONSUMER,
+   FRAME_SEQ,
+   FRAME_DYNAMIC_WIND_AFTER,
+   FRAME_POP_HANDLER,
+   FRAME_REINSTALL_HANDLER,
+])
+
+
 # -------- Helper functions ------------------------------------------
 
 def isFalse(value):
@@ -1011,10 +1024,14 @@ def _cek_loop(expr, env, ctx):
          frame = K.pop()
          ftag  = frame[0]
 
-         # Multi-values are only valid when the top frame is the
-         # call-with-values consumer - every other frame expects a
-         # single value.
-         if is_multi_values(V) and ftag != FRAME_CWV_CONSUMER:
+         # R7RS 6.10: passing multi-values to a continuation not created
+         # by call-with-values is an error.  But not every frame is a
+         # single-value continuation: FRAME_SEQ discards V (begin/body
+         # sequencing - 0-value context, not 1-value), and the wind /
+         # handler pop frames are transparent (they preserve V across
+         # an effect and forward it to whatever's outside).  Only frames
+         # that actually consume V as a single value error here.
+         if is_multi_values(V) and ftag not in _MULTI_VALUES_OK_FRAMES:
             raise SchemeTypeError(
                'multiple values delivered to a single-value context', None)
 

@@ -651,6 +651,34 @@ Primitive  |  args: pre-evaluated
 >>> (let ((x (values 1 2))) x)
 %%% SchemeTypeError: multiple values delivered to a single-value context
 
+;;; Same in a define right-hand side.
+>>> (define mv-bad (values 1 2))
+%%% SchemeTypeError: multiple values delivered to a single-value context
+
+;;; -------- multi-values legitimately allowed --------
+
+;;; Intermediate forms in begin discard their value: 0-value context, not
+;;; a single-value context, so multi-values are fine.
+>>> (begin (values 1 2) (+ 3 4))
+==> 7
+
+;;; Internal body sequencing in lambda / let* discards intermediates too.
+>>> (let () (values 1 2) 'ok)
+==> ok
+
+;;; The last form's value is what flows out, as usual.
+>>> (define mv-tail (begin (values 1 2) 42)) mv-tail
+==> 42
+
+;;; dynamic-wind is transparent to the body's return value: multi-values
+;;; flow through the after-thunk to the surrounding call-with-values.
+>>> (call-with-values (lambda () (dynamic-wind (lambda () #f) (lambda () (values 1 2)) (lambda () #f))) +)
+==> 3
+
+;;; with-exception-handler that doesn't fire is also transparent.
+>>> (call-with-values (lambda () (with-exception-handler (lambda (v) 'unused) (lambda () (values 5 7)))) +)
+==> 12
+
 ;;; Deep tail recursion through call-with-values: each iteration tail-calls
 ;;; loop via call-with-values.  Without CEK-level dispatch this would blow
 ;;; Python stack.
