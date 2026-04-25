@@ -186,10 +186,13 @@ def _prim_make_promise(ctx, env, args, app_node):
 
 
 def _prim_values(ctx, env, args, app_node):
-   # (values) -> empty multi-values
-   # (values x) -> x unwrapped (convention; avoids multi-values escape into
-   #              single-value positions when caller is passing a single value)
-   # (values a b ...) -> multi-values container
+   # R7RS 6.10: values delivers its arguments to its continuation; a
+   # single-value continuation legitimately accepts one value, so
+   # (+ 1 (values 2)) must yield 3 rather than error.  We satisfy this
+   # by representing one-value results as the bare value (no wrapper):
+   # (values) -> empty multi-values (0 values)
+   # (values x) -> x (1 value, no wrapper)
+   # (values a b ...) -> multi-values container (2+ values)
    if len(args) == 1:
       return args[0]
    return make_multi_values(list(args))

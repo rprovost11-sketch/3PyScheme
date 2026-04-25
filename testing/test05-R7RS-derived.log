@@ -556,6 +556,17 @@ Primitive  |  args: pre-evaluated
 >>> (values "hi")
 ==> "hi"
 
+;;; (values x) is one value, so it works in single-value contexts: this
+;;; is a correctness requirement, not a convention.  R7RS 6.10.
+>>> (+ 1 (values 2))
+==> 3
+
+>>> (define values-single (values 42)) values-single
+==> 42
+
+>>> (if (values #t) (quote yes) (quote no))
+==> yes
+
 ;;; Two+ values wrap into a multi-values container.
 >>> (values 1 2 3)
 ==> #<values 1 2 3>
