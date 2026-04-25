@@ -129,7 +129,7 @@ CATEGORY_ORDER = [
    'control',
    'lists', 'arithmetic', 'comparison', 'predicates',
    'equivalence', 'logical', 'meta', 'io',
-   'strings', 'chars', 'vectors',
+   'strings', 'chars', 'vectors', 'bytevectors',
    'help_sys',
 ]
 
@@ -150,6 +150,7 @@ from pyscheme.primitives import io
 from pyscheme.primitives import strings
 from pyscheme.primitives import chars
 from pyscheme.primitives import vectors
+from pyscheme.primitives import bytevectors
 from pyscheme.primitives import help_sys
 
 control.register()
@@ -164,6 +165,7 @@ io.register()
 strings.register()
 chars.register()
 vectors.register()
+bytevectors.register()
 help_sys.register()
 
 

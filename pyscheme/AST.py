@@ -47,6 +47,7 @@ ENVIRONMENT        = 19
 RECORD_ACCESSOR    = 20
 RECORD_MUTATOR     = 21
 VECTOR             = 22
+BYTEVECTOR         = 23
 SYMBOL             = 100
 
 
@@ -262,6 +263,11 @@ def make_vector(items):
    to all sharers (matching Scheme vector semantics)."""
    return (VECTOR, items)
 
+def make_bytevector(items):
+   """Build a bytevector value.  items is a Python bytearray of u8
+   values (0-255); stored by reference for in-place mutation."""
+   return (BYTEVECTOR, items)
+
 
 # --- Predicates --------------------------------------------------------
 
@@ -346,6 +352,9 @@ def is_record_mutator(val):
 
 def is_vector(val):
    return isinstance(val, tuple) and len(val) >= 1 and val[0] == VECTOR
+
+def is_bytevector(val):
+   return isinstance(val, tuple) and len(val) >= 1 and val[0] == BYTEVECTOR
 
 
 # --- Accessors ---------------------------------------------------------
@@ -550,6 +559,9 @@ def as_record_mutator_name(val):
    return val[3]
 
 def as_vector_items(val):
+   return val[1]
+
+def as_bytevector_items(val):
    return val[1]
 
 

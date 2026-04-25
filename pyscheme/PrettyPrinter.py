@@ -23,13 +23,13 @@ from pyscheme.AST import (
    is_complex, is_character, is_string, is_symbol, is_closure, is_primitive,
    is_case_closure, is_promise, is_multi_values, is_record, is_parameter,
    is_error_object, is_continuation, is_syntax_transformer, is_environment,
-   is_record_accessor, is_record_mutator, is_vector,
+   is_record_accessor, is_record_mutator, is_vector, is_bytevector,
    as_boolean, as_integer, as_real, as_character, as_string, as_symbol,
    as_rational_num, as_rational_den, as_complex_real, as_complex_imag,
    as_primitive_name, as_promise_is_done, as_multi_values_list,
    as_record_type, as_record_fields, as_record_type_name,
    as_error_object_message, as_error_object_irritants,
-   as_syntax_transformer_name, as_vector_items,
+   as_syntax_transformer_name, as_vector_items, as_bytevector_items,
    INTEGER, REAL, RATIONAL, BOOLEAN, CHARACTER, STRING, CLOSURE, SYMBOL,
 )
 
@@ -130,6 +130,14 @@ def pretty_print(val):
          parts.append(pretty_print(items[i]))
          i = i + 1
       return '#(' + ' '.join(parts) + ')'
+   if is_bytevector(val):
+      items = as_bytevector_items(val)
+      parts = []
+      i = 0
+      while i < len(items):
+         parts.append(str(items[i]))
+         i = i + 1
+      return '#u8(' + ' '.join(parts) + ')'
    if is_syntax_transformer(val):
       return '#<syntax-rules ' + as_syntax_transformer_name(val) + '>'
    if is_error_object(val):
