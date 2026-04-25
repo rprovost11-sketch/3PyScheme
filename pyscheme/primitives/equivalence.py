@@ -83,6 +83,46 @@ def _prim_equal_p(ctx, env, args, app_node):
    return make_boolean(_value_equal(args[0], args[1]))
 
 
+def _prim_boolean_eq_p(ctx, env, args, app_node):
+   from pyscheme.Environment import SchemeTypeError
+   from pyscheme.AST          import src_of
+   first = args[0]
+   if not is_boolean(first):
+      raise SchemeTypeError(
+         'boolean=?: arguments must be booleans', src_of(app_node))
+   first_val = as_boolean(first)
+   i = 1
+   while i < len(args):
+      v = args[i]
+      if not is_boolean(v):
+         raise SchemeTypeError(
+            'boolean=?: arguments must be booleans', src_of(app_node))
+      if as_boolean(v) is not first_val:
+         return make_boolean(False)
+      i = i + 1
+   return make_boolean(True)
+
+
+def _prim_symbol_eq_p(ctx, env, args, app_node):
+   from pyscheme.Environment import SchemeTypeError
+   from pyscheme.AST          import src_of
+   first = args[0]
+   if not is_symbol(first):
+      raise SchemeTypeError(
+         'symbol=?: arguments must be symbols', src_of(app_node))
+   first_name = as_symbol(first)
+   i = 1
+   while i < len(args):
+      v = args[i]
+      if not is_symbol(v):
+         raise SchemeTypeError(
+            'symbol=?: arguments must be symbols', src_of(app_node))
+      if as_symbol(v) != first_name:
+         return make_boolean(False)
+      i = i + 1
+   return make_boolean(True)
+
+
 def register():
    register_primitive('eq?', (2, 2), _prim_eq_p,
       doc=(
@@ -100,4 +140,12 @@ def register():
          "Recursive structural equality.  Two pairs are equal? if their cars\n"
          "and cdrs are equal?; two atoms are equal? if their tag+payload match\n"
          "(ignoring source position)."),
+      category=CATEGORY)
+   register_primitive('boolean=?', (2, None), _prim_boolean_eq_p,
+      doc=('(boolean=? a b ...) returns #t when all arguments are booleans '
+           'with the same truth value.  R7RS 6.3.'),
+      category=CATEGORY)
+   register_primitive('symbol=?', (2, None), _prim_symbol_eq_p,
+      doc=('(symbol=? a b ...) returns #t when all arguments are symbols '
+           'with the same name.  R7RS 6.5.'),
       category=CATEGORY)

@@ -128,7 +128,8 @@ CATEGORY_TITLES = {
 CATEGORY_ORDER = [
    'control',
    'lists', 'arithmetic', 'comparison', 'predicates',
-   'equivalence', 'logical', 'meta',
+   'equivalence', 'logical', 'meta', 'io',
+   'strings', 'chars', 'vectors',
    'help_sys',
 ]
 
@@ -145,6 +146,10 @@ from pyscheme.primitives import predicates
 from pyscheme.primitives import equivalence
 from pyscheme.primitives import logical
 from pyscheme.primitives import meta
+from pyscheme.primitives import io
+from pyscheme.primitives import strings
+from pyscheme.primitives import chars
+from pyscheme.primitives import vectors
 from pyscheme.primitives import help_sys
 
 control.register()
@@ -155,6 +160,10 @@ predicates.register()
 equivalence.register()
 logical.register()
 meta.register()
+io.register()
+strings.register()
+chars.register()
+vectors.register()
 help_sys.register()
 
 

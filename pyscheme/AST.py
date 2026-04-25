@@ -46,6 +46,7 @@ SYNTAX_TRANSFORMER = 18
 ENVIRONMENT        = 19
 RECORD_ACCESSOR    = 20
 RECORD_MUTATOR     = 21
+VECTOR             = 22
 SYMBOL             = 100
 
 
@@ -255,6 +256,12 @@ def make_record_mutator(record_type, index, name):
    """Build a record mutator value.  Same dispatch story as record-accessor."""
    return (RECORD_MUTATOR, record_type, index, name)
 
+def make_vector(items):
+   """Build a vector value.  items is a Python list of element values;
+   it is stored by reference, so mutations via vector-set! are visible
+   to all sharers (matching Scheme vector semantics)."""
+   return (VECTOR, items)
+
 
 # --- Predicates --------------------------------------------------------
 
@@ -336,6 +343,9 @@ def is_record_accessor(val):
 
 def is_record_mutator(val):
    return isinstance(val, tuple) and len(val) >= 1 and val[0] == RECORD_MUTATOR
+
+def is_vector(val):
+   return isinstance(val, tuple) and len(val) >= 1 and val[0] == VECTOR
 
 
 # --- Accessors ---------------------------------------------------------
@@ -538,6 +548,9 @@ def as_record_mutator_index(val):
    return val[2]
 def as_record_mutator_name(val):
    return val[3]
+
+def as_vector_items(val):
+   return val[1]
 
 
 # --- Value equality ---------------------------------------------------
