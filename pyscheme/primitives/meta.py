@@ -395,7 +395,9 @@ def register():
          "Force a promise, returning its value.  The promise's thunk runs\n"
          "at most once; subsequent forces return the cached value.  If the\n"
          "thunk yields another promise, force follows the chain iteratively,\n"
-         "so (delay-force ...) promise chains run in constant stack."),
+         "so (delay-force ...) promise chains run in constant stack.  A\n"
+         "non-promise argument is returned unchanged (R7RS-small 6.10 leaves\n"
+         "this implementation-defined; we follow SRFI 155)."),
       category=CATEGORY)
 
    register_primitive('make-promise', (1, 1), _prim_make_promise,

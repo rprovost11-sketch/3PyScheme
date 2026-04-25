@@ -492,17 +492,17 @@
 >>> (define (loop n) (if (zero? n) (delay 'done) (delay-force (loop (- n 1))))) (force (loop 100000))
 ==> done
 
-;;; force on a non-promise is an error (R7RS leaves this implementation-defined;
-;;; pyscheme chooses to be strict).
+;;; force on a non-promise returns the value unchanged (R7RS leaves this
+;;; implementation-defined; pyscheme follows SRFI 155 and most R6RS impls,
+;;; treating non-promises as if already forced).
 >>> (force 5)
-%%% SchemeTypeError: line 1, col 1: force: argument must be a promise
-%%% (force 5)
-%%% ^
+==> 5
 
 >>> (force '(1 2 3))
-%%% SchemeTypeError: line 1, col 1: force: argument must be a promise
-%%% (force '(1 2 3))
-%%% ^
+==> (1 2 3)
+
+>>> (force "hi")
+==> "hi"
 
 ;;; Shape errors.
 >>> (delay)
@@ -540,7 +540,9 @@ Primitive  |  args: pre-evaluated
    Force a promise, returning its value.  The promise's thunk runs
    at most once; subsequent forces return the cached value.  If the
    thunk yields another promise, force follows the chain iteratively,
-   so (delay-force ...) promise chains run in constant stack.
+   so (delay-force ...) promise chains run in constant stack.  A
+   non-promise argument is returned unchanged (R7RS-small 6.10 leaves
+   this implementation-defined; we follow SRFI 155).
 ==> #<void>
 
 ;;; -------- values / call-with-values / let-values / let*-values / define-values (R7RS 4.2.2, 5.3.3, 6.10) --------
@@ -1096,19 +1098,10 @@ Primitive  |  args: pre-evaluated
 >>> (call-with-current-continuation (lambda (k) (+ 10 (k 5))))
 ==> 5
 
-;;; Continuations are procedures.
+;;; Continuations are procedures.  R7RS-small does not specify a
+;;; continuation? predicate; procedure? returns #t for continuations.
 >>> (call/cc (lambda (k) (procedure? k)))
 ==> #t
-
-;;; continuation? predicate.
->>> (call/cc (lambda (k) (continuation? k)))
-==> #t
-
->>> (continuation? (lambda (x) x))
-==> #f
-
->>> (continuation? 42)
-==> #f
 
 ;;; Continuation pretty-prints as #<continuation>.
 >>> (define cc #f) (call/cc (lambda (k) (set! cc k) 0)) cc

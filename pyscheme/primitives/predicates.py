@@ -106,10 +106,6 @@ def _prim_procedure_p(ctx, env, args, app_node):
       or is_parameter(v) or is_continuation(v))
 
 
-def _prim_continuation_p(ctx, env, args, app_node):
-   return make_boolean(is_continuation(args[0]))
-
-
 def _prim_parameter_p(ctx, env, args, app_node):
    return make_boolean(is_parameter(args[0]))
 
@@ -183,7 +179,4 @@ def register():
       category=CATEGORY)
    register_primitive('error-object?', (1, 1), _prim_error_object_p,
       doc='Return #t if a is an error object (produced by the error primitive).',
-      category=CATEGORY)
-   register_primitive('continuation?', (1, 1), _prim_continuation_p,
-      doc='Return #t if a is a continuation (captured by call/cc).',
       category=CATEGORY)

@@ -1240,6 +1240,10 @@ def _cek_loop(expr, env, ctx):
                   new_collected = []
                # force: install result frame, tail-call the thunk (or return
                # the cached value immediately if the promise is already done).
+               # R7RS-small 6.10 leaves force-of-non-promise implementation-
+               # defined; we return non-promises unchanged so callers can
+               # write (force x) without first checking promise?, matching
+               # SRFI 155 and most R6RS impls.
                if _is_force_primitive(fn_value):
                   if len(new_collected) != 1:
                      raise SchemeArityError(
@@ -1247,8 +1251,8 @@ def _cek_loop(expr, env, ctx):
                         src_of(app_node) if app_node is not None else None)
                   p = new_collected[0]
                   if not is_promise(p):
-                     raise SchemeTypeError(
-                        'force: argument must be a promise', app_node)
+                     V = p
+                     continue
                   if as_promise_is_done(p):
                      V = as_promise_payload(p)
                      continue
