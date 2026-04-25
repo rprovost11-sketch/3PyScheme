@@ -343,10 +343,53 @@ def _is_eval_primitive(V):
    return is_primitive(V) and as_primitive_name(V) == 'eval'
 
 
-# Module-level CEK exception handler stack.  Innermost handler is at the
-# end.  Parallels _wind_stack; cek_eval snapshots depth at entry and
-# truncates on exception escape.
-_handler_stack = []
+# Thread-local CEK exception handler stack and dynamic-wind stack.
+# Each thread sees its own list; this maps to __thread storage in the C
+# port so concurrent evaluations don't share continuation-relevant state.
+import threading as _threading
+_thread_state = _threading.local()
+
+
+class _ThreadLocalList:
+   """List-like proxy backed by per-thread storage in _thread_state.
+   Supports the operations used by the evaluator: len, bool, iter,
+   indexing, append, pop, clear, extend.  Storing the proxy at module
+   level lets call sites continue using `_wind_stack.append(x)` etc.
+   without knowing about the thread-local backing."""
+   def __init__(self, attr_name):
+      self._attr = attr_name
+
+   def _get(self):
+      if not hasattr(_thread_state, self._attr):
+         setattr(_thread_state, self._attr, [])
+      return getattr(_thread_state, self._attr)
+
+   def __len__(self):
+      return len(self._get())
+
+   def __bool__(self):
+      return bool(self._get())
+
+   def __iter__(self):
+      return iter(self._get())
+
+   def __getitem__(self, i):
+      return self._get()[i]
+
+   def append(self, x):
+      self._get().append(x)
+
+   def pop(self, *args):
+      return self._get().pop(*args)
+
+   def clear(self):
+      self._get().clear()
+
+   def extend(self, items):
+      self._get().extend(items)
+
+
+_handler_stack = _ThreadLocalList('handler_stack')
 
 
 def _restore_handler_stack(snapshot):
@@ -501,10 +544,11 @@ def _continuation_value(cont, arg_values):
    return make_multi_values(list(arg_values))
 
 
-# Dynamic-wind stack.  Module-level, shared across cek_eval calls, mirrors
-# the C++ reference's g_wind_stack.  Each entry is a (before, after) tuple
-# of 0-arg procedure Values.  The innermost active wind is at the end.
-_wind_stack = []
+# Dynamic-wind stack.  Thread-local (matches the __thread storage in the
+# C port) so concurrent evaluations don't share active winds.  Each entry
+# is a (before, after) tuple of 0-arg procedure Values.  The innermost
+# active wind is at the end.
+_wind_stack = _ThreadLocalList('wind_stack')
 
 
 def _wind_walk(ctx, target):
@@ -514,7 +558,6 @@ def _wind_walk(ctx, target):
    the before thunk.  Used when invoking a continuation whose wind-stack
    snapshot differs from the current stack."""
    from pyscheme.primitives.meta import _apply_scheme_proc
-   global _wind_stack
    common = 0
    while common < len(_wind_stack) and common < len(target):
       cur = _wind_stack[common]
