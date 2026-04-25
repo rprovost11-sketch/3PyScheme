@@ -1225,6 +1225,28 @@ Primitive  |  args: pre-evaluated
 %%% (dynamic-wind (lambda () 1) (lambda () 2))
 %%% ^
 
+;;; A continuation captured inside with-exception-handler keeps that
+;;; handler's frame in its K-stack snapshot.  When invoked from outside
+;;; (where the handler has long been popped), the captured _handler_stack
+;;; is restored so the FRAME_POP_HANDLER frame in the resumed K finds a
+;;; matching entry to pop.  Without this, invoking the continuation would
+;;; either underflow the handler stack or pop an unrelated handler.
+>>> (define captured-k #f) (with-exception-handler (lambda (e) (list 'handled e)) (lambda () (call/cc (lambda (k) (set! captured-k k) 0)))) (captured-k 99)
+==> 99
+
+;;; If an after-thunk itself raises during error unwinding, the cleanup
+;;; condition propagates and routes through the handler stack instead
+;;; of the original (R7RS does not specify which error wins; we surface
+;;; the cleanup error so the user sees that cleanup failed).
+>>> (guard (e (#t (list 'caught e))) (dynamic-wind (lambda () 0) (lambda () (raise 'body-bad)) (lambda () (raise 'cleanup-bad))))
+==> (caught cleanup-bad)
+
+;;; Without a handler, the cleanup error propagates to the top level.
+>>> (dynamic-wind (lambda () 0) (lambda () (raise 'body-bad)) (lambda () (raise 'cleanup-bad)))
+%%% SchemeRaised: line 1, col 70: cleanup-bad
+%%% (dynamic-wind (lambda () 0) (lambda () (raise 'body-bad)) (lambda () (raise 'cleanup-bad)))
+%%%                                                                      ^
+
 ;;; -------- define-library / import / export (R7RS 5.6) --------
 
 ;;; Top-level import of the standard library is a no-op since primitives

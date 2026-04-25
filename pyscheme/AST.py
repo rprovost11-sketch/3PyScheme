@@ -120,13 +120,17 @@ class Continuation:
    """First-class continuation (R7RS 6.10).  POD; immutable.  k_snapshot is
    a Python list holding a copy of the CEK K-stack at the call/cc call
    site; wind_snapshot is a copy of the dynamic-wind stack at the same
-   point.  Invoking the continuation (as a procedure) walks the wind
-   stack from current to wind_snapshot (running after thunks for winds
-   being exited and before thunks for winds being entered), replaces K
-   with a copy of k_snapshot, and resumes the CEK machine."""
-   def __init__(self, k_snapshot, wind_snapshot):
+   point; handler_snapshot is a copy of the handler stack so a continuation
+   captured inside with-exception-handler keeps its handlers when invoked
+   from elsewhere (and stale FRAME_POP_HANDLER frames in k_snapshot find
+   the matching handler entries to pop).  Invoking the continuation walks
+   the wind stack from current to wind_snapshot, restores the handler
+   stack from handler_snapshot, replaces K with a copy of k_snapshot, and
+   resumes the CEK machine."""
+   def __init__(self, k_snapshot, wind_snapshot, handler_snapshot):
       self.k_snapshot = k_snapshot
       self.wind_snapshot = wind_snapshot
+      self.handler_snapshot = handler_snapshot
 
 
 class SyntaxTransformer:
@@ -231,8 +235,8 @@ def make_parameter(value, converter):
 def make_error_object(message, irritants):
    return ErrorObject(message, irritants)
 
-def make_continuation(k_snapshot, wind_snapshot):
-   return Continuation(k_snapshot, wind_snapshot)
+def make_continuation(k_snapshot, wind_snapshot, handler_snapshot):
+   return Continuation(k_snapshot, wind_snapshot, handler_snapshot)
 
 def make_syntax_transformer(name, literals, ellipsis, rules, def_env):
    return SyntaxTransformer(name, literals, ellipsis, rules, def_env)
@@ -500,6 +504,9 @@ def as_continuation_k(c):
 def as_continuation_wind(c):
    return c.wind_snapshot
 
+def as_continuation_handlers(c):
+   return c.handler_snapshot
+
 def as_syntax_transformer_name(t):
    return t.name
 
@@ -725,10 +732,12 @@ if __name__ == '__main__':
    # Continuation
    ksnap = [('FRAME_TEST', 1), ('FRAME_TEST', 2)]
    wsnap = [('before', 'after')]
-   cont = make_continuation(ksnap, wsnap)
+   hsnap = ['handler1', 'handler2']
+   cont = make_continuation(ksnap, wsnap, hsnap)
    check('is_continuation',             is_continuation(cont))
    check('continuation k_snapshot',     as_continuation_k(cont) is ksnap)
    check('continuation wind_snapshot',  as_continuation_wind(cont) is wsnap)
+   check('continuation handler_snapshot', as_continuation_handlers(cont) is hsnap)
    check('continuation not closure',    not is_closure(cont))
    check('continuation not promise',    not is_promise(cont))
 

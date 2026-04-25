@@ -85,7 +85,7 @@ from pyscheme.AST import (
    as_case_closure_clauses, as_case_closure_env, as_parameter_value,
    as_continuation_k, as_continuation_wind,
    as_promise_is_done, as_promise_payload,
-   as_multi_values_list, as_environment,
+   as_multi_values_list, as_environment, as_continuation_handlers,
    as_record_type, as_record_fields,
    as_record_accessor_type, as_record_accessor_index, as_record_accessor_name,
    as_record_mutator_type, as_record_mutator_index, as_record_mutator_name,
@@ -349,6 +349,14 @@ def _is_eval_primitive(V):
 _handler_stack = []
 
 
+def _restore_handler_stack(snapshot):
+   """Replace _handler_stack contents with snapshot in place.  Continuation
+   invocation uses this so a captured continuation's K-stack frames
+   (including FRAME_POP_HANDLER) find the matching handler entries."""
+   _handler_stack.clear()
+   _handler_stack.extend(snapshot)
+
+
 def _build_parameterize_winds(params_list, values_list, ctx, saved_env, app_node):
    """Prepare a parameterize wind frame: walk the parameter / value lists,
    apply converters, compute install-and-save state, and return a pair of
@@ -440,6 +448,7 @@ def _enter_proc(fn_value, args, ctx, saved_env, app_node):
                                     not None (multi-form body)"""
    if is_continuation(fn_value):
       _wind_walk(ctx, as_continuation_wind(fn_value))
+      _restore_handler_stack(as_continuation_handlers(fn_value))
       return ('cont',
               list(as_continuation_k(fn_value)),
               _continuation_value(fn_value, args))
@@ -618,10 +627,17 @@ def cek_eval(expr, env, ctx=None):
       # can introspect via error-object-message / error-object-irritants.
       # If no handler catches, re-raise the latest exception verbatim so
       # the listener formats it with its original class name.
-      _unwind_winds_on_error(ctx, wind_depth_entry)
+      current_e = e
+      try:
+         _unwind_winds_on_error(ctx, wind_depth_entry)
+      except _CATCHABLE as cleanup_e:
+         # An after-thunk raised during error unwinding; route the
+         # cleanup condition through the handler stack instead of the
+         # original.  The remaining winds beyond the failing one are
+         # not unwound (most languages do the same when cleanup fails).
+         current_e = cleanup_e
       from pyscheme.primitives.meta import _apply_scheme_proc
       from pyscheme.AST import make_error_object
-      current_e = e
       while len(_handler_stack) > handler_depth_entry:
          if isinstance(current_e, SchemeRaised):
             raised_value = current_e.value
@@ -753,16 +769,18 @@ def _process_define_library(C, ctx):
 
 def _unwind_winds_on_error(ctx, target_depth):
    """Pop wind entries installed during a failed cek_eval call and call
-   their after thunks.  Swallows any exception from those after thunks
-   because we're already in the middle of propagating the original one."""
+   their after thunks.  R7RS does not specify behavior when an after-
+   thunk itself raises during cleanup.  We let the new exception
+   propagate rather than silently swallow it: the original error remains
+   linked via Python's __context__ chain (PEP 3134), and the user sees
+   the cleanup failure rather than having it disappear.  Remaining wind
+   entries beyond the failing one are not unwound, which matches what
+   most languages do when cleanup itself fails."""
    from pyscheme.primitives.meta import _apply_scheme_proc
    while len(_wind_stack) > target_depth:
       wf = _wind_stack[len(_wind_stack) - 1]
       _wind_stack.pop()
-      try:
-         _apply_scheme_proc(wf[1], [], ctx, None, None)
-      except BaseException:
-         pass
+      _apply_scheme_proc(wf[1], [], ctx, None, None)
 
 
 def _cek_loop(expr, env, ctx):
@@ -1174,6 +1192,7 @@ def _cek_loop(expr, env, ctx):
             if len(args) == 0:
                if is_continuation(V):
                   _wind_walk(ctx, as_continuation_wind(V))
+                  _restore_handler_stack(as_continuation_handlers(V))
                   K = list(as_continuation_k(V))
                   V = _continuation_value(V, [])
                   continue
@@ -1214,6 +1233,7 @@ def _cek_loop(expr, env, ctx):
                # Invoke continuation: replace K with its snapshot.
                if is_continuation(fn_value):
                   _wind_walk(ctx, as_continuation_wind(fn_value))
+                  _restore_handler_stack(as_continuation_handlers(fn_value))
                   K = list(as_continuation_k(fn_value))
                   V = _continuation_value(fn_value, new_collected)
                   continue
@@ -1224,7 +1244,8 @@ def _cek_loop(expr, env, ctx):
                         arity_mismatch_msg(as_primitive_name(fn_value),
                                            1, 1, len(new_collected)),
                         src_of(app_node) if app_node is not None else None)
-                  cont = make_continuation(list(K), list(_wind_stack))
+                  cont = make_continuation(
+                     list(K), list(_wind_stack), list(_handler_stack))
                   user_proc = new_collected[0]
                   # Apply the user proc with the continuation as its arg,
                   # reusing the normal dispatch paths below.
@@ -1593,6 +1614,7 @@ def _cek_loop(expr, env, ctx):
             saved_env  = frame[2]
             if is_continuation(V):
                _wind_walk(ctx, as_continuation_wind(V))
+               _restore_handler_stack(as_continuation_handlers(V))
                K = list(as_continuation_k(V))
                V = _continuation_value(V, [test_value])
                continue
