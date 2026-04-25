@@ -24,6 +24,7 @@ from pyscheme.AST import (
    is_case_closure, is_promise, is_multi_values, is_record, is_parameter,
    is_error_object, is_continuation, is_syntax_transformer, is_environment,
    is_record_accessor, is_record_mutator, is_vector, is_bytevector,
+   is_port, is_eof,
    as_boolean, as_integer, as_real, as_character, as_string, as_symbol,
    as_rational_num, as_rational_den, as_complex_real, as_complex_imag,
    as_primitive_name, as_promise_is_done, as_multi_values_list,
@@ -138,6 +139,10 @@ def pretty_print(val):
          parts.append(str(items[i]))
          i = i + 1
       return '#u8(' + ' '.join(parts) + ')'
+   if is_port(val):
+      return '#<port>'
+   if is_eof(val):
+      return '#<eof>'
    if is_syntax_transformer(val):
       return '#<syntax-rules ' + as_syntax_transformer_name(val) + '>'
    if is_error_object(val):

@@ -48,6 +48,8 @@ RECORD_ACCESSOR    = 20
 RECORD_MUTATOR     = 21
 VECTOR             = 22
 BYTEVECTOR         = 23
+PORT               = 24
+EOF                = 25
 SYMBOL             = 100
 
 
@@ -133,6 +135,30 @@ class Continuation:
       self.k_snapshot = k_snapshot
       self.wind_snapshot = wind_snapshot
       self.handler_snapshot = handler_snapshot
+
+
+class Port:
+   """R7RS port (6.13).  POD; mutable.
+      buf       - for textual input: a Python str containing remaining
+                  unread characters; for textual output: a Python list of
+                  string chunks to be joined on get-output-string.
+                  For binary: a bytearray (input: remaining unread bytes;
+                  output: accumulated bytes).
+      pos       - for input ports, the current read offset into buf.
+      is_input  - True for input port, False for output.
+      is_text   - True for textual port, False for binary (binary not
+                  fully supported yet but the flag distinguishes them).
+      file_h    - underlying Python file handle for file ports, or None.
+      name      - human-readable label (filename / '<stdin>' / '<string>').
+      is_open   - cleared by close-port; closed ports raise on use."""
+   def __init__(self, buf, is_input, is_text, file_h=None, name=''):
+      self.buf      = buf
+      self.pos      = 0
+      self.is_input = is_input
+      self.is_text  = is_text
+      self.file_h   = file_h
+      self.name     = name
+      self.is_open  = True
 
 
 class SyntaxTransformer:
@@ -268,6 +294,16 @@ def make_bytevector(items):
    values (0-255); stored by reference for in-place mutation."""
    return (BYTEVECTOR, items)
 
+def make_port(port_obj):
+   """Wrap a Port instance as a Scheme port value."""
+   return (PORT, port_obj)
+
+# Singleton EOF marker (R7RS 6.13.2).  Returned by read-char / read at
+# end-of-file; eof-object? recognises it.
+EOF_VALUE = (EOF,)
+def make_eof():
+   return EOF_VALUE
+
 
 # --- Predicates --------------------------------------------------------
 
@@ -355,6 +391,12 @@ def is_vector(val):
 
 def is_bytevector(val):
    return isinstance(val, tuple) and len(val) >= 1 and val[0] == BYTEVECTOR
+
+def is_port(val):
+   return isinstance(val, tuple) and len(val) >= 1 and val[0] == PORT
+
+def is_eof(val):
+   return isinstance(val, tuple) and len(val) >= 1 and val[0] == EOF
 
 
 # --- Accessors ---------------------------------------------------------
@@ -562,6 +604,9 @@ def as_vector_items(val):
    return val[1]
 
 def as_bytevector_items(val):
+   return val[1]
+
+def as_port(val):
    return val[1]
 
 
