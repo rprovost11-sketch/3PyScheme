@@ -9,13 +9,13 @@
 ;;; -------- define and variable reference --------
 
 >>> (define a 5)
-==> 5
+==> #<void>
 
 >>> a
 ==> 5
 
 >>> (define b 99)
-==> 99
+==> #<void>
 
 >>> b
 ==> 99
@@ -23,7 +23,7 @@
 ;;; -------- set! --------
 
 >>> (set! a 100)
-==> 100
+==> #<void>
 
 >>> a
 ==> 100
@@ -70,13 +70,13 @@
 ;;; -------- define shorthand --------
 
 >>> (define (id x) x)
-==> #<procedure>
+==> #<void>
 
 >>> (id 42)
 ==> 42
 
 >>> (define id2 (lambda (x) x))
-==> #<procedure>
+==> #<void>
 
 >>> (id2 99)
 ==> 99
@@ -96,13 +96,13 @@
 ==> 42
 
 >>> (define (pick-second a b) b)
-==> #<procedure>
+==> #<void>
 
 >>> (pick-second 1 2)
 ==> 2
 
 >>> (define (third a b c) c)
-==> #<procedure>
+==> #<void>
 
 >>> (third 100 200 300)
 ==> 300
@@ -115,10 +115,10 @@
 ;;; -------- set! reaches up the lexical chain --------
 
 >>> (define outer-x 1)
-==> 1
+==> #<void>
 
 >>> ((lambda (_) (set! outer-x 99)) 0)
-==> 99
+==> #<void>
 
 >>> outer-x
 ==> 99
@@ -146,7 +146,7 @@
 ...   (lambda (x)
 ...     ((lambda (n) n)
 ...      x)))
-==> #<procedure>
+==> #<void>
 
 >>> (square 7)
 ==> 7

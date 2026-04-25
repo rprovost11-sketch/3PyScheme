@@ -34,7 +34,7 @@ Special Form  |  args: unevaluated
 ;;; -------- Per-entry: user-defined procedure with docstring --------
 
 >>> (define (square n) "Return n squared." (* n n))
-==> #<procedure>
+==> #<void>
 
 >>> (help square)
 Procedure  |  args: pre-evaluated
@@ -47,7 +47,7 @@ Procedure  |  args: pre-evaluated
 ;;; -------- Per-entry: user procedure with no docstring --------
 
 >>> (define (triple n) (* n 3))
-==> #<procedure>
+==> #<void>
 
 >>> (help triple)
 Procedure  |  args: pre-evaluated

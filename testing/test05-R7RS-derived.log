@@ -15,7 +15,7 @@
 ==> 42
 
 >>> (define counter 0)
-==> 0
+==> #<void>
 
 >>> (begin (set! counter 1) (set! counter 2) counter)
 ==> 2
@@ -174,7 +174,7 @@
 ==> (1 2 3)
 
 >>> (define outer 10)
-==> 10
+==> #<void>
 
 >>> (let ((outer 1)) outer)
 ==> 1

@@ -10,7 +10,7 @@
 ;;; -------- Example programs --------
 
 >>> (define (fact n) (if (zero? n) 1 (* n (fact (- n 1)))))
-==> #<procedure>
+==> #<void>
 
 >>> (fact 0)
 ==> 1
@@ -22,37 +22,37 @@
 ==> 3628800
 
 >>> (define (fib n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
-==> #<procedure>
+==> #<void>
 
 >>> (fib 10)
 ==> 55
 
 >>> (define (length lst) (if (null? lst) 0 (+ 1 (length (cdr lst)))))
-==> #<procedure>
+==> #<void>
 
 >>> (length (list 10 20 30 40 50))
 ==> 5
 
 >>> (define (reverse lst) (let loop ((xs lst) (acc '())) (if (null? xs) acc (loop (cdr xs) (cons (car xs) acc)))))
-==> #<procedure>
+==> #<void>
 
 >>> (reverse (list 1 2 3 4 5))
 ==> (5 4 3 2 1)
 
 >>> (define (map1 f lst) (if (null? lst) '() (cons (f (car lst)) (map1 f (cdr lst)))))
-==> #<procedure>
+==> #<void>
 
 >>> (map1 (lambda (x) (* x x)) (list 1 2 3 4))
 ==> (1 4 9 16)
 
 >>> (define (sum-list lst) (if (null? lst) 0 (+ (car lst) (sum-list (cdr lst)))))
-==> #<procedure>
+==> #<void>
 
 >>> (sum-list (list 1 2 3 4 5))
 ==> 15
 
 >>> (define (gcd a b) (if (zero? b) a (gcd b (modulo a b))))
-==> #<procedure>
+==> #<void>
 
 >>> (gcd 48 18)
 ==> 6

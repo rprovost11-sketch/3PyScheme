@@ -1038,6 +1038,7 @@ def _cek_loop(expr, env, ctx):
          if ftag == FRAME_DEFINE:
             E = frame[2]
             E.bind(frame[1], V)
+            V = VOID_VALUE
             continue
 
          if ftag == FRAME_SET:
@@ -1047,6 +1048,7 @@ def _cek_loop(expr, env, ctx):
             except SchemeUnboundError as e:
                e.src = frame[3]
                raise
+            V = VOID_VALUE
             continue
 
          if ftag == FRAME_IF:
