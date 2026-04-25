@@ -708,6 +708,59 @@ Primitive  |  args: pre-evaluated
 %%% (define-values)
 %%% ^
 
+;;; -------- internal definitions hoist into letrec* (R7RS 5.3.2) --------
+
+;;; Mutually-recursive procedures defined via internal define: each
+;;; closure captures the body env, so forward references resolve at
+;;; call time.  This already worked without hoisting; the test pins the
+;;; behavior.
+>>> (let () (define f (lambda () (g))) (define g (lambda () 42)) (f))
+==> 42
+
+;;; Sequential init: y's init may reference x because x is bound first.
+>>> (let () (define x 1) (define y (+ x 1)) y)
+==> 2
+
+;;; Mutual reference between define-values and define via closure capture.
+>>> (let () (define h (lambda () g)) (define-values (g) 99) (h))
+==> 99
+
+;;; define and define-values mixed: all visible to body.
+>>> (let () (define x 1) (define-values (a b) (values 2 3)) (define y 4) (list x a b y))
+==> (1 2 3 4)
+
+;;; Internal (begin ...) splices its contents into the body, so a
+;;; define inside a body-position begin participates in hoisting.
+>>> (let () (begin (define x 10) (define y 20)) (+ x y))
+==> 30
+
+;;; lambda body also hoists.
+>>> ((lambda () (define x 100) (define y (+ x 1)) y))
+==> 101
+
+;;; case-lambda hoists per clause.
+>>> ((case-lambda ((x) (define y 100) (+ x y)) ((x y) (* x y))) 5)
+==> 105
+
+;;; when / unless body hoists.
+>>> (when #t (define x 7) (define y 8) (+ x y))
+==> 15
+
+>>> (unless #f (define-values (a b) (values 5 6)) (* a b))
+==> 30
+
+;;; let*-values body hoists.
+>>> (let*-values (((a) (values 10))) (define b (+ a 1)) (define c (* b 2)) c)
+==> 22
+
+;;; parameterize body hoists.
+>>> (parameterize () (define z 9) (* z z))
+==> 81
+
+;;; guard body hoists.
+>>> (guard (e (#t e)) (define ok 42) ok)
+==> 42
+
 ;;; -------- define-record-type (R7RS 5.5) --------
 
 ;;; Basic: constructor, predicate, accessors.

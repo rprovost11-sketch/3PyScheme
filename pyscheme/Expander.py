@@ -276,6 +276,107 @@ def _list_length(cell):
    return -1
 
 
+# ---- body expansion (R7RS 5.3.2 internal definitions) ----
+# A body in lambda / let / let* / letrec / letrec* / when / unless /
+# case-lambda / let-values / let*-values / parameterize / guard may
+# start with internal definitions (define and define-values).  R7RS
+# requires the body to be equivalent to a letrec*: every binding is
+# in scope before any init runs, so closures can mutually reference.
+# Body-position begins splice their contents into the outer body.
+
+def _is_head(form, name):
+   return (is_cons(form) and is_symbol(form.car)
+           and as_symbol(form.car) == name)
+
+
+def _collect_body_forms(body_cons):
+   """Walk a body cons chain.  Expand each form (except define-values,
+   which _expand_body intercepts so the formals can be hoisted as
+   letrec* bindings rather than buried inside a begin).  If the
+   expanded result is a (begin ...), splice its children into the
+   surrounding sequence.  Return a Python list of body forms."""
+   out = []
+   cur = body_cons
+   while is_cons(cur):
+      raw = cur.car
+      if _is_head(raw, 'define-values'):
+         out.append(raw)
+      else:
+         form = expand(raw)
+         if _is_head(form, 'begin'):
+            out.extend(_collect_body_forms(form.cdr))
+         else:
+            out.append(form)
+      cur = cur.cdr
+   return out
+
+
+def _expand_body(body_cons, src):
+   """Expand a body, hoisting leading internal definitions into a letrec*.
+   Handles (define <sym> <init>) and (define-values <formals> <expr>);
+   returns a body cons chain ready to be placed where the original body
+   went.  No hoisting needed -> the body is returned without a wrapper."""
+   forms = _collect_body_forms(body_cons)
+   bindings = []
+   body_prefix = []
+   i = 0
+   while i < len(forms):
+      f = forms[i]
+      if _is_head(f, 'define'):
+         # Canonical (define <sym> <init>) after _expand_define.
+         if (not is_cons(f.cdr) or not is_symbol(f.cdr.car)
+               or not is_cons(f.cdr.cdr) or not is_nil(f.cdr.cdr.cdr)):
+            break
+         bindings.append((f.cdr.car, f.cdr.cdr.car, f.src))
+         i = i + 1
+         continue
+      if _is_head(f, 'define-values'):
+         if (not is_cons(f.cdr) or not is_cons(f.cdr.cdr)
+               or not is_nil(f.cdr.cdr.cdr)):
+            break
+         formals_sexpr = f.cdr.car
+         expr          = f.cdr.cdr.car
+         fixed, rest = _mv_collect_formals(formals_sexpr)
+         if fixed is None:
+            break
+         fsrc = f.src
+         k = 0
+         while k < len(fixed):
+            bindings.append((make_symbol(fixed[k], fsrc), VOID_VALUE, fsrc))
+            k = k + 1
+         if rest is not None:
+            bindings.append((make_symbol(rest, fsrc), VOID_VALUE, fsrc))
+         body_prefix.append(_dv_build_setter(fixed, rest, expand(expr), fsrc))
+         i = i + 1
+         continue
+      break
+   if not bindings:
+      result = NIL_VALUE
+      j = len(forms) - 1
+      while j >= 0:
+         result = alloc_cons(forms[j], result, src)
+         j = j - 1
+      return result
+   rest_forms = body_prefix + forms[i:]
+   bindings_chain = NIL_VALUE
+   j = len(bindings) - 1
+   while j >= 0:
+      name_sym, init, fsrc = bindings[j]
+      pair = list_from_items([name_sym, init], fsrc)
+      bindings_chain = alloc_cons(pair, bindings_chain, src)
+      j = j - 1
+   rest_chain = NIL_VALUE
+   j = len(rest_forms) - 1
+   while j >= 0:
+      rest_chain = alloc_cons(rest_forms[j], rest_chain, src)
+      j = j - 1
+   letrec_sym = make_symbol('letrec*', src)
+   letrec_form = alloc_cons(letrec_sym,
+                            alloc_cons(bindings_chain, rest_chain, src),
+                            src)
+   return alloc_cons(letrec_form, NIL_VALUE, src)
+
+
 # ---- sugar handlers (each returns an S-expression) ----
 
 def _expand_define(sexpr):
@@ -294,23 +395,14 @@ def _expand_define(sexpr):
       return _expand_list(sexpr)
    name_sexpr  = signature.car
    params_tail = signature.cdr
-   # Expand each body form into a Python list, then fold into a cons chain.
-   expanded_body = []
-   cur = body_cons
-   while is_cons(cur):
-      expanded_body.append(expand(cur.car))
-      cur = cur.cdr
    # Params: pure-variadic if signature's cdr is an atom-symbol (name . rest).
    # Both that case and the list/dotted case carry the tail through verbatim.
    params_node = params_tail
    sig_src    = signature.src
    lambda_sym = make_symbol('lambda', sig_src)
-   # Build body chain terminated by NIL.
-   body_chain = NIL_VALUE
-   i = len(expanded_body) - 1
-   while i >= 0:
-      body_chain = alloc_cons(expanded_body[i], body_chain, sig_src)
-      i = i - 1
+   # Apply body hoisting (R7RS 5.3.2) so internal defines inside the
+   # procedure body become a letrec*.
+   body_chain = _expand_body(body_cons, sig_src)
    # (lambda <params> . body)
    params_and_body = alloc_cons(params_node, body_chain, sig_src)
    lambda_form     = alloc_cons(lambda_sym,  params_and_body, sig_src)
@@ -320,6 +412,160 @@ def _expand_define(sexpr):
    lambda_cons = alloc_cons(lambda_form, NIL_VALUE,  define_src)
    name_cons   = alloc_cons(name_sexpr,  lambda_cons, define_src)
    return alloc_cons(define_sym, name_cons, define_src)
+
+
+def _expand_let_family(sexpr, head_name):
+   # Generic shape: (let|let*|letrec|letrec* <bindings> <body>...).
+   # Plain let also accepts the named form: (let <name> <bindings> <body>...).
+   # Expand each init expression and apply body hoisting.  Bindings stay
+   # as ((<sym> <init>) ...); we pass them through with the inits expanded.
+   if not is_cons(sexpr.cdr):
+      return _expand_list(sexpr)
+   src = sexpr.src
+   head_sym = make_symbol(head_name, src)
+   first = sexpr.cdr.car
+   rest  = sexpr.cdr.cdr
+   # Named-let: (let <name> <bindings> <body>...)
+   named_name = None
+   if head_name == 'let' and is_symbol(first) and is_cons(rest):
+      named_name = first
+      bindings_form = rest.car
+      body_cons     = rest.cdr
+   else:
+      bindings_form = first
+      body_cons     = rest
+   if not (is_cons(bindings_form) or is_nil(bindings_form)):
+      return _expand_list(sexpr)
+   if is_nil(body_cons):
+      return _expand_list(sexpr)
+   new_bindings = _expand_let_bindings(bindings_form, src)
+   if new_bindings is None:
+      return _expand_list(sexpr)
+   expanded_body = _expand_body(body_cons, src)
+   if named_name is not None:
+      tail = alloc_cons(named_name,
+                alloc_cons(new_bindings, expanded_body, src),
+                src)
+   else:
+      tail = alloc_cons(new_bindings, expanded_body, src)
+   return alloc_cons(head_sym, tail, src)
+
+
+def _expand_let_bindings(bindings_form, src):
+   """Expand each init expression in a let/let*/letrec/letrec* binding
+   list.  Bindings shape: ((<sym> <init>) ...).  Return a fresh cons
+   chain with each init expanded, or None on shape error so the caller
+   can punt to _expand_list."""
+   if is_nil(bindings_form):
+      return NIL_VALUE
+   items = []
+   cur = bindings_form
+   while is_cons(cur):
+      pair = cur.car
+      if (not is_cons(pair) or not is_cons(pair.cdr)
+            or not is_nil(pair.cdr.cdr)):
+         return None
+      name = pair.car
+      init = pair.cdr.car
+      new_pair = list_from_items([name, expand(init)], pair.src)
+      items.append(new_pair)
+      cur = cur.cdr
+   if not is_nil(cur):
+      return None
+   result = NIL_VALUE
+   i = len(items) - 1
+   while i >= 0:
+      result = alloc_cons(items[i], result, src)
+      i = i - 1
+   return result
+
+
+def _expand_let(sexpr):
+   return _expand_let_family(sexpr, 'let')
+
+
+def _expand_let_star(sexpr):
+   return _expand_let_family(sexpr, 'let*')
+
+
+def _expand_letrec(sexpr):
+   return _expand_let_family(sexpr, 'letrec')
+
+
+def _expand_letrec_star(sexpr):
+   return _expand_let_family(sexpr, 'letrec*')
+
+
+def _expand_lambda(sexpr):
+   # (lambda <formals> <body>...)
+   # Pass formals through verbatim; expand the body with internal-define
+   # hoisting (R7RS 5.3.2 letrec* equivalence).
+   if not is_cons(sexpr.cdr):
+      return _expand_list(sexpr)
+   formals = sexpr.cdr.car
+   body    = sexpr.cdr.cdr
+   if is_nil(body):
+      return _expand_list(sexpr)
+   src = sexpr.src
+   expanded_body = _expand_body(body, src)
+   lambda_sym = make_symbol('lambda', src)
+   return alloc_cons(lambda_sym,
+                     alloc_cons(formals, expanded_body, src),
+                     src)
+
+
+def _expand_when_unless(sexpr, head_name):
+   # (when <test> <body>...) / (unless <test> <body>...)
+   # Body supports internal definitions (R7RS 4.2.1).
+   if not is_cons(sexpr.cdr):
+      return _expand_list(sexpr)
+   test = sexpr.cdr.car
+   body = sexpr.cdr.cdr
+   if is_nil(body):
+      return _expand_list(sexpr)
+   src = sexpr.src
+   head_sym = make_symbol(head_name, src)
+   expanded_body = _expand_body(body, src)
+   return alloc_cons(head_sym,
+                     alloc_cons(expand(test), expanded_body, src),
+                     src)
+
+
+def _expand_when(sexpr):
+   return _expand_when_unless(sexpr, 'when')
+
+
+def _expand_unless(sexpr):
+   return _expand_when_unless(sexpr, 'unless')
+
+
+def _expand_case_lambda(sexpr):
+   # (case-lambda <clause>...)  where each clause is (<formals> <body>...).
+   # Apply body hoisting per clause; formals pass through verbatim.
+   if not is_cons(sexpr.cdr):
+      return _expand_list(sexpr)
+   src = sexpr.src
+   head_sym = make_symbol('case-lambda', src)
+   expanded_clauses = []
+   cur = sexpr.cdr
+   while is_cons(cur):
+      clause = cur.car
+      if not is_cons(clause) or not is_cons(clause.cdr):
+         return _expand_list(sexpr)
+      formals = clause.car
+      body    = clause.cdr
+      expanded_body = _expand_body(body, clause.src)
+      expanded_clauses.append(
+         alloc_cons(formals, expanded_body, clause.src))
+      cur = cur.cdr
+   if not is_nil(cur):
+      return _expand_list(sexpr)
+   tail = NIL_VALUE
+   i = len(expanded_clauses) - 1
+   while i >= 0:
+      tail = alloc_cons(expanded_clauses[i], tail, src)
+      i = i - 1
+   return alloc_cons(head_sym, tail, src)
 
 
 def _expand_if(sexpr):
@@ -810,9 +1056,9 @@ def _expand_let_star_values(sexpr):
       clauses.append((b.car, expand(b.cdr.car)))
       cur = cur.cdr
    body_items = []
-   cur = body_cons
+   cur = _expand_body(body_cons, src)
    while is_cons(cur):
-      body_items.append(expand(cur.car))
+      body_items.append(cur.car)
       cur = cur.cdr
    if not body_items:
       return _expand_list(sexpr)
@@ -859,9 +1105,9 @@ def _expand_let_values(sexpr):
       clauses.append((b.car, expand(b.cdr.car)))
       cur = cur.cdr
    body_items = []
-   cur = body_cons
+   cur = _expand_body(body_cons, src)
    while is_cons(cur):
-      body_items.append(expand(cur.car))
+      body_items.append(cur.car)
       cur = cur.cdr
    if not body_items:
       return _expand_list(sexpr)
@@ -955,11 +1201,11 @@ def _expand_guard(sexpr):
       has_else = True
 
    src = sexpr.src
-   # Expand the body into a Python list.
+   # Expand the body into a Python list, with internal-define hoisting.
    body_items = []
-   cur = body_cons
+   cur = _expand_body(body_cons, src)
    while is_cons(cur):
-      body_items.append(expand(cur.car))
+      body_items.append(cur.car)
       cur = cur.cdr
    if not body_items:
       return _expand_list(sexpr)
@@ -1054,9 +1300,9 @@ def _expand_parameterize(sexpr):
       values_exprs.append(expand(b.cdr.car))
       cur = cur.cdr
    body_items = []
-   cur = body_cons
+   cur = _expand_body(body_cons, src)
    while is_cons(cur):
-      body_items.append(expand(cur.car))
+      body_items.append(cur.car)
       cur = cur.cdr
    if not body_items:
       return _expand_list(sexpr)
@@ -1244,33 +1490,12 @@ def _expand_define_record_type(sexpr):
    return list_from_items(forms, src)
 
 
-def _expand_define_values(sexpr):
-   # (define-values <formals> <expr>)
-   # Emit a begin that pre-defines each variable, then uses call-with-values
-   # with a set!-ing consumer.  Fresh %mvX names avoid colliding with the
-   # user's own variable names inside the consumer.
-   if _list_length(sexpr) != 3:
-      return _expand_list(sexpr)
-   formals_sexpr = sexpr.cdr.car
-   expr          = sexpr.cdr.cdr.car
-   fixed, rest = _mv_collect_formals(formals_sexpr)
-   if fixed is None:
-      return _expand_list(sexpr)
-   src = sexpr.src
-   define_sym = make_symbol('define', src)
-   set_sym    = make_symbol('set!', src)
-   items = [make_symbol('begin', src)]
-   # Pre-define each user-visible binding to VOID.
-   i = 0
-   while i < len(fixed):
-      items.append(list_from_items(
-         [define_sym, make_symbol(fixed[i], src), VOID_VALUE], src))
-      i = i + 1
-   if rest is not None:
-      items.append(list_from_items(
-         [define_sym, make_symbol(rest, src), VOID_VALUE], src))
-   # Build the consumer formals matching the user's shape, but with fresh
-   # %tmp names so the set!s refer unambiguously to the outer user bindings.
+def _dv_build_setter(fixed, rest, expanded_expr, src):
+   """Build the (call-with-values <producer> <consumer>) form that drives
+   define-values's multi-value assignment.  fixed/rest are the user's
+   formals already collected; expanded_expr is the producer body, already
+   expanded.  Returns one cons form."""
+   set_sym = make_symbol('set!', src)
    tmp_fixed = []
    i = 0
    while i < len(fixed):
@@ -1279,7 +1504,6 @@ def _expand_define_values(sexpr):
    tmp_rest = None
    if rest is not None:
       tmp_rest = make_symbol('%mv-tmp-rest', src)
-   # Consumer body: a sequence of (set! user-var tmp-var) forms.
    body_items = []
    i = 0
    while i < len(fixed):
@@ -1289,7 +1513,6 @@ def _expand_define_values(sexpr):
    if rest is not None:
       body_items.append(list_from_items(
          [set_sym, make_symbol(rest, src), tmp_rest], src))
-   # Consumer formals as an sexpr.
    if tmp_rest is None:
       consumer_formals = list_from_items(tmp_fixed, src)
    elif not tmp_fixed:
@@ -1301,8 +1524,35 @@ def _expand_define_values(sexpr):
          consumer_formals = alloc_cons(tmp_fixed[j], consumer_formals, src)
          j = j - 1
    consumer = _mv_lambda(consumer_formals, body_items, src)
-   producer = _mv_thunk(expand(expr), src)
-   items.append(_mv_cwv(producer, consumer, src))
+   producer = _mv_thunk(expanded_expr, src)
+   return _mv_cwv(producer, consumer, src)
+
+
+def _expand_define_values(sexpr):
+   # (define-values <formals> <expr>)
+   # Top-level desugaring: emit a begin that pre-defines each user-visible
+   # binding to VOID, then runs the call-with-values setter.  Inside body
+   # context, _expand_body intercepts before this handler runs and hoists
+   # the bindings into a letrec* directly.
+   if _list_length(sexpr) != 3:
+      return _expand_list(sexpr)
+   formals_sexpr = sexpr.cdr.car
+   expr          = sexpr.cdr.cdr.car
+   fixed, rest = _mv_collect_formals(formals_sexpr)
+   if fixed is None:
+      return _expand_list(sexpr)
+   src = sexpr.src
+   define_sym = make_symbol('define', src)
+   items = [make_symbol('begin', src)]
+   i = 0
+   while i < len(fixed):
+      items.append(list_from_items(
+         [define_sym, make_symbol(fixed[i], src), VOID_VALUE], src))
+      i = i + 1
+   if rest is not None:
+      items.append(list_from_items(
+         [define_sym, make_symbol(rest, src), VOID_VALUE], src))
+   items.append(_dv_build_setter(fixed, rest, expand(expr), src))
    return list_from_items(items, src)
 
 
@@ -1340,6 +1590,14 @@ def _expand_cond_expand(sexpr):
 
 _SUGAR_HANDLERS = {
    'define':             _expand_define,
+   'lambda':             _expand_lambda,
+   'let':                _expand_let,
+   'let*':               _expand_let_star,
+   'letrec':             _expand_letrec,
+   'letrec*':            _expand_letrec_star,
+   'when':               _expand_when,
+   'unless':             _expand_unless,
+   'case-lambda':        _expand_case_lambda,
    'if':                 _expand_if,
    'quote':              _expand_quote,
    'do':                 _expand_do,

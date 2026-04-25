@@ -46,8 +46,8 @@ def main():
       interp,
       testdir='testing',
       language='pyscheme',
-      version='0.1',
-      author='Ron Provost',
+      version='0.2.3',
+      author='Ron Provost/Longo',
       project='https://github.com/rprovost11/pyscheme',
    )
    try:
