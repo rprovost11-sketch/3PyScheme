@@ -118,10 +118,6 @@
 >>> (define (loop n) (if (zero? n) 'done (eval (list 'loop (- n 1))))) (loop 100000)
 ==> done
 
-;;; Second argument is accepted but ignored.
->>> (eval '(+ 2 3) 'ignored)
-==> 5
-
 ;;; Shape errors inside the evaluated datum surface normally.  The
 ;;; position points at the source location of the offending datum
 ;;; inside the quote, since positioned NIL carries the opening '('.
@@ -129,6 +125,68 @@
 %%% line 1, col 8: empty list () is not a valid expression; use (quote ()) for the empty list
 %%% (eval '())
 %%%        ^
+
+;;; -------- environment specifiers (R7RS 6.12) --------
+
+;;; (interaction-environment) returns the mutable global env.
+>>> (interaction-environment)
+==> #<environment>
+
+>>> (eval '(+ 1 2) (interaction-environment))
+==> 3
+
+;;; eval against the interaction-environment sees globals.
+>>> (define eval-test-x 11) (eval 'eval-test-x (interaction-environment))
+==> 11
+
+;;; eval against the interaction-environment can install globals.
+>>> (eval '(define eval-test-y 22) (interaction-environment)) eval-test-y
+==> 22
+
+;;; (environment ...) builds a fresh frozen env from the named libraries.
+>>> (environment '(scheme base))
+==> #<environment>
+
+>>> (eval '(+ 10 20) (environment '(scheme base)))
+==> 30
+
+;;; Multiple library specs unite their exports.  The arithmetic comes
+;;; from (scheme base), force/make-promise from (scheme lazy).
+>>> (eval '(force (make-promise (+ 1 2))) (environment '(scheme base) '(scheme lazy)))
+==> 3
+
+;;; The environment from (environment ...) is frozen: defining errors.
+>>> (eval '(define z 1) (environment '(scheme base)))
+%%% SchemeTypeError: cannot define 'z' in a frozen environment
+
+;;; ... and set! on an imported name errors.
+>>> (eval '(set! cons 1) (environment '(scheme base)))
+%%% SchemeTypeError: set! on 'cons' in a frozen environment
+
+;;; Second argument must be an environment value.
+>>> (eval '(+ 1 2) 'not-an-env)
+%%% SchemeTypeError: line 1, col 1: eval: second argument must be an environment
+%%% (eval '(+ 1 2) 'not-an-env)
+%%% ^
+
+>>> (eval '(+ 1 2) 42)
+%%% SchemeTypeError: line 1, col 1: eval: second argument must be an environment
+%%% (eval '(+ 1 2) 42)
+%%% ^
+
+;;; Unknown library raises a clear error.
+>>> (environment '(no such lib))
+%%% SchemeTypeError: line 1, col 1: environment: library not found: (no such lib)
+%%% (environment '(no such lib))
+%%% ^
+
+;;; environment with no args returns an empty frozen env.
+>>> (eval '(quote ok) (environment))
+==> ok
+
+;;; Deep tail recursion through eval also works with an env-spec arg.
+>>> (define (loop2 n) (if (zero? n) 'done (eval (list 'loop2 (- n 1)) (interaction-environment)))) (loop2 100000)
+==> done
 
 ;;; -------- error (R7RS 6.11) --------
 

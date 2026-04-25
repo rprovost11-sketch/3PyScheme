@@ -43,6 +43,7 @@ RECORD             = 15
 PARAMETER          = 16
 CONTINUATION       = 17
 SYNTAX_TRANSFORMER = 18
+ENVIRONMENT        = 19
 SYMBOL             = 100
 
 
@@ -234,6 +235,9 @@ def make_continuation(k_snapshot, wind_snapshot):
 def make_syntax_transformer(name, literals, ellipsis, rules, def_env):
    return SyntaxTransformer(name, literals, ellipsis, rules, def_env)
 
+def make_environment(env):
+   return (ENVIRONMENT, env)
+
 
 # --- Predicates --------------------------------------------------------
 
@@ -306,6 +310,9 @@ def is_continuation(val):
 
 def is_syntax_transformer(val):
    return isinstance(val, SyntaxTransformer)
+
+def is_environment(val):
+   return isinstance(val, tuple) and len(val) >= 1 and val[0] == ENVIRONMENT
 
 
 # --- Accessors ---------------------------------------------------------
@@ -484,6 +491,9 @@ def as_syntax_transformer_rules(t):
 
 def as_syntax_transformer_def_env(t):
    return t.def_env
+
+def as_environment(val):
+   return val[1]
 
 
 # --- Value equality ---------------------------------------------------
@@ -684,6 +694,15 @@ if __name__ == '__main__':
    check('continuation wind_snapshot',  as_continuation_wind(cont) is wsnap)
    check('continuation not closure',    not is_closure(cont))
    check('continuation not promise',    not is_promise(cont))
+
+   # Environment value (wraps an opaque env object)
+   env_obj = object()
+   ev = make_environment(env_obj)
+   check('is_environment',           is_environment(ev))
+   check('as_environment',           as_environment(ev) is env_obj)
+   check('environment not closure',  not is_closure(ev))
+   check('environment not record',   not is_record(ev))
+   check('src_of environment',       src_of(ev) is None)
 
    # SyntaxTransformer
    st = make_syntax_transformer('swap!', ['set!'], '...', [('pat', 'tmpl')], {})

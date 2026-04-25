@@ -127,14 +127,24 @@ class Environment:
       else:
          self._bindings = initialBindings
       self._parent = parent
+      self._is_immutable = False
       if parent is None:
          self._global_env = self
       else:
          self._global_env = parent._global_env
 
    def bind(self, key, value):
+      if self._is_immutable:
+         raise SchemeTypeError(
+            "cannot define '" + key + "' in a frozen environment")
       self._bindings[key] = value
       return value
+
+   def freeze(self):
+      """Mark this environment immutable: subsequent bind / set on a binding
+      it owns raises SchemeTypeError.  Used for library export tables and
+      for environments returned by R7RS (environment ...).  Idempotent."""
+      self._is_immutable = True
 
    def getGlobalEnv(self):
       return self._global_env
@@ -151,10 +161,14 @@ class Environment:
 
    def set(self, key, value):
       """Scheme set!: update existing binding in the nearest enclosing scope.
-      Raises SchemeUnboundError if key is not bound anywhere."""
+      Raises SchemeUnboundError if key is not bound anywhere; raises
+      SchemeTypeError if the owning scope is frozen."""
       scope = self
       while scope:
          if key in scope._bindings:
+            if scope._is_immutable:
+               raise SchemeTypeError(
+                  "set! on '" + key + "' in a frozen environment")
             scope._bindings[key] = value
             return value
          scope = scope._parent
@@ -225,6 +239,40 @@ if __name__ == '__main__':
    except SchemeUnboundError as e:
       check('set missing raises',     True)
       check('set missing msg',        e.msg == 'set! on unbound variable: missing')
+
+   # Freeze: bind and set raise on a frozen env.
+   frozen = Environment()
+   frozen.bind('a', 1)
+   check('frozen flag default False', frozen._is_immutable is False)
+   frozen.freeze()
+   check('freeze sets flag',          frozen._is_immutable is True)
+   try:
+      frozen.bind('b', 2)
+      check('bind on frozen raises',  False)
+   except SchemeTypeError as e:
+      check('bind on frozen raises',  True)
+      check('bind frozen msg',        "cannot define 'b'" in e.msg)
+   try:
+      frozen.set('a', 99)
+      check('set on frozen raises',   False)
+   except SchemeTypeError as e:
+      check('set on frozen raises',   True)
+      check('set frozen msg',         "set! on 'a'" in e.msg)
+   check('frozen value unchanged',    frozen.lookup('a') == 1)
+   # set on a child scope updating a frozen-parent binding also raises.
+   child_of_frozen = Environment(parent=frozen)
+   try:
+      child_of_frozen.set('a', 99)
+      check('child set walking to frozen raises', False)
+   except SchemeTypeError:
+      check('child set walking to frozen raises', True)
+   # set on a child's own (unfrozen) binding still works.
+   child_of_frozen.bind('z', 7)
+   child_of_frozen.set('z', 8)
+   check('child unfrozen set works', child_of_frozen.lookup('z') == 8)
+   # freeze is idempotent.
+   frozen.freeze()
+   check('freeze idempotent',         frozen._is_immutable is True)
 
    # SchemeUnboundError caller can mutate src after construction.
    try:

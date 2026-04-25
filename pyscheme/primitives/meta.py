@@ -4,7 +4,9 @@ R7RS library procedures that transcend normal procedure-call semantics:
 
     (error <message> <irritant>...)     6.11  raise a user error
     (apply <proc> <arg>... <list>)      6.10  apply proc to combined args
-    (eval <datum> [<env-spec>])         6.12  evaluate a datum in the global env
+    (eval <datum> [<env-spec>])         6.12  evaluate a datum in an environment
+    (environment <list>...)             6.12  build a frozen env from libraries
+    (interaction-environment)           6.12  return the mutable global env
     (force <promise>)                   6.10  force a promise's value
     (make-promise <obj>)                6.10  wrap a value as an already-forced promise
     (values <obj>...)                   6.10  return multiple values
@@ -33,6 +35,7 @@ from pyscheme.AST import (
    as_error_object_message, as_error_object_irritants,
    alloc_cons, make_symbol, make_promise_done, make_multi_values,
    make_record_type, make_record, make_parameter, make_string,
+   make_environment,
    list_from_items,
    VOID_VALUE,
 )
@@ -126,6 +129,45 @@ def _prim_eval_unreached(ctx, env, args, app_node):
    raise SchemeTypeError(
       'eval: cannot be called through a re-entering path in this '
       'implementation', app_node)
+
+
+def _prim_interaction_environment(ctx, env, args, app_node):
+   # Returns the mutable global environment as a first-class env value.
+   # eval against this is the same as eval with no env arg: definitions
+   # persist on the top-level env.
+   return make_environment(env.getGlobalEnv())
+
+
+def _prim_environment(ctx, env, args, app_node):
+   # (environment <library-spec>...) returns a frozen env containing the
+   # union of the named libraries' exports.  Each spec is a list of
+   # symbols / integers (e.g. '(scheme base)).  R7RS forbids modifying
+   # the resulting env; we enforce that via Environment.freeze().
+   from pyscheme.Environment import Environment
+   from pyscheme.library import library_name_to_key, library_lookup
+   from pyscheme.PrettyPrinter import pretty_print
+   result = Environment(parent=None)
+   i = 0
+   while i < len(args):
+      spec = args[i]
+      if not is_cons(spec):
+         raise SchemeTypeError(
+            'environment: argument must be a library-name list',
+            app_node)
+      try:
+         key = library_name_to_key(spec)
+      except ValueError as e:
+         raise SchemeTypeError('environment: ' + str(e), app_node)
+      lib_env = library_lookup(key)
+      if lib_env is None:
+         raise SchemeTypeError(
+            'environment: library not found: ' + pretty_print(spec),
+            app_node)
+      for n in lib_env._bindings:
+         result.bind(n, lib_env._bindings[n])
+      i = i + 1
+   result.freeze()
+   return make_environment(result)
 
 
 def _prim_force_unreached(ctx, env, args, app_node):
@@ -317,9 +359,32 @@ def register():
    register_primitive('eval', (1, 2), _prim_eval_unreached,
       usage='(eval <datum> [<env-spec>])',
       doc=(
-         "Evaluate <datum> as a Scheme expression in the current global\n"
-         "environment.  The second argument (R7RS environment specifier) is\n"
-         "accepted for compatibility but ignored in this implementation."),
+         "Evaluate <datum> as a Scheme expression.  With one argument, the\n"
+         "evaluation environment is the caller's global environment.  With\n"
+         "two arguments, <env-spec> must be an environment value produced by\n"
+         "(interaction-environment) or (environment ...).  Definitions made\n"
+         "during evaluation extend that environment if it is mutable, and\n"
+         "are an error if it is frozen.  R7RS 6.12."),
+      category=CATEGORY)
+
+   register_primitive('interaction-environment', (0, 0),
+      _prim_interaction_environment,
+      usage='(interaction-environment)',
+      doc=(
+         "Return a specifier for the current REPL / top-level environment.\n"
+         "The returned environment is mutable: (eval '(define x 1) (interaction-\n"
+         "environment)) installs x in the global env so subsequent code can\n"
+         "see it.  R7RS 6.12; library (scheme repl)."),
+      category=CATEGORY)
+
+   register_primitive('environment', (0, None), _prim_environment,
+      usage='(environment <library-spec>...)',
+      doc=(
+         "Return a specifier for an environment built from the named\n"
+         "libraries' exports.  Each <library-spec> is a list of symbols /\n"
+         "integers identifying a registered library, e.g. '(scheme base).\n"
+         "The returned environment is frozen: defining or set!'ing on it is\n"
+         "an error.  R7RS 6.12; library (scheme eval)."),
       category=CATEGORY)
 
    register_primitive('force', (1, 1), _prim_force_unreached,

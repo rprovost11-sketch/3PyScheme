@@ -79,12 +79,13 @@ from pyscheme.AST import (
    is_cons, is_nil, is_symbol, is_boolean, is_string, is_primitive,
    is_closure, is_promise,
    is_case_closure, is_multi_values, is_parameter, is_continuation,
+   is_environment,
    as_symbol, as_boolean, as_string, as_primitive_fn, as_primitive_name,
    as_closure_params, as_closure_body, as_closure_env, as_closure_rest_name,
    as_case_closure_clauses, as_case_closure_env, as_parameter_value,
    as_continuation_k, as_continuation_wind,
    as_promise_is_done, as_promise_payload,
-   as_multi_values_list,
+   as_multi_values_list, as_environment,
    promise_resolve, promise_become, set_parameter_value,
    as_parameter_converter,
    make_boolean, make_closure, make_case_closure, make_promise_lazy,
@@ -1306,21 +1307,31 @@ def _cek_loop(expr, env, ctx):
                # calls inside the eval'd expression compose with the
                # surrounding continuation, so deep recursion through eval
                # doesn't add Python stack.  The optional env-spec argument
-               # is accepted but ignored - same documented limitation as
-               # before.
+               # selects the evaluation environment: an env value from
+               # (interaction-environment) or (environment ...).  Without
+               # it, the caller's global env is used.
                if _is_eval_primitive(fn_value):
                   if len(new_collected) not in (1, 2):
                      raise SchemeArityError(
                         arity_mismatch_msg('eval', 1, 2, len(new_collected)),
                         src_of(app_node) if app_node is not None else None)
                   datum = new_collected[0]
+                  if len(new_collected) == 2:
+                     env_arg = new_collected[1]
+                     if not is_environment(env_arg):
+                        raise SchemeTypeError(
+                           'eval: second argument must be an environment',
+                           src_of(app_node) if app_node is not None else None)
+                     target_env = as_environment(env_arg)
+                  else:
+                     target_env = saved_env.getGlobalEnv()
                   from pyscheme.Expander  import expand
                   from pyscheme.Analyzer  import analyze
                   from pyscheme.primitives import PRIMITIVE_ARITIES
                   expanded = expand(datum)
                   analyze(expanded, dict(PRIMITIVE_ARITIES))
                   C = expanded
-                  E = saved_env.getGlobalEnv()
+                  E = target_env
                   break
                # error: build an ErrorObject and throw Python SchemeUserError
                # (which subclasses SchemeRaised), letting cek_eval's except

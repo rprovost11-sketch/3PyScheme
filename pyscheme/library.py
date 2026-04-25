@@ -177,11 +177,13 @@ def register_standard_libraries(global_env):
    _register_filtered(global_env, 'scheme.base', _SCHEME_BASE_NAMES)
    _register_filtered(global_env, 'scheme.lazy',
       ['force', 'make-promise', 'promise?'])
-   _register_filtered(global_env, 'scheme.eval', ['eval'])
+   _register_filtered(global_env, 'scheme.eval', ['eval', 'environment'])
    # Empty env registration: the library's forms are special syntax
    # handled by the evaluator / expander, so there are no procedures to
    # export, but import should still succeed.
-   library_register('scheme.case-lambda', Environment(parent=None))
+   _empty_lib = Environment(parent=None)
+   _empty_lib.freeze()
+   library_register('scheme.case-lambda', _empty_lib)
    _register_filtered(global_env, 'scheme.r5rs', _SCHEME_R5RS_NAMES)
    _register_filtered(global_env, 'scheme.inexact', _SCHEME_INEXACT_NAMES)
    _register_filtered(global_env, 'scheme.complex', _SCHEME_COMPLEX_NAMES)
@@ -202,7 +204,8 @@ def register_standard_libraries(global_env):
 
 def _register_filtered(global_env, key, names):
    """Register a library under `key` containing bindings for each name in
-   `names` that exists in global_env.  Missing names are skipped."""
+   `names` that exists in global_env.  Missing names are skipped.  The
+   resulting export environment is frozen: R7RS forbids modifying it."""
    exports_env = Environment(parent=None)
    i = 0
    while i < len(names):
@@ -210,6 +213,7 @@ def _register_filtered(global_env, key, names):
       if n in global_env._bindings:
          exports_env.bind(n, global_env._bindings[n])
       i = i + 1
+   exports_env.freeze()
    library_register(key, exports_env)
 
 
