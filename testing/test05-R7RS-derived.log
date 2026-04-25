@@ -852,6 +852,34 @@ Primitive  |  args: pre-evaluated
 >>> (define-record-type tag (make-tag) tag?) (make-tag)
 ==> #<tag>
 
+;;; -------- synthesized-name hygiene --------
+;;; The desugarings for do, let-values, let*-values, define-values, and
+;;; define-record-type used to build synthetic identifiers ('%do-loop%',
+;;; '%mv0', '%mv-tmp0', '%record-type:NAME').  Those would collide with
+;;; user-chosen names.  Each is now produced by hygiene_gensym.
+
+;;; let-values: a user binding named %mv0 must survive the let-values body.
+>>> (let ((%mv0 'outer)) (let-values (((a) (values 1))) (list %mv0 a)))
+==> (outer 1)
+
+;;; let*-values: same with a sequential clause chain.
+>>> (let ((%mv1 'outer)) (let*-values (((a) (values 1)) ((b) (values 2))) (list %mv1 a b)))
+==> (outer 1 2)
+
+;;; define-values: %mv-tmp0 / %mv-tmp-rest used to leak.
+>>> (let ((%mv-tmp0 'outer)) (define-values (a b) (values 1 2)) (list %mv-tmp0 a b))
+==> (outer 1 2)
+
+;;; do: a user binding named %do-loop% must not be shadowed by the loop.
+>>> (let ((%do-loop% 'outer)) (do ((i 0 (+ i 1))) ((= i 3) %do-loop%)))
+==> outer
+
+;;; define-record-type: the hidden type descriptor used to be named
+;;; %record-type:point in the global env; a user binding of that name
+;;; would have collided with the record machinery.
+>>> (define %record-type:thing 'mine) (define-record-type thing (make-thing) thing?) %record-type:thing
+==> mine
+
 ;;; -------- make-parameter / parameterize (R7RS 4.2.6, 6.10) --------
 
 ;;; make-parameter returns a parameter object.

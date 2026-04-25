@@ -40,6 +40,7 @@ from pyscheme.AST import (
    make_symbol, ConsCell, REPL_FILENAME,
    SYMBOL, VOID,
 )
+from pyscheme.syntax_rules import hygiene_gensym
 
 
 # Module-level expand-time macro environment.  Shared across REPL top-level
@@ -649,9 +650,9 @@ def _expand_do(sexpr):
    test_expr = expand(test_cons.car)
 
    src = sexpr.src
-   loop_name = make_symbol('%do-loop%', src)
+   loop_name = make_symbol(hygiene_gensym('do-loop'), src)
 
-   # Build the recursive call (%do-loop% step1 step2 ...).  If a variable
+   # Build the recursive call (loop-name step1 step2 ...).  If a variable
    # has no step expression, pass its current value forward by referring
    # to the variable itself.
    call_items = []
@@ -717,7 +718,9 @@ def _expand_do(sexpr):
       i = i + 1
    let_bindings = list_from_items(binding_forms, src)
 
-   # Build (let %do-loop% <bindings> <if>).
+   # Build (let <loop-name> <bindings> <if>).  loop-name is a fresh gensym
+   # so user code that happens to bind a name like %do-loop% does not
+   # shadow our recursive call.
    let_sym = make_symbol('let', src)
    return list_from_items([let_sym, loop_name, let_bindings, if_form], src)
 
@@ -960,8 +963,8 @@ def _expand_quasiquote(sexpr):
 
 # ---- multi-value binding forms (R7RS 4.2.2, 5.3.3) ----
 # let-values, let*-values, define-values all desugar to call-with-values.
-# Synthesized temp names use a '%mv' prefix; collisions remain a known
-# limitation until syntax-rules lands (same caveat as %do-loop%).
+# Synthesized temp names go through hygiene_gensym so user identifiers
+# can never collide with our internal bindings.
 
 def _mv_collect_formals(formals_sexpr):
    """Walk a formals s-expression into (fixed_names, rest_name).  Supports
@@ -1120,12 +1123,12 @@ def _expand_let_values(sexpr):
          items.append(body_items[i])
          i = i + 1
       return list_from_items(items, src)
-   # Outer let: bind %mv<k> to the value-list for each clause.
+   # Outer let: bind a fresh gensym to the value-list for each clause.
    outer_bindings = []
    tmp_syms = []
    i = 0
    while i < len(clauses):
-      tmp_name = '%mv' + str(i)
+      tmp_name = hygiene_gensym('mv')
       tmp_sym = make_symbol(tmp_name, src)
       tmp_syms.append(tmp_sym)
       producer = _mv_thunk(clauses[i][1], src)
@@ -1398,8 +1401,11 @@ def _expand_define_record_type(sexpr):
       all_field_names.append(field_entries[i][0])
       i = i + 1
 
-   # Hidden global holding the record type descriptor.
-   rt_sym_name = '%record-type:' + type_name
+   # Hidden global holding the record type descriptor.  Use a gensym so
+   # two define-record-type forms with the same user-visible type name
+   # produce distinct hidden descriptors and never collide with user
+   # identifiers.
+   rt_sym_name = hygiene_gensym('record-type-' + type_name)
    rt_sym = make_symbol(rt_sym_name, src)
 
    # Helpers for emitting pieces.
@@ -1499,11 +1505,11 @@ def _dv_build_setter(fixed, rest, expanded_expr, src):
    tmp_fixed = []
    i = 0
    while i < len(fixed):
-      tmp_fixed.append(make_symbol('%mv-tmp' + str(i), src))
+      tmp_fixed.append(make_symbol(hygiene_gensym('mv-tmp'), src))
       i = i + 1
    tmp_rest = None
    if rest is not None:
-      tmp_rest = make_symbol('%mv-tmp-rest', src)
+      tmp_rest = make_symbol(hygiene_gensym('mv-tmp-rest'), src)
    body_items = []
    i = 0
    while i < len(fixed):
