@@ -11,6 +11,7 @@ from pyscheme.AST import (
    is_boolean, is_symbol, is_string, is_character,
    is_closure, is_primitive, is_case_closure, is_promise, is_parameter,
    is_error_object, is_continuation,
+   is_record_accessor, is_record_mutator,
    as_integer, as_real, make_boolean,
 )
 from pyscheme.Environment import SchemeTypeError
@@ -103,7 +104,8 @@ def _prim_procedure_p(ctx, env, args, app_node):
    v = args[0]
    return make_boolean(
       is_closure(v) or is_primitive(v) or is_case_closure(v)
-      or is_parameter(v) or is_continuation(v))
+      or is_parameter(v) or is_continuation(v)
+      or is_record_accessor(v) or is_record_mutator(v))
 
 
 def _prim_parameter_p(ctx, env, args, app_node):

@@ -1472,25 +1472,25 @@ def _expand_define_record_type(sexpr):
    pred_params = alloc_cons(obj_sym, NIL_VALUE, src)
    forms.append(mk_define_proc(pred_sexpr, pred_params, pred_body))
 
-   # For each field: accessor and optional mutator.
+   # For each field: accessor and optional mutator.  Emit each as a
+   # call to %make-record-accessor / %make-record-mutator, which produce
+   # special RECORD_ACCESSOR / RECORD_MUTATOR values; the Evaluator
+   # dispatches them inline so type-error positions are the call site,
+   # not the define-record-type form.
+   from pyscheme.AST import make_integer
    i = 0
    while i < len(field_entries):
       fname, accessor, mutator = field_entries[i]
-      idx_lit = list_from_items([mk_sym('quote')], src)  # placeholder; use literal int
-      from pyscheme.AST import make_integer
       idx_val = make_integer(i, src)
-      rec_sym = mk_sym('r')
-      # accessor: (define (accessor r) (%record-ref r %rt i))
-      acc_body = list_from_items(
-         [mk_sym('%record-ref'), rec_sym, rt_sym, idx_val], src)
-      acc_params = alloc_cons(rec_sym, NIL_VALUE, src)
-      forms.append(mk_define_proc(accessor, acc_params, acc_body))
+      acc_init = list_from_items(
+         [mk_sym('%make-record-accessor'), rt_sym, idx_val,
+          mk_quote(accessor)], src)
+      forms.append(mk_define(accessor, acc_init))
       if mutator is not None:
-         val_sym = mk_sym('v')
-         mut_body = list_from_items(
-            [mk_sym('%record-set!'), rec_sym, rt_sym, idx_val, val_sym], src)
-         mut_params = list_from_items([rec_sym, val_sym], src)
-         forms.append(mk_define_proc(mutator, mut_params, mut_body))
+         mut_init = list_from_items(
+            [mk_sym('%make-record-mutator'), rt_sym, idx_val,
+             mk_quote(mutator)], src)
+         forms.append(mk_define(mutator, mut_init))
       i = i + 1
 
    return list_from_items(forms, src)

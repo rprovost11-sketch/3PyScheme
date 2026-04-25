@@ -35,7 +35,7 @@ from pyscheme.AST import (
    as_error_object_message, as_error_object_irritants,
    alloc_cons, make_symbol, make_promise_done, make_multi_values,
    make_record_type, make_record, make_parameter, make_string,
-   make_environment,
+   make_environment, make_record_accessor, make_record_mutator,
    list_from_items,
    VOID_VALUE,
 )
@@ -195,7 +195,8 @@ def _prim_values(ctx, env, args, app_node):
    # (values a b ...) -> multi-values container (2+ values)
    if len(args) == 1:
       return args[0]
-   return make_multi_values(list(args))
+   from pyscheme.AST import src_of
+   return make_multi_values(list(args), src_of(app_node))
 
 
 def _prim_make_record_type(ctx, env, args, app_node):
@@ -269,6 +270,44 @@ def _prim_record_ref(ctx, env, args, app_node):
          '%record-ref: index must be an integer', app_node)
    idx = as_integer(idx_val)
    return as_record_fields(rec)[idx]
+
+
+def _prim_make_record_accessor(ctx, env, args, app_node):
+   # (%make-record-accessor record-type index name)
+   from pyscheme.AST import is_integer, as_integer
+   rt = args[0]
+   idx_val = args[1]
+   name_arg = args[2]
+   if not is_record_type(rt):
+      raise SchemeTypeError(
+         '%make-record-accessor: first argument must be a record type',
+         app_node)
+   if not is_integer(idx_val):
+      raise SchemeTypeError(
+         '%make-record-accessor: index must be an integer', app_node)
+   if not is_symbol(name_arg):
+      raise SchemeTypeError(
+         '%make-record-accessor: name must be a symbol', app_node)
+   return make_record_accessor(rt, as_integer(idx_val), as_symbol(name_arg))
+
+
+def _prim_make_record_mutator(ctx, env, args, app_node):
+   # (%make-record-mutator record-type index name)
+   from pyscheme.AST import is_integer, as_integer
+   rt = args[0]
+   idx_val = args[1]
+   name_arg = args[2]
+   if not is_record_type(rt):
+      raise SchemeTypeError(
+         '%make-record-mutator: first argument must be a record type',
+         app_node)
+   if not is_integer(idx_val):
+      raise SchemeTypeError(
+         '%make-record-mutator: index must be an integer', app_node)
+   if not is_symbol(name_arg):
+      raise SchemeTypeError(
+         '%make-record-mutator: name must be a symbol', app_node)
+   return make_record_mutator(rt, as_integer(idx_val), as_symbol(name_arg))
 
 
 def _prim_record_set(ctx, env, args, app_node):
@@ -448,6 +487,17 @@ def register():
 
    register_primitive('%record-set!', (4, 4), _prim_record_set,
       doc='Mutate the i-th field of a record; type-checks against the given record-type.  Internal.',
+      category=CATEGORY)
+
+   register_primitive('%make-record-accessor', (3, 3), _prim_make_record_accessor,
+      doc=('Build a record accessor value.  Applied at a call site, performs '
+           'a type-checked field read with the call-site as the error position.  '
+           'Internal: emitted by define-record-type.'),
+      category=CATEGORY)
+
+   register_primitive('%make-record-mutator', (3, 3), _prim_make_record_mutator,
+      doc=('Build a record mutator value.  Same call-site error story as '
+           '%make-record-accessor.  Internal: emitted by define-record-type.'),
       category=CATEGORY)
 
    # Parameter objects

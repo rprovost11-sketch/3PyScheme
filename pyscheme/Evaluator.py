@@ -79,13 +79,17 @@ from pyscheme.AST import (
    is_cons, is_nil, is_symbol, is_boolean, is_string, is_primitive,
    is_closure, is_promise,
    is_case_closure, is_multi_values, is_parameter, is_continuation,
-   is_environment,
+   is_environment, is_record, is_record_accessor, is_record_mutator,
    as_symbol, as_boolean, as_string, as_primitive_fn, as_primitive_name,
    as_closure_params, as_closure_body, as_closure_env, as_closure_rest_name,
    as_case_closure_clauses, as_case_closure_env, as_parameter_value,
    as_continuation_k, as_continuation_wind,
    as_promise_is_done, as_promise_payload,
    as_multi_values_list, as_environment,
+   as_record_type, as_record_fields,
+   as_record_accessor_type, as_record_accessor_index, as_record_accessor_name,
+   as_record_mutator_type, as_record_mutator_index, as_record_mutator_name,
+   as_record_type_name,
    promise_resolve, promise_become, set_parameter_value,
    as_parameter_converter,
    make_boolean, make_closure, make_case_closure, make_promise_lazy,
@@ -1033,7 +1037,8 @@ def _cek_loop(expr, env, ctx):
          # that actually consume V as a single value error here.
          if is_multi_values(V) and ftag not in _MULTI_VALUES_OK_FRAMES:
             raise SchemeTypeError(
-               'multiple values delivered to a single-value context', None)
+               'multiple values delivered to a single-value context',
+               src_of(V))
 
          if ftag == FRAME_DEFINE:
             E = frame[2]
@@ -1412,6 +1417,43 @@ def _cek_loop(expr, env, ctx):
                pv = _apply_parameter_if(fn_value, len(new_collected), app_node)
                if pv is not None:
                   V = pv
+                  continue
+               # Record accessor: type-check the arg using the call-site
+               # app_node so the error position points at the user's call,
+               # not the define-record-type form.
+               if is_record_accessor(fn_value):
+                  if len(new_collected) != 1:
+                     raise SchemeArityError(
+                        arity_mismatch_msg(
+                           as_record_accessor_name(fn_value),
+                           1, 1, len(new_collected)),
+                        src_of(app_node) if app_node is not None else None)
+                  rt = as_record_accessor_type(fn_value)
+                  rec = new_collected[0]
+                  if not is_record(rec) or as_record_type(rec) is not rt:
+                     raise SchemeTypeError(
+                        as_record_accessor_name(fn_value)
+                        + ': argument is not a ' + as_record_type_name(rt),
+                        src_of(app_node) if app_node is not None else None)
+                  V = as_record_fields(rec)[as_record_accessor_index(fn_value)]
+                  continue
+               # Record mutator: same pattern; V is VOID after assignment.
+               if is_record_mutator(fn_value):
+                  if len(new_collected) != 2:
+                     raise SchemeArityError(
+                        arity_mismatch_msg(
+                           as_record_mutator_name(fn_value),
+                           2, 2, len(new_collected)),
+                        src_of(app_node) if app_node is not None else None)
+                  rt = as_record_mutator_type(fn_value)
+                  rec = new_collected[0]
+                  if not is_record(rec) or as_record_type(rec) is not rt:
+                     raise SchemeTypeError(
+                        as_record_mutator_name(fn_value)
+                        + ': first argument is not a ' + as_record_type_name(rt),
+                        src_of(app_node) if app_node is not None else None)
+                  as_record_fields(rec)[as_record_mutator_index(fn_value)] = new_collected[1]
+                  V = VOID_VALUE
                   continue
                if is_primitive(fn_value):
                   V = as_primitive_fn(fn_value)(ctx, saved_env, new_collected, app_node)

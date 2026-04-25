@@ -44,6 +44,8 @@ PARAMETER          = 16
 CONTINUATION       = 17
 SYNTAX_TRANSFORMER = 18
 ENVIRONMENT        = 19
+RECORD_ACCESSOR    = 20
+RECORD_MUTATOR     = 21
 SYMBOL             = 100
 
 
@@ -214,8 +216,8 @@ def make_promise_lazy(thunk):
 def make_promise_done(value):
    return Promise(True, value)
 
-def make_multi_values(values_list):
-   return (MULTI_VALUES, values_list)
+def make_multi_values(values_list, src=None):
+   return (MULTI_VALUES, values_list, src)
 
 def make_record_type(name, field_names):
    return RecordType(name, field_names)
@@ -237,6 +239,17 @@ def make_syntax_transformer(name, literals, ellipsis, rules, def_env):
 
 def make_environment(env):
    return (ENVIRONMENT, env)
+
+def make_record_accessor(record_type, index, name):
+   """Build a record accessor value.  Applied at a call site, performs
+   a type-checked field read; the type-error position is the call site,
+   not the define-record-type form, because the Evaluator dispatches
+   this value inline using the app_node's src."""
+   return (RECORD_ACCESSOR, record_type, index, name)
+
+def make_record_mutator(record_type, index, name):
+   """Build a record mutator value.  Same dispatch story as record-accessor."""
+   return (RECORD_MUTATOR, record_type, index, name)
 
 
 # --- Predicates --------------------------------------------------------
@@ -314,6 +327,12 @@ def is_syntax_transformer(val):
 def is_environment(val):
    return isinstance(val, tuple) and len(val) >= 1 and val[0] == ENVIRONMENT
 
+def is_record_accessor(val):
+   return isinstance(val, tuple) and len(val) >= 1 and val[0] == RECORD_ACCESSOR
+
+def is_record_mutator(val):
+   return isinstance(val, tuple) and len(val) >= 1 and val[0] == RECORD_MUTATOR
+
 
 # --- Accessors ---------------------------------------------------------
 
@@ -364,6 +383,10 @@ def src_of(val):
    if tag == NIL:
       if len(val) >= 2:
          return val[1]
+      return None
+   if tag == MULTI_VALUES:
+      if len(val) >= 3:
+         return val[2]
       return None
    return None
 
@@ -494,6 +517,20 @@ def as_syntax_transformer_def_env(t):
 
 def as_environment(val):
    return val[1]
+
+def as_record_accessor_type(val):
+   return val[1]
+def as_record_accessor_index(val):
+   return val[2]
+def as_record_accessor_name(val):
+   return val[3]
+
+def as_record_mutator_type(val):
+   return val[1]
+def as_record_mutator_index(val):
+   return val[2]
+def as_record_mutator_name(val):
+   return val[3]
 
 
 # --- Value equality ---------------------------------------------------
@@ -754,13 +791,31 @@ if __name__ == '__main__':
    rec2 = make_record(rt, [1, 2])
    check('record type identity',   as_record_type(rec2) is as_record_type(rec))
 
+   # Record accessor / mutator
+   ra = make_record_accessor(rt, 0, 'point-x')
+   check('is_record_accessor',         is_record_accessor(ra))
+   check('accessor type',              as_record_accessor_type(ra) is rt)
+   check('accessor index',             as_record_accessor_index(ra) == 0)
+   check('accessor name',              as_record_accessor_name(ra) == 'point-x')
+   check('accessor not record',        not is_record(ra))
+   check('accessor not procedure',     not is_closure(ra))
+   rm = make_record_mutator(rt, 1, 'point-y-set!')
+   check('is_record_mutator',          is_record_mutator(rm))
+   check('mutator type',               as_record_mutator_type(rm) is rt)
+   check('mutator index',              as_record_mutator_index(rm) == 1)
+   check('mutator name',               as_record_mutator_name(rm) == 'point-y-set!')
+   check('mutator not accessor',       not is_record_accessor(rm))
+
    # MULTI_VALUES
    mv0 = make_multi_values([])
    check('is_multi_values 0',          is_multi_values(mv0))
    check('as_multi_values_list 0',     as_multi_values_list(mv0) == [])
-   mv3 = make_multi_values([make_integer(1), make_integer(2), make_integer(3)])
+   check('src_of MULTI_VALUES None',   src_of(mv0) is None)
+   mv3 = make_multi_values(
+      [make_integer(1), make_integer(2), make_integer(3)], si)
    check('is_multi_values 3',          is_multi_values(mv3))
    check('as_multi_values_list len',   len(as_multi_values_list(mv3)) == 3)
+   check('src_of MULTI_VALUES with src', src_of(mv3) is si)
    check('multi_values not promise',   not is_promise(mv3))
 
    # Promise

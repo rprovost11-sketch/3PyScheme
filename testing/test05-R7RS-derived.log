@@ -652,21 +652,30 @@ Primitive  |  args: pre-evaluated
 
 ;;; -------- multi-values as single-value error --------
 
-;;; Delivering multi-values into an argument slot is an error.
+;;; Delivering multi-values into an argument slot is an error.  The
+;;; error position points at the offending (values ...) call site.
 >>> (+ 1 (values 2 3))
-%%% SchemeTypeError: multiple values delivered to a single-value context
+%%% SchemeTypeError: line 1, col 6: multiple values delivered to a single-value context
+%%% (+ 1 (values 2 3))
+%%%      ^
 
 ;;; Same in an if-test.
 >>> (if (values 1 2) 'yes 'no)
-%%% SchemeTypeError: multiple values delivered to a single-value context
+%%% SchemeTypeError: line 1, col 5: multiple values delivered to a single-value context
+%%% (if (values 1 2) 'yes 'no)
+%%%     ^
 
 ;;; Same in a let init.
 >>> (let ((x (values 1 2))) x)
-%%% SchemeTypeError: multiple values delivered to a single-value context
+%%% SchemeTypeError: line 1, col 10: multiple values delivered to a single-value context
+%%% (let ((x (values 1 2))) x)
+%%%          ^
 
 ;;; Same in a define right-hand side.
 >>> (define mv-bad (values 1 2))
-%%% SchemeTypeError: multiple values delivered to a single-value context
+%%% SchemeTypeError: line 1, col 16: multiple values delivered to a single-value context
+%%% (define mv-bad (values 1 2))
+%%%                ^
 
 ;;; -------- multi-values legitimately allowed --------
 
@@ -831,19 +840,19 @@ Primitive  |  args: pre-evaluated
 >>> (define-record-type a (make-a v) a? (v a-v)) (define-record-type b (make-b v) b? (v b-v)) (a? (make-a 5))
 ==> #t
 
-;;; Accessor rejects a record of the wrong type at runtime.  (The reported
-;;; position is the define-record-type form's position, not the call site,
-;;; because the synthesized accessor body inherits its src from the form.)
+;;; Accessor rejects a record of the wrong type at runtime.  The error
+;;; message names the accessor and the position is the call site (RECORD_ACCESSOR
+;;; values dispatch inline using the application app_node's src).
 >>> (define-record-type a (make-a v) a? (v a-v)) (define-record-type b (make-b v) b? (v b-v)) (a-v (make-b 7))
-%%% SchemeTypeError: line 1, col 1: %record-ref: record is not of the expected type a
+%%% SchemeTypeError: line 1, col 91: a-v: argument is not a a
 %%% (define-record-type a (make-a v) a? (v a-v)) (define-record-type b (make-b v) b? (v b-v)) (a-v (make-b 7))
-%%% ^
+%%%                                                                                           ^
 
 ;;; Accessor rejects a non-record.
 >>> (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (point-x 42)
-%%% SchemeTypeError: line 1, col 1: %record-ref: record is not of the expected type point
+%%% SchemeTypeError: line 1, col 76: point-x: argument is not a point
 %%% (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (point-x 42)
-%%% ^
+%%%                                                                            ^
 
 ;;; Record with no fields.
 >>> (define-record-type tag (make-tag) tag?) (tag? (make-tag))
@@ -1343,6 +1352,19 @@ Primitive  |  args: pre-evaluated
 %%% line 1, col 20: define-syntax: transformer must be (syntax-rules ...)
 %%% (define-syntax bad 42)
 %%%                    ^
+
+;;; A macro that produces a malformed form gets a positioned error: the
+;;; synthesized cons cells inherit the use-site src so analyzer errors
+;;; on the expansion still point at the user's call.
+>>> (define-syntax bad-let (syntax-rules () ((bad-let) (let)))) (bad-let)
+%%% line 1, col 61: let requires a binding list and at least one body expression
+%%% (define-syntax bad-let (syntax-rules () ((bad-let) (let)))) (bad-let)
+%%%                                                             ^
+
+>>> (define-syntax bad-set (syntax-rules () ((bad-set x) (set! x)))) (bad-set 5)
+%%% line 1, col 66: set! requires a name and a value (got 1 arguments)
+%%% (define-syntax bad-set (syntax-rules () ((bad-set x) (set! x)))) (bad-set 5)
+%%%                                                                  ^
 
 ;;; (define-syntax foo ...) binds foo in the MACRO environment only -
 ;;; it is not a runtime variable; attempting to reference the name

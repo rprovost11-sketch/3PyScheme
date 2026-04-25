@@ -290,8 +290,11 @@ def _collect_ell_refs(tmpl, match, out):
       _collect_ell_refs(tmpl.cdr, match, out)
 
 
-def _instantiate(tmpl, match, ellipsis_sym):
-   """Expand a template sub-expression against match bindings."""
+def _instantiate(tmpl, match, ellipsis_sym, use_src):
+   """Expand a template sub-expression against match bindings.  use_src
+   is the macro use-site source position; new cons cells synthesized
+   from the template carry this src so downstream errors point at the
+   user's macro call rather than nowhere."""
    if is_symbol(tmpl):
       s = as_symbol(tmpl)
       # Pattern-variable substitution.
@@ -299,14 +302,14 @@ def _instantiate(tmpl, match, ellipsis_sym):
          return match.scalars[s]
       # Hygiene rename.
       if s in match.renames:
-         return make_symbol(match.renames[s])
+         return make_symbol(match.renames[s], use_src)
       return tmpl
    if is_cons(tmpl):
-      return _instantiate_list(tmpl, match, ellipsis_sym)
+      return _instantiate_list(tmpl, match, ellipsis_sym, use_src)
    return tmpl
 
 
-def _instantiate_list(tmpl_list, match, ellipsis_sym):
+def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src):
    output = []
    cur = tmpl_list
    while is_cons(cur):
@@ -345,12 +348,12 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym):
                      sub.ellipsis[sv] = peeled
                      sub.ell_depth[sv] = d - 1
                   j = j + 1
-               output.append(_instantiate(elem, sub, ellipsis_sym))
+               output.append(_instantiate(elem, sub, ellipsis_sym, use_src))
                i = i + 1
          # Zero ellipsis-bound pvars under elem -> zero repetitions.
          cur = rest.cdr
          continue
-      output.append(_instantiate(elem, match, ellipsis_sym))
+      output.append(_instantiate(elem, match, ellipsis_sym, use_src))
       cur = rest
    # Handle tail (nil or rest pvar).
    if is_nil(cur):
@@ -360,15 +363,15 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym):
       if s in match.scalars:
          tail = match.scalars[s]
       elif s in match.renames:
-         tail = make_symbol(match.renames[s])
+         tail = make_symbol(match.renames[s], use_src)
       else:
          tail = cur
    else:
-      tail = _instantiate(cur, match, ellipsis_sym)
+      tail = _instantiate(cur, match, ellipsis_sym, use_src)
    result = tail
    i = len(output) - 1
    while i >= 0:
-      result = alloc_cons(output[i], result)
+      result = alloc_cons(output[i], result, use_src)
       i = i - 1
    return result
 
@@ -378,12 +381,14 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym):
 def apply_syntax_transformer(t, form):
    """Try each rule in order; on match, build hygiene renames / value
    substitutions and instantiate the template.  Raises SchemeSyntaxError
-   if no pattern matches."""
+   if no pattern matches.  Synthesized cons cells inherit form's src so
+   downstream errors point at the macro use site."""
    from pyscheme.Parser import SchemeSyntaxError
    # First element of each pattern is the keyword; skip it when matching
    # against the call form (both sides strip the head).
    literals = t.literals
    ellipsis_sym = t.ellipsis
+   use_src = src_of(form)
    i = 0
    while i < len(t.rules):
       pattern = t.rules[i][0]
@@ -393,10 +398,10 @@ def apply_syntax_transformer(t, form):
          if _match_list_pattern(pattern.cdr, form.cdr if is_cons(form) else NIL_VALUE,
                                 literals, ellipsis_sym, match):
             _apply_hygiene(t, pattern, template, match, literals, ellipsis_sym)
-            return _instantiate(template, match, ellipsis_sym)
+            return _instantiate(template, match, ellipsis_sym, use_src)
       i = i + 1
    raise SchemeSyntaxError(
-      "syntax-rules: no matching pattern for '" + t.name + "'", src_of(form))
+      "syntax-rules: no matching pattern for '" + t.name + "'", use_src)
 
 
 def _apply_hygiene(t, pattern, template, match, literals, ellipsis_sym):

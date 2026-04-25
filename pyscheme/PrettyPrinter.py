@@ -23,6 +23,7 @@ from pyscheme.AST import (
    is_complex, is_character, is_string, is_symbol, is_closure, is_primitive,
    is_case_closure, is_promise, is_multi_values, is_record, is_parameter,
    is_error_object, is_continuation, is_syntax_transformer, is_environment,
+   is_record_accessor, is_record_mutator,
    as_boolean, as_integer, as_real, as_character, as_string, as_symbol,
    as_rational_num, as_rational_den, as_complex_real, as_complex_imag,
    as_primitive_name, as_promise_is_done, as_multi_values_list,
@@ -84,6 +85,8 @@ def pretty_print(val):
    if is_closure(val):
       return '#<procedure>'
    if is_case_closure(val):
+      return '#<procedure>'
+   if is_record_accessor(val) or is_record_mutator(val):
       return '#<procedure>'
    if is_primitive(val):
       return '#<primitive ' + as_primitive_name(val) + '>'
