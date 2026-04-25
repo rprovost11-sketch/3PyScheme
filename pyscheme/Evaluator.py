@@ -603,25 +603,38 @@ def cek_eval(expr, env, ctx=None):
    # helper function so we can wrap it in a single try/except.
    wind_depth_entry    = len(_wind_stack)
    handler_depth_entry = len(_handler_stack)
+   from pyscheme.Parser import SchemeSyntaxError
+   _CATCHABLE = (SchemeRaised, SchemeTypeError, SchemeArityError,
+                 SchemeUnboundError, SchemeSyntaxError)
    try:
       return _cek_loop(expr, env, ctx)
-   except SchemeRaised as e:
-      # Route the raised value through the installed handler stack.  If a
-      # handler itself raises, try the next outer handler with the new
-      # value.  Each invocation costs one Python stack frame, bounded by
-      # the depth of nested with-exception-handlers.  Once handlers are
-      # exhausted, propagate the final SchemeRaised to the caller.
+   except _CATCHABLE as e:
+      # Route any raised condition - whether from a user (raise ...) /
+      # (error ...) call or from an implementation-detected error
+      # (type, arity, unbound, syntax) - through the installed handler
+      # stack, matching R7RS-small 6.11's expectation that with-exception-
+      # handler / guard catch all conditions, not just user-raised ones.
+      # For impl errors we synthesize an R7RS error-object so the handler
+      # can introspect via error-object-message / error-object-irritants.
+      # If no handler catches, re-raise the latest exception verbatim so
+      # the listener formats it with its original class name.
       _unwind_winds_on_error(ctx, wind_depth_entry)
       from pyscheme.primitives.meta import _apply_scheme_proc
+      from pyscheme.AST import make_error_object
+      current_e = e
       while len(_handler_stack) > handler_depth_entry:
+         if isinstance(current_e, SchemeRaised):
+            raised_value = current_e.value
+         else:
+            raised_value = make_error_object(current_e.msg, [])
          handler = _handler_stack.pop()
          try:
-            return _apply_scheme_proc(handler, [e.value], ctx, env, None)
-         except SchemeRaised as e2:
-            e = e2
+            return _apply_scheme_proc(handler, [raised_value], ctx, env, None)
+         except _CATCHABLE as e2:
+            current_e = e2
       while len(_handler_stack) > handler_depth_entry:
          _handler_stack.pop()
-      raise e
+      raise current_e
    except BaseException:
       _unwind_winds_on_error(ctx, wind_depth_entry)
       while len(_handler_stack) > handler_depth_entry:

@@ -1086,7 +1086,33 @@ Primitive  |  args: pre-evaluated
 >>> (guard (e (else e)) (error "fail" 'a 1))
 ==> #<error-object "fail" (a 1)>
 
-;;; Arity errors are NOT caught by guard (internal errors are uncatchable).
+;;; Implementation errors detected at runtime are routed through the
+;;; handler stack: with-exception-handler / guard see them as R7RS
+;;; error-objects.  The handler can introspect via error-object-message.
+
+;;; Type error caught by guard.
+>>> (guard (e (else (list 'caught e))) (car 5))
+==> (caught #<error-object "car: expected pair, got non-pair value">)
+
+;;; error-object? recognizes the wrapped condition.
+>>> (guard (e ((error-object? e) (error-object-message e))) (car 5))
+==> "car: expected pair, got non-pair value"
+
+;;; Unbound-variable error caught.
+>>> (guard (e (else (list 'caught e))) does-not-exist)
+==> (caught #<error-object "unbound variable: does-not-exist">)
+
+;;; Runtime arity error caught (the function is not statically known).
+>>> (define eval-arity-h (lambda () (lambda (x) x))) (guard (e (else (list 'caught e))) ((eval-arity-h) 1 2 3))
+==> (caught #<error-object "3 arguments provided; 1 expected">)
+
+;;; with-exception-handler also catches impl errors.
+>>> (with-exception-handler (lambda (v) (list 'handled v)) (lambda () (car 99)))
+==> (handled #<error-object "car: expected pair, got non-pair value">)
+
+;;; Static arity errors (immediate-lambda or known top-level callable) fire
+;;; during analysis, before guard's handler is installed; they escape to the
+;;; top level just as a parse error would.
 >>> (guard (e (else 'caught)) (car))
 %%% SchemeArityError: line 1, col 27: car: 0 arguments provided; 1 expected
 %%% (guard (e (else 'caught)) (car))
