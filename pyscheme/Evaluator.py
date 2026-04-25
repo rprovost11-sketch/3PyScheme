@@ -660,33 +660,19 @@ def cek_eval(expr, env, ctx=None):
                  SchemeUnboundError, SchemeSyntaxError)
    try:
       return _cek_loop(expr, env, ctx)
-   except _CATCHABLE as e:
-      # Route any raised condition - whether from a user (raise ...) /
-      # (error ...) call or from an implementation-detected error
-      # (type, arity, unbound, syntax) - through the installed handler
-      # stack, matching R7RS-small 6.11's expectation that with-exception-
-      # handler / guard catch all conditions, not just user-raised ones.
-      # For impl errors we synthesize an R7RS error-object so the handler
-      # can introspect via error-object-message / error-object-irritants.
-      # If no handler catches, re-raise the latest exception verbatim so
-      # the listener formats it with its original class name.
+   except _CATCHABLE:
+      # _cek_loop's in-loop exception dispatch already walked K for any
+      # handler frame installed during this cek_eval call.  Reaching
+      # here means no handler in scope caught the condition; clean up
+      # any dynamic-wind entries installed during this call (their
+      # after-thunks errors are swallowed, matching the C++ reference)
+      # and re-raise so the caller (often an outer cek_eval) can continue
+      # propagation.  Truncate _handler_stack defensively in case a
+      # handler push escaped without its matching pop.
       _unwind_winds_on_error(ctx, wind_depth_entry)
-      from pyscheme.primitives.meta import _apply_scheme_proc
-      from pyscheme.AST import make_error_object
-      current_e = e
-      while len(_handler_stack) > handler_depth_entry:
-         if isinstance(current_e, SchemeRaised):
-            raised_value = current_e.value
-         else:
-            raised_value = make_error_object(current_e.msg, [])
-         handler = _handler_stack.pop()
-         try:
-            return _apply_scheme_proc(handler, [raised_value], ctx, env, None)
-         except _CATCHABLE as e2:
-            current_e = e2
       while len(_handler_stack) > handler_depth_entry:
          _handler_stack.pop()
-      raise current_e
+      raise
    except BaseException:
       _unwind_winds_on_error(ctx, wind_depth_entry)
       while len(_handler_stack) > handler_depth_entry:
@@ -821,980 +807,1048 @@ def _unwind_winds_on_error(ctx, target_depth):
 
 
 def _cek_loop(expr, env, ctx):
-   """The CEK machine's main loop.  Factored out so cek_eval can wrap it
-   in a single try/except for dynamic-wind unwinding on exception."""
+   """The CEK machine's main loop.  Wraps the eval/apply state machine
+   in an outer try-while so that catchable exceptions (raise, error, and
+   the impl errors SchemeTypeError / SchemeArityError / SchemeUnboundError
+   / SchemeSyntaxError) dispatch the handler stack INSIDE the same
+   activation record - mirrors the C++ reference's for(;;) try{ ... }
+   pattern in evaluator.cpp.  Handler invocation sets CEK state via
+   _enter_proc, so a continuation captured during handler execution
+   sees the outer K-stack and not just the handler body's frames."""
+   from pyscheme.Parser import SchemeSyntaxError
+   _CATCHABLE_LOCAL = (SchemeRaised, SchemeTypeError, SchemeArityError,
+                       SchemeUnboundError, SchemeSyntaxError)
    C = expr
    V = None
    E = env
    K = []
+   skip_eval = False
 
    while True:
+      try:
+         while True:
 
-      # ----- EVAL: descend until a value is produced at a leaf -----
-      while True:
-
-         if is_cons(C):
-            head = C.car
-
-            if is_symbol(head):
-               name = as_symbol(head)
-
-               if name == 'quote':
-                  # (quote datum) - datum self-evaluates
-                  V = C.cdr.car
+            # ----- EVAL: descend until a value is produced at a leaf -----
+            while True:
+               if skip_eval:
+                  skip_eval = False
                   break
 
-               if name == 'lambda':
-                  V = _make_closure_from_lambda(C, E)
-                  break
 
-               if name == 'case-lambda':
-                  V = _make_case_closure_from_form(C, E)
-                  break
+               if is_cons(C):
+                  head = C.car
 
-               if name == 'delay' or name == 'delay-force':
-                  # (delay expr) and (delay-force expr) both produce a lazy
-                  # promise whose thunk evaluates expr in the current env.
-                  # force is iterative, so delay-force's tail-safety falls out.
-                  expr = C.cdr.car
-                  body = alloc_cons(expr, NIL_VALUE, None)
-                  thunk = make_closure([], body, E, None, '')
-                  V = make_promise_lazy(thunk)
-                  break
+                  if is_symbol(head):
+                     name = as_symbol(head)
 
-               if name == 'import':
-                  # (import <import-set>...) - resolve each set and bind
-                  # each exported name into the current env.  Returns VOID.
-                  _process_import(C.cdr, E)
-                  V = VOID_VALUE
-                  break
+                     if name == 'quote':
+                        # (quote datum) - datum self-evaluates
+                        V = C.cdr.car
+                        break
 
-               if name == 'define-library':
-                  # (define-library <name> <decl>...) - install a new
-                  # library.  Returns VOID; no visible effect on E.
-                  _process_define_library(C, ctx)
-                  V = VOID_VALUE
-                  break
+                     if name == 'lambda':
+                        V = _make_closure_from_lambda(C, E)
+                        break
 
-               if name == 'if':
-                  # (if test then else)  -- expander supplies VOID for missing else
-                  K.append((FRAME_IF, C.cdr.cdr.car, C.cdr.cdr.cdr.car, E))
-                  C = C.cdr.car
-                  continue
+                     if name == 'case-lambda':
+                        V = _make_case_closure_from_form(C, E)
+                        break
 
-               if name == 'define':
-                  # (define name value)
-                  K.append((FRAME_DEFINE, as_symbol(C.cdr.car), E))
-                  C = C.cdr.cdr.car
-                  continue
+                     if name == 'delay' or name == 'delay-force':
+                        # (delay expr) and (delay-force expr) both produce a lazy
+                        # promise whose thunk evaluates expr in the current env.
+                        # force is iterative, so delay-force's tail-safety falls out.
+                        expr = C.cdr.car
+                        body = alloc_cons(expr, NIL_VALUE, None)
+                        thunk = make_closure([], body, E, None, '')
+                        V = make_promise_lazy(thunk)
+                        break
 
-               if name == 'set!':
-                  # (set! name value)
-                  name_sexpr = C.cdr.car
-                  K.append((FRAME_SET, as_symbol(name_sexpr), E, src_of(name_sexpr)))
-                  C = C.cdr.cdr.car
-                  continue
+                     if name == 'import':
+                        # (import <import-set>...) - resolve each set and bind
+                        # each exported name into the current env.  Returns VOID.
+                        _process_import(C.cdr, E)
+                        V = VOID_VALUE
+                        break
 
-               if name == 'begin':
-                  # (begin body...)  - body cons chain, non-empty (analyzer checks)
-                  body = C.cdr
-                  C = body.car
-                  if is_cons(body.cdr):
-                     K.append((FRAME_SEQ, body.cdr, E))
-                  continue
+                     if name == 'define-library':
+                        # (define-library <name> <decl>...) - install a new
+                        # library.  Returns VOID; no visible effect on E.
+                        _process_define_library(C, ctx)
+                        V = VOID_VALUE
+                        break
 
-               if name == 'when':
-                  # (when test body...)
-                  K.append((FRAME_WHEN, C.cdr.cdr, E))
-                  C = C.cdr.car
-                  continue
+                     if name == 'if':
+                        # (if test then else)  -- expander supplies VOID for missing else
+                        K.append((FRAME_IF, C.cdr.cdr.car, C.cdr.cdr.cdr.car, E))
+                        C = C.cdr.car
+                        continue
 
-               if name == 'unless':
-                  # (unless test body...)
-                  K.append((FRAME_UNLESS, C.cdr.cdr, E))
-                  C = C.cdr.car
-                  continue
+                     if name == 'define':
+                        # (define name value)
+                        K.append((FRAME_DEFINE, as_symbol(C.cdr.car), E))
+                        C = C.cdr.cdr.car
+                        continue
 
-               if name == 'and':
-                  body = C.cdr
-                  if is_nil(body):
-                     V = make_boolean(True)
-                     break
-                  if is_cons(body.cdr):
-                     K.append((FRAME_AND, body.cdr, E))
-                  C = body.car
-                  continue
+                     if name == 'set!':
+                        # (set! name value)
+                        name_sexpr = C.cdr.car
+                        K.append((FRAME_SET, as_symbol(name_sexpr), E, src_of(name_sexpr)))
+                        C = C.cdr.cdr.car
+                        continue
 
-               if name == 'or':
-                  body = C.cdr
-                  if is_nil(body):
-                     V = make_boolean(False)
-                     break
-                  if is_cons(body.cdr):
-                     K.append((FRAME_OR, body.cdr, E))
-                  C = body.car
-                  continue
+                     if name == 'begin':
+                        # (begin body...)  - body cons chain, non-empty (analyzer checks)
+                        body = C.cdr
+                        C = body.car
+                        if is_cons(body.cdr):
+                           K.append((FRAME_SEQ, body.cdr, E))
+                        continue
 
-               if name == 'cond':
-                  # (cond clauses...) - analyzer ensures non-empty
-                  clauses = C.cdr
-                  first   = clauses.car
-                  rest    = clauses.cdr
-                  kind = _classify_cond_clause(first)
-                  if kind[0] == 'else':
-                     body = kind[1]
-                     C = body.car
-                     if is_cons(body.cdr):
-                        K.append((FRAME_SEQ, body.cdr, E))
+                     if name == 'when':
+                        # (when test body...)
+                        K.append((FRAME_WHEN, C.cdr.cdr, E))
+                        C = C.cdr.car
+                        continue
+
+                     if name == 'unless':
+                        # (unless test body...)
+                        K.append((FRAME_UNLESS, C.cdr.cdr, E))
+                        C = C.cdr.car
+                        continue
+
+                     if name == 'and':
+                        body = C.cdr
+                        if is_nil(body):
+                           V = make_boolean(True)
+                           break
+                        if is_cons(body.cdr):
+                           K.append((FRAME_AND, body.cdr, E))
+                        C = body.car
+                        continue
+
+                     if name == 'or':
+                        body = C.cdr
+                        if is_nil(body):
+                           V = make_boolean(False)
+                           break
+                        if is_cons(body.cdr):
+                           K.append((FRAME_OR, body.cdr, E))
+                        C = body.car
+                        continue
+
+                     if name == 'cond':
+                        # (cond clauses...) - analyzer ensures non-empty
+                        clauses = C.cdr
+                        first   = clauses.car
+                        rest    = clauses.cdr
+                        kind = _classify_cond_clause(first)
+                        if kind[0] == 'else':
+                           body = kind[1]
+                           C = body.car
+                           if is_cons(body.cdr):
+                              K.append((FRAME_SEQ, body.cdr, E))
+                           continue
+                        K.append((FRAME_COND, first, rest, E))
+                        C = kind[1]   # the test expression
+                        continue
+
+                     if name == 'case':
+                        # (case <key> <clause>...) - analyzer ensures shape:
+                        # key present, at least one clause, each clause a proper
+                        # list starting with a datum-list or 'else'.
+                        clauses = C.cdr.cdr
+                        first   = clauses.car
+                        rest    = clauses.cdr
+                        K.append((FRAME_CASE, first, rest, E))
+                        C = C.cdr.car   # the key expression
+                        continue
+
+                     if name == 'let':
+                        # (let [name] bindings body...)
+                        if is_symbol(C.cdr.car):
+                           # named let: desugar at runtime
+                           # (let name ((v1 e1) ...) body...) ==
+                           #   (letrec ((name (lambda (v1 ...) body...))) (name e1 ...))
+                           loop_name = as_symbol(C.cdr.car)
+                           bindings_cons = C.cdr.cdr.car
+                           body_cons = C.cdr.cdr.cdr
+                           pairs = _collect_let_bindings(bindings_cons)
+                           params = []
+                           init_exprs = []
+                           i = 0
+                           while i < len(pairs):
+                              params.append(pairs[i][0])
+                              init_exprs.append(pairs[i][1])
+                              i = i + 1
+                           # Build the loop env first so the closure can capture it,
+                           # then bind the closure to its own name for self-reference.
+                           loop_env = Environment(E, initialBindings={loop_name: VOID_VALUE})
+                           closure = make_closure(params, body_cons, loop_env, None, '')
+                           loop_env.bind(loop_name, closure)
+                           # Now evaluate (name init1 init2 ...) - i.e., apply closure to init values
+                           # Set up FRAME_ARG-style call: but we don't have an "AST" for this synthesized call.
+                           # Use FRAME_ARG with init_exprs as args list and the current C as app_node.
+                           V = closure
+                           # We want to apply closure to init_exprs.  Push FRAME_ARG with V as fn.
+                           K.append((FRAME_ARG, init_exprs, loop_env, C))
+                           break
+                        bindings_cons = C.cdr.car
+                        body_cons     = C.cdr.cdr
+                        pairs = _collect_let_bindings(bindings_cons)
+                        if not pairs:
+                           # No bindings; just run body in current env
+                           C = body_cons.car
+                           if is_cons(body_cons.cdr):
+                              K.append((FRAME_SEQ, body_cons.cdr, E))
+                           continue
+                        names = []
+                        val_exprs = []
+                        i = 0
+                        while i < len(pairs):
+                           names.append(pairs[i][0])
+                           val_exprs.append(pairs[i][1])
+                           i = i + 1
+                        # Pre-extract remaining val_exprs (all but first) as Python list
+                        remaining = []
+                        i = 1
+                        while i < len(val_exprs):
+                           remaining.append(val_exprs[i])
+                           i = i + 1
+                        K.append((FRAME_LET, names, [], remaining, body_cons, E))
+                        C = val_exprs[0]
+                        # E stays at outer env - all val_exprs evaluate in it
+                        continue
+
+                     if name == 'let*':
+                        # (let* bindings body...) - each val sees prior bindings
+                        bindings_cons = C.cdr.car
+                        body_cons     = C.cdr.cdr
+                        pairs = _collect_let_bindings(bindings_cons)
+                        if not pairs:
+                           C = body_cons.car
+                           if is_cons(body_cons.cdr):
+                              K.append((FRAME_SEQ, body_cons.cdr, E))
+                           continue
+                        remaining = []
+                        i = 1
+                        while i < len(pairs):
+                           remaining.append(pairs[i])
+                           i = i + 1
+                        K.append((FRAME_LET_STAR, pairs[0][0], remaining, body_cons, E))
+                        C = pairs[0][1]
+                        continue
+
+                     if name == 'letrec' or name == 'letrec*':
+                        # (letrec bindings body...) - all names visible in val_exprs
+                        bindings_cons = C.cdr.car
+                        body_cons     = C.cdr.cdr
+                        pairs = _collect_let_bindings(bindings_cons)
+                        if not pairs:
+                           C = body_cons.car
+                           if is_cons(body_cons.cdr):
+                              K.append((FRAME_SEQ, body_cons.cdr, E))
+                           continue
+                        init_bindings = {}
+                        i = 0
+                        while i < len(pairs):
+                           init_bindings[pairs[i][0]] = VOID_VALUE
+                           i = i + 1
+                        new_env = Environment(E, initialBindings=init_bindings)
+                        remaining = []
+                        i = 1
+                        while i < len(pairs):
+                           remaining.append(pairs[i])
+                           i = i + 1
+                        K.append((FRAME_LETREC, pairs[0][0], remaining, body_cons, new_env))
+                        C = pairs[0][1]
+                        E = new_env
+                        continue
+
+                     # Symbol head but not a keyword - application.
+                     # Walk arg cons chain into Python list.
+                     args = _collect_cons_to_list(C.cdr)
+                     K.append((FRAME_ARG, args, E, C))
+                     C = head
                      continue
-                  K.append((FRAME_COND, first, rest, E))
-                  C = kind[1]   # the test expression
+
+                  # head is not a symbol - application (e.g., immediate lambda).
+                  args = _collect_cons_to_list(C.cdr)
+                  K.append((FRAME_ARG, args, E, C))
+                  C = head
                   continue
 
-               if name == 'case':
-                  # (case <key> <clause>...) - analyzer ensures shape:
-                  # key present, at least one clause, each clause a proper
-                  # list starting with a datum-list or 'else'.
-                  clauses = C.cdr.cdr
-                  first   = clauses.car
-                  rest    = clauses.cdr
-                  K.append((FRAME_CASE, first, rest, E))
-                  C = C.cdr.car   # the key expression
-                  continue
+               if is_symbol(C):
+                  try:
+                     V = E.lookup(as_symbol(C))
+                  except SchemeUnboundError as e:
+                     e.src = src_of(C)
+                     raise
+                  break
 
-               if name == 'let':
-                  # (let [name] bindings body...)
-                  if is_symbol(C.cdr.car):
-                     # named let: desugar at runtime
-                     # (let name ((v1 e1) ...) body...) ==
-                     #   (letrec ((name (lambda (v1 ...) body...))) (name e1 ...))
-                     loop_name = as_symbol(C.cdr.car)
-                     bindings_cons = C.cdr.cdr.car
-                     body_cons = C.cdr.cdr.cdr
-                     pairs = _collect_let_bindings(bindings_cons)
-                     params = []
-                     init_exprs = []
-                     i = 0
-                     while i < len(pairs):
-                        params.append(pairs[i][0])
-                        init_exprs.append(pairs[i][1])
-                        i = i + 1
-                     # Build the loop env first so the closure can capture it,
-                     # then bind the closure to its own name for self-reference.
-                     loop_env = Environment(E, initialBindings={loop_name: VOID_VALUE})
-                     closure = make_closure(params, body_cons, loop_env, None, '')
-                     loop_env.bind(loop_name, closure)
-                     # Now evaluate (name init1 init2 ...) - i.e., apply closure to init values
-                     # Set up FRAME_ARG-style call: but we don't have an "AST" for this synthesized call.
-                     # Use FRAME_ARG with init_exprs as args list and the current C as app_node.
-                     V = closure
-                     # We want to apply closure to init_exprs.  Push FRAME_ARG with V as fn.
-                     K.append((FRAME_ARG, init_exprs, loop_env, C))
-                     break
-                  bindings_cons = C.cdr.car
-                  body_cons     = C.cdr.cdr
-                  pairs = _collect_let_bindings(bindings_cons)
-                  if not pairs:
-                     # No bindings; just run body in current env
-                     C = body_cons.car
-                     if is_cons(body_cons.cdr):
-                        K.append((FRAME_SEQ, body_cons.cdr, E))
-                     continue
-                  names = []
-                  val_exprs = []
-                  i = 0
-                  while i < len(pairs):
-                     names.append(pairs[i][0])
-                     val_exprs.append(pairs[i][1])
-                     i = i + 1
-                  # Pre-extract remaining val_exprs (all but first) as Python list
-                  remaining = []
-                  i = 1
-                  while i < len(val_exprs):
-                     remaining.append(val_exprs[i])
-                     i = i + 1
-                  K.append((FRAME_LET, names, [], remaining, body_cons, E))
-                  C = val_exprs[0]
-                  # E stays at outer env - all val_exprs evaluate in it
-                  continue
-
-               if name == 'let*':
-                  # (let* bindings body...) - each val sees prior bindings
-                  bindings_cons = C.cdr.car
-                  body_cons     = C.cdr.cdr
-                  pairs = _collect_let_bindings(bindings_cons)
-                  if not pairs:
-                     C = body_cons.car
-                     if is_cons(body_cons.cdr):
-                        K.append((FRAME_SEQ, body_cons.cdr, E))
-                     continue
-                  remaining = []
-                  i = 1
-                  while i < len(pairs):
-                     remaining.append(pairs[i])
-                     i = i + 1
-                  K.append((FRAME_LET_STAR, pairs[0][0], remaining, body_cons, E))
-                  C = pairs[0][1]
-                  continue
-
-               if name == 'letrec' or name == 'letrec*':
-                  # (letrec bindings body...) - all names visible in val_exprs
-                  bindings_cons = C.cdr.car
-                  body_cons     = C.cdr.cdr
-                  pairs = _collect_let_bindings(bindings_cons)
-                  if not pairs:
-                     C = body_cons.car
-                     if is_cons(body_cons.cdr):
-                        K.append((FRAME_SEQ, body_cons.cdr, E))
-                     continue
-                  init_bindings = {}
-                  i = 0
-                  while i < len(pairs):
-                     init_bindings[pairs[i][0]] = VOID_VALUE
-                     i = i + 1
-                  new_env = Environment(E, initialBindings=init_bindings)
-                  remaining = []
-                  i = 1
-                  while i < len(pairs):
-                     remaining.append(pairs[i])
-                     i = i + 1
-                  K.append((FRAME_LETREC, pairs[0][0], remaining, body_cons, new_env))
-                  C = pairs[0][1]
-                  E = new_env
-                  continue
-
-               # Symbol head but not a keyword - application.
-               # Walk arg cons chain into Python list.
-               args = _collect_cons_to_list(C.cdr)
-               K.append((FRAME_ARG, args, E, C))
-               C = head
-               continue
-
-            # head is not a symbol - application (e.g., immediate lambda).
-            args = _collect_cons_to_list(C.cdr)
-            K.append((FRAME_ARG, args, E, C))
-            C = head
-            continue
-
-         if is_symbol(C):
-            try:
-               V = E.lookup(as_symbol(C))
-            except SchemeUnboundError as e:
-               e.src = src_of(C)
-               raise
-            break
-
-         # Atom (literal), NIL, VOID, or any other tagged value: self-eval.
-         V = C
-         break
-
-      # ----- APPLY: consume V against the top frame -----
-      while True:
-         if not K:
-            return V
-
-         frame = K.pop()
-         ftag  = frame[0]
-
-         # R7RS 6.10: passing multi-values to a continuation not created
-         # by call-with-values is an error.  But not every frame is a
-         # single-value continuation: FRAME_SEQ discards V (begin/body
-         # sequencing - 0-value context, not 1-value), and the wind /
-         # handler pop frames are transparent (they preserve V across
-         # an effect and forward it to whatever's outside).  Only frames
-         # that actually consume V as a single value error here.
-         if is_multi_values(V) and ftag not in _MULTI_VALUES_OK_FRAMES:
-            raise SchemeTypeError(
-               'multiple values delivered to a single-value context',
-               src_of(V))
-
-         if ftag == FRAME_DEFINE:
-            E = frame[2]
-            E.bind(frame[1], V)
-            V = VOID_VALUE
-            continue
-
-         if ftag == FRAME_SET:
-            E = frame[2]
-            try:
-               E.set(frame[1], V)
-            except SchemeUnboundError as e:
-               e.src = frame[3]
-               raise
-            V = VOID_VALUE
-            continue
-
-         if ftag == FRAME_IF:
-            if isFalse(V):
-               C = frame[2]
-            else:
-               C = frame[1]
-            E = frame[3]
-            break
-
-         if ftag == FRAME_DYNAMIC_WIND_AFTER:
-            # frame = (FRAME_DYNAMIC_WIND_AFTER, after_thunk)
-            # The thunk has produced its value (now in V).  Pop the wind
-            # entry, save the body result across the after call, then run
-            # after for its effect and restore the result.
-            from pyscheme.primitives.meta import _apply_scheme_proc
-            after_thunk = frame[1]
-            body_result = V
-            if _wind_stack:
-               _wind_stack.pop()
-            _apply_scheme_proc(after_thunk, [], ctx, None, None)
-            V = body_result
-            continue
-
-         if ftag == FRAME_CWV_CONSUMER:
-            # frame = (FRAME_CWV_CONSUMER, consumer, app_node)
-            # V is whatever the producer returned.  Unpack multi-values (if
-            # applicable) and tail-call the consumer via _enter_proc.
-            consumer  = frame[1]
-            app_node  = frame[2]
-            if is_multi_values(V):
-               consumer_args = as_multi_values_list(V)
-            else:
-               consumer_args = [V]
-            result = _enter_proc(consumer, consumer_args, ctx, E, app_node)
-            if result[0] == 'value':
-               V = result[1]
-               continue
-            if result[0] == 'cont':
-               K = result[1]
-               V = result[2]
-               continue
-            C = result[1]
-            E = result[2]
-            if result[3] is not None:
-               K.append((FRAME_SEQ, result[3], E))
-            break
-
-         if ftag == FRAME_POP_HANDLER:
-            # Thunk returned normally; pop the installed handler and let V
-            # flow.  No work needed beyond popping the stack entry.
-            if _handler_stack:
-               _handler_stack.pop()
-            continue
-
-         if ftag == FRAME_REINSTALL_HANDLER:
-            # raise-continuable's handler returned; push it back so nested
-            # raises in the enclosing with-exception-handler scope still
-            # see it.  V (handler's return) flows back to the raise-
-            # continuable's call site unchanged.
-            _handler_stack.append(frame[1])
-            continue
-
-         if ftag == FRAME_MAKE_PARAMETER:
-            # frame = (FRAME_MAKE_PARAMETER, converter)
-            # V is the converter's return value; wrap it as a Parameter.
-            V = make_parameter(V, frame[1])
-            continue
-
-         if ftag == FRAME_FORCE_RESULT:
-            # frame = (FRAME_FORCE_RESULT, promise)
-            # The promise's thunk has produced V.  Resolve or become, and
-            # iterate if we ended up with another unforced promise.
-            p = frame[1]
-            if is_promise(V):
-               promise_become(p, V)
-               if as_promise_is_done(p):
-                  V = as_promise_payload(p)
-                  continue
-               # Still not done - iterate: push another FORCE_RESULT and
-               # tail-call the (now inner) thunk.
-               K.append((FRAME_FORCE_RESULT, p))
-               thunk = as_promise_payload(p)
-               result = _enter_proc(thunk, [], ctx, E, None)
-               if result[0] == 'value':
-                  V = result[1]
-                  continue
-               if result[0] == 'cont':
-                  K = result[1]
-                  V = result[2]
-                  continue
-               C = result[1]
-               E = result[2]
-               if result[3] is not None:
-                  K.append((FRAME_SEQ, result[3], E))
+               # Atom (literal), NIL, VOID, or any other tagged value: self-eval.
+               V = C
                break
-            promise_resolve(p, V)
-            continue
 
-         if ftag == FRAME_ARG:
-            # frame = (FRAME_ARG, args_list, env, app_node)
-            args      = frame[1]
-            saved_env = frame[2]
-            app_node  = frame[3]
-            if len(args) == 0:
-               if is_continuation(V):
-                  _wind_walk(ctx, as_continuation_wind(V))
-                  _restore_handler_stack(as_continuation_handlers(V))
-                  K = list(as_continuation_k(V))
-                  V = _continuation_value(V, [])
-                  continue
-               pv = _apply_parameter_if(V, 0, app_node)
-               if pv is not None:
-                  V = pv
-                  continue
-               if is_primitive(V):
-                  V = as_primitive_fn(V)(ctx, saved_env, [], app_node)
-                  continue
-               r = _apply_value(V, [], app_node)
-               E = r.new_env
-               C = r.body.car
-               if is_cons(r.body.cdr):
-                  K.append((FRAME_SEQ, r.body.cdr, r.new_env))
-               break
-            # Push baton FRAME_CALL and start on first arg.
-            remaining = []
-            i = 1
-            while i < len(args):
-               remaining.append(args[i])
-               i = i + 1
-            K.append((FRAME_CALL, V, [], remaining, saved_env, app_node))
-            C = args[0]
-            E = saved_env
-            break
+            # ----- APPLY: consume V against the top frame -----
+            while True:
+               if not K:
+                  return V
 
-         if ftag == FRAME_CALL:
-            # frame = (FRAME_CALL, fn_value, collected, remaining, env, app_node)
-            fn_value      = frame[1]
-            collected     = frame[2]
-            remaining     = frame[3]
-            saved_env     = frame[4]
-            app_node      = frame[5]
-            new_collected = list(collected)
-            new_collected.append(V)
-            if len(remaining) == 0:
-               # Invoke continuation: replace K with its snapshot.
-               if is_continuation(fn_value):
-                  _wind_walk(ctx, as_continuation_wind(fn_value))
-                  _restore_handler_stack(as_continuation_handlers(fn_value))
-                  K = list(as_continuation_k(fn_value))
-                  V = _continuation_value(fn_value, new_collected)
+               frame = K.pop()
+               ftag  = frame[0]
+
+               # R7RS 6.10: passing multi-values to a continuation not created
+               # by call-with-values is an error.  But not every frame is a
+               # single-value continuation: FRAME_SEQ discards V (begin/body
+               # sequencing - 0-value context, not 1-value), and the wind /
+               # handler pop frames are transparent (they preserve V across
+               # an effect and forward it to whatever's outside).  Only frames
+               # that actually consume V as a single value error here.
+               if is_multi_values(V) and ftag not in _MULTI_VALUES_OK_FRAMES:
+                  raise SchemeTypeError(
+                     'multiple values delivered to a single-value context',
+                     src_of(V))
+
+               if ftag == FRAME_DEFINE:
+                  E = frame[2]
+                  E.bind(frame[1], V)
+                  V = VOID_VALUE
                   continue
-               # Capture continuation: call/cc intercepted before its body.
-               if _is_call_cc_primitive(fn_value):
-                  if len(new_collected) != 1:
-                     raise SchemeArityError(
-                        arity_mismatch_msg(as_primitive_name(fn_value),
-                                           1, 1, len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  cont = make_continuation(
-                     list(K), list(_wind_stack), list(_handler_stack))
-                  user_proc = new_collected[0]
-                  # Apply the user proc with the continuation as its arg,
-                  # reusing the normal dispatch paths below.
-                  fn_value = user_proc
-                  new_collected = [cont]
-               # apply: splice the list argument, rewrite the dispatch so
-               # the target proc is tail-called through the normal CEK
-               # path.  Avoids the Python stack frame that _prim_apply's
-               # re-entry into cek_eval would create.  Loops so (apply apply
-               # ...) collapses rather than firing the stub body.
-               while _is_apply_primitive(fn_value):
-                  proc, flat_args = _unpack_apply_args(new_collected, app_node)
-                  if not (is_primitive(proc) or is_closure(proc)
-                          or is_case_closure(proc) or is_continuation(proc)
-                          or is_parameter(proc)):
-                     raise SchemeTypeError(
-                        'apply: first argument must be a procedure', app_node)
-                  fn_value = proc
-                  new_collected = flat_args
-               # call-with-values: install consumer frame, tail-call producer.
-               if _is_call_with_values_primitive(fn_value):
-                  if len(new_collected) != 2:
-                     raise SchemeArityError(
-                        arity_mismatch_msg('call-with-values', 2, 2,
-                                           len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  producer = new_collected[0]
-                  consumer = new_collected[1]
-                  K.append((FRAME_CWV_CONSUMER, consumer, app_node))
-                  fn_value = producer
-                  new_collected = []
-               # force: install result frame, tail-call the thunk (or return
-               # the cached value immediately if the promise is already done).
-               # R7RS-small 6.10 leaves force-of-non-promise implementation-
-               # defined; we return non-promises unchanged so callers can
-               # write (force x) without first checking promise?, matching
-               # SRFI 155 and most R6RS impls.
-               if _is_force_primitive(fn_value):
-                  if len(new_collected) != 1:
-                     raise SchemeArityError(
-                        arity_mismatch_msg('force', 1, 1, len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  p = new_collected[0]
-                  if not is_promise(p):
-                     V = p
-                     continue
-                  if as_promise_is_done(p):
-                     V = as_promise_payload(p)
-                     continue
-                  K.append((FRAME_FORCE_RESULT, p))
-                  fn_value = as_promise_payload(p)
-                  new_collected = []
-               # make-parameter: if a converter is given, tail-call it with
-               # the init value and wrap its return as a Parameter via
-               # FRAME_MAKE_PARAMETER.  Without a converter, build the
-               # parameter inline.
-               if _is_make_parameter_primitive(fn_value):
-                  if len(new_collected) not in (1, 2):
-                     raise SchemeArityError(
-                        arity_mismatch_msg('make-parameter', 1, 2,
-                                           len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  if len(new_collected) == 1:
-                     V = make_parameter(new_collected[0], None)
-                     continue
-                  converter = new_collected[1]
-                  init = new_collected[0]
-                  if not (is_primitive(converter) or is_closure(converter)
-                          or is_case_closure(converter)):
-                     raise SchemeTypeError(
-                        'make-parameter: converter must be a procedure',
-                        app_node)
-                  K.append((FRAME_MAKE_PARAMETER, converter))
-                  fn_value = converter
-                  new_collected = [init]
-               # with-exception-handler: push handler on _handler_stack,
-               # push FRAME_POP_HANDLER, tail-call thunk.  Handler is
-               # popped on normal return via FRAME_POP_HANDLER, or
-               # consumed by raise / raise-continuable.
-               if _is_with_exception_handler_primitive(fn_value):
-                  if len(new_collected) != 2:
-                     raise SchemeArityError(
-                        arity_mismatch_msg('with-exception-handler', 2, 2,
-                                           len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  handler = new_collected[0]
-                  thunk   = new_collected[1]
-                  _handler_stack.append(handler)
-                  K.append((FRAME_POP_HANDLER,))
-                  fn_value = thunk
-                  new_collected = []
-               # raise (non-continuable): throw Python SchemeRaised so the
-               # exception unwinds the CEK loop.  cek_eval's except block
-               # routes to the topmost installed handler if any.
-               if _is_raise_primitive(fn_value):
-                  if len(new_collected) != 1:
-                     raise SchemeArityError(
-                        arity_mismatch_msg('raise', 1, 1, len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  raise SchemeRaised(new_collected[0], app_node,
-                                     continuable=False)
-               # raise-continuable: handler's return value flows back to
-               # the raise-continuable call site (R7RS-correct).  Pop the
-               # handler so a re-raise inside the handler reaches the next
-               # outer one; FRAME_REINSTALL_HANDLER puts it back on return.
-               if _is_raise_continuable_primitive(fn_value):
-                  if len(new_collected) != 1:
-                     raise SchemeArityError(
-                        arity_mismatch_msg('raise-continuable', 1, 1,
-                                           len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  raised_val = new_collected[0]
-                  if not _handler_stack:
-                     raise SchemeRaised(raised_val, app_node, continuable=True)
-                  handler = _handler_stack.pop()
-                  K.append((FRAME_REINSTALL_HANDLER, handler))
-                  fn_value = handler
-                  new_collected = [raised_val]
-               # eval: expand and analyze the datum once, then set C to the
-               # expanded form and continue in the same cek_eval call.  Tail
-               # calls inside the eval'd expression compose with the
-               # surrounding continuation, so deep recursion through eval
-               # doesn't add Python stack.  The optional env-spec argument
-               # selects the evaluation environment: an env value from
-               # (interaction-environment) or (environment ...).  Without
-               # it, the caller's global env is used.
-               if _is_eval_primitive(fn_value):
-                  if len(new_collected) not in (1, 2):
-                     raise SchemeArityError(
-                        arity_mismatch_msg('eval', 1, 2, len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  datum = new_collected[0]
-                  if len(new_collected) == 2:
-                     env_arg = new_collected[1]
-                     if not is_environment(env_arg):
-                        raise SchemeTypeError(
-                           'eval: second argument must be an environment',
-                           src_of(app_node) if app_node is not None else None)
-                     target_env = as_environment(env_arg)
+
+               if ftag == FRAME_SET:
+                  E = frame[2]
+                  try:
+                     E.set(frame[1], V)
+                  except SchemeUnboundError as e:
+                     e.src = frame[3]
+                     raise
+                  V = VOID_VALUE
+                  continue
+
+               if ftag == FRAME_IF:
+                  if isFalse(V):
+                     C = frame[2]
                   else:
-                     target_env = saved_env.getGlobalEnv()
-                  from pyscheme.Expander  import expand
-                  from pyscheme.Analyzer  import analyze
-                  from pyscheme.primitives import PRIMITIVE_ARITIES
-                  expanded = expand(datum)
-                  analyze(expanded, dict(PRIMITIVE_ARITIES))
-                  C = expanded
-                  E = target_env
+                     C = frame[1]
+                  E = frame[3]
                   break
-               # error: build an ErrorObject and throw Python SchemeUserError
-               # (which subclasses SchemeRaised), letting cek_eval's except
-               # path route to the handler stack.
-               if _is_error_primitive(fn_value):
-                  if len(new_collected) < 1:
-                     raise SchemeArityError(
-                        arity_mismatch_msg('error', 1, None, len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  msg_arg = new_collected[0]
-                  if not is_string(msg_arg):
-                     raise SchemeTypeError(
-                        'error: first argument must be a string', app_node)
-                  msg = as_string(msg_arg)
-                  irritants = []
-                  i = 1
-                  while i < len(new_collected):
-                     irritants.append(new_collected[i])
-                     i = i + 1
-                  raise SchemeUserError(msg, irritants, app_node)
-               # %with-parameters: apply converters, save old, install new,
-               # push wind frame so we integrate with dynamic-wind / continuation
-               # re-entry, tail-call thunk.
-               if _is_with_parameters_primitive(fn_value):
-                  if len(new_collected) != 3:
-                     raise SchemeArityError(
-                        arity_mismatch_msg('%with-parameters', 3, 3,
-                                           len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  install_prim, restore_prim = _build_parameterize_winds(
-                     new_collected[0], new_collected[1],
-                     ctx, saved_env, app_node)
-                  _wind_stack.append((install_prim, restore_prim))
-                  K.append((FRAME_DYNAMIC_WIND_AFTER, restore_prim))
-                  fn_value = new_collected[2]
-                  new_collected = []
-               # dynamic-wind: install the wind frame in the CEK machine
-               # so continuation captures see it and FRAME_DYNAMIC_WIND_AFTER
-               # runs the after thunk when the body returns.
-               if _is_dynamic_wind_primitive(fn_value):
-                  if len(new_collected) != 3:
-                     raise SchemeArityError(
-                        arity_mismatch_msg('dynamic-wind',
-                                           3, 3, len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  before = new_collected[0]
-                  thunk  = new_collected[1]
-                  after  = new_collected[2]
+
+               if ftag == FRAME_DYNAMIC_WIND_AFTER:
+                  # frame = (FRAME_DYNAMIC_WIND_AFTER, after_thunk)
+                  # The thunk has produced its value (now in V).  Pop the wind
+                  # entry, save the body result across the after call, then run
+                  # after for its effect and restore the result.
                   from pyscheme.primitives.meta import _apply_scheme_proc
-                  _apply_scheme_proc(before, [], ctx, saved_env, app_node)
-                  _wind_stack.append((before, after))
-                  K.append((FRAME_DYNAMIC_WIND_AFTER, after))
-                  fn_value = thunk
-                  new_collected = []
-               pv = _apply_parameter_if(fn_value, len(new_collected), app_node)
-               if pv is not None:
-                  V = pv
+                  after_thunk = frame[1]
+                  body_result = V
+                  if _wind_stack:
+                     _wind_stack.pop()
+                  _apply_scheme_proc(after_thunk, [], ctx, None, None)
+                  V = body_result
                   continue
-               # Record accessor: type-check the arg using the call-site
-               # app_node so the error position points at the user's call,
-               # not the define-record-type form.
-               if is_record_accessor(fn_value):
-                  if len(new_collected) != 1:
-                     raise SchemeArityError(
-                        arity_mismatch_msg(
-                           as_record_accessor_name(fn_value),
-                           1, 1, len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  rt = as_record_accessor_type(fn_value)
-                  rec = new_collected[0]
-                  if not is_record(rec) or as_record_type(rec) is not rt:
-                     raise SchemeTypeError(
-                        as_record_accessor_name(fn_value)
-                        + ': argument is not a ' + as_record_type_name(rt),
-                        src_of(app_node) if app_node is not None else None)
-                  V = as_record_fields(rec)[as_record_accessor_index(fn_value)]
+
+               if ftag == FRAME_CWV_CONSUMER:
+                  # frame = (FRAME_CWV_CONSUMER, consumer, app_node)
+                  # V is whatever the producer returned.  Unpack multi-values (if
+                  # applicable) and tail-call the consumer via _enter_proc.
+                  consumer  = frame[1]
+                  app_node  = frame[2]
+                  if is_multi_values(V):
+                     consumer_args = as_multi_values_list(V)
+                  else:
+                     consumer_args = [V]
+                  result = _enter_proc(consumer, consumer_args, ctx, E, app_node)
+                  if result[0] == 'value':
+                     V = result[1]
+                     continue
+                  if result[0] == 'cont':
+                     K = result[1]
+                     V = result[2]
+                     continue
+                  C = result[1]
+                  E = result[2]
+                  if result[3] is not None:
+                     K.append((FRAME_SEQ, result[3], E))
+                  break
+
+               if ftag == FRAME_POP_HANDLER:
+                  # Thunk returned normally; pop the installed handler and let V
+                  # flow.  No work needed beyond popping the stack entry.
+                  if _handler_stack:
+                     _handler_stack.pop()
                   continue
-               # Record mutator: same pattern; V is VOID after assignment.
-               if is_record_mutator(fn_value):
-                  if len(new_collected) != 2:
-                     raise SchemeArityError(
-                        arity_mismatch_msg(
-                           as_record_mutator_name(fn_value),
-                           2, 2, len(new_collected)),
-                        src_of(app_node) if app_node is not None else None)
-                  rt = as_record_mutator_type(fn_value)
-                  rec = new_collected[0]
-                  if not is_record(rec) or as_record_type(rec) is not rt:
-                     raise SchemeTypeError(
-                        as_record_mutator_name(fn_value)
-                        + ': first argument is not a ' + as_record_type_name(rt),
-                        src_of(app_node) if app_node is not None else None)
-                  as_record_fields(rec)[as_record_mutator_index(fn_value)] = new_collected[1]
-                  V = VOID_VALUE
+
+               if ftag == FRAME_REINSTALL_HANDLER:
+                  # raise-continuable's handler returned; push it back so nested
+                  # raises in the enclosing with-exception-handler scope still
+                  # see it.  V (handler's return) flows back to the raise-
+                  # continuable's call site unchanged.
+                  _handler_stack.append(frame[1])
                   continue
-               if is_primitive(fn_value):
-                  V = as_primitive_fn(fn_value)(ctx, saved_env, new_collected, app_node)
+
+               if ftag == FRAME_MAKE_PARAMETER:
+                  # frame = (FRAME_MAKE_PARAMETER, converter)
+                  # V is the converter's return value; wrap it as a Parameter.
+                  V = make_parameter(V, frame[1])
                   continue
-               r = _apply_value(fn_value, new_collected, app_node)
-               E = r.new_env
-               C = r.body.car
-               if is_cons(r.body.cdr):
-                  K.append((FRAME_SEQ, r.body.cdr, r.new_env))
-               break
-            new_remaining = []
-            i = 1
-            while i < len(remaining):
-               new_remaining.append(remaining[i])
-               i = i + 1
-            K.append((FRAME_CALL, fn_value, new_collected,
-                      new_remaining, saved_env, app_node))
-            C = remaining[0]
-            E = saved_env
-            break
 
-         if ftag == FRAME_SEQ:
-            # frame = (FRAME_SEQ, remaining_body_cons, env)
-            remaining = frame[1]
-            saved_env = frame[2]
-            E = saved_env
-            C = remaining.car
-            if is_cons(remaining.cdr):
-               K.append((FRAME_SEQ, remaining.cdr, saved_env))
-            break
-
-         if ftag == FRAME_WHEN:
-            body      = frame[1]
-            saved_env = frame[2]
-            if isFalse(V):
-               V = VOID_VALUE
-               continue
-            E = saved_env
-            C = body.car
-            if is_cons(body.cdr):
-               K.append((FRAME_SEQ, body.cdr, saved_env))
-            break
-
-         if ftag == FRAME_UNLESS:
-            body      = frame[1]
-            saved_env = frame[2]
-            if isFalse(V):
-               E = saved_env
-               C = body.car
-               if is_cons(body.cdr):
-                  K.append((FRAME_SEQ, body.cdr, saved_env))
-               break
-            V = VOID_VALUE
-            continue
-
-         if ftag == FRAME_AND:
-            remaining = frame[1]
-            saved_env = frame[2]
-            if isFalse(V):
-               continue   # short-circuit: V stays #f
-            if is_nil(remaining):
-               continue   # V is the last truthy
-            if is_cons(remaining.cdr):
-               K.append((FRAME_AND, remaining.cdr, saved_env))
-            C = remaining.car
-            E = saved_env
-            break
-
-         if ftag == FRAME_OR:
-            remaining = frame[1]
-            saved_env = frame[2]
-            if not isFalse(V):
-               continue   # short-circuit: V stays truthy
-            if is_nil(remaining):
-               continue   # V stays as last false
-            if is_cons(remaining.cdr):
-               K.append((FRAME_OR, remaining.cdr, saved_env))
-            C = remaining.car
-            E = saved_env
-            break
-
-         if ftag == FRAME_COND:
-            current   = frame[1]
-            remaining = frame[2]
-            saved_env = frame[3]
-            if isFalse(V):
-               # Test failed - advance to next clause.
-               if is_nil(remaining):
-                  V = VOID_VALUE
+               if ftag == FRAME_FORCE_RESULT:
+                  # frame = (FRAME_FORCE_RESULT, promise)
+                  # The promise's thunk has produced V.  Resolve or become, and
+                  # iterate if we ended up with another unforced promise.
+                  p = frame[1]
+                  if is_promise(V):
+                     promise_become(p, V)
+                     if as_promise_is_done(p):
+                        V = as_promise_payload(p)
+                        continue
+                     # Still not done - iterate: push another FORCE_RESULT and
+                     # tail-call the (now inner) thunk.
+                     K.append((FRAME_FORCE_RESULT, p))
+                     thunk = as_promise_payload(p)
+                     result = _enter_proc(thunk, [], ctx, E, None)
+                     if result[0] == 'value':
+                        V = result[1]
+                        continue
+                     if result[0] == 'cont':
+                        K = result[1]
+                        V = result[2]
+                        continue
+                     C = result[1]
+                     E = result[2]
+                     if result[3] is not None:
+                        K.append((FRAME_SEQ, result[3], E))
+                     break
+                  promise_resolve(p, V)
                   continue
-               nxt  = remaining.car
-               rest = remaining.cdr
-               kind = _classify_cond_clause(nxt)
-               E = saved_env
-               if kind[0] == 'else':
-                  body = kind[1]
+
+               if ftag == FRAME_ARG:
+                  # frame = (FRAME_ARG, args_list, env, app_node)
+                  args      = frame[1]
+                  saved_env = frame[2]
+                  app_node  = frame[3]
+                  if len(args) == 0:
+                     if is_continuation(V):
+                        _wind_walk(ctx, as_continuation_wind(V))
+                        _restore_handler_stack(as_continuation_handlers(V))
+                        K = list(as_continuation_k(V))
+                        V = _continuation_value(V, [])
+                        continue
+                     pv = _apply_parameter_if(V, 0, app_node)
+                     if pv is not None:
+                        V = pv
+                        continue
+                     if is_primitive(V):
+                        V = as_primitive_fn(V)(ctx, saved_env, [], app_node)
+                        continue
+                     r = _apply_value(V, [], app_node)
+                     E = r.new_env
+                     C = r.body.car
+                     if is_cons(r.body.cdr):
+                        K.append((FRAME_SEQ, r.body.cdr, r.new_env))
+                     break
+                  # Push baton FRAME_CALL and start on first arg.
+                  remaining = []
+                  i = 1
+                  while i < len(args):
+                     remaining.append(args[i])
+                     i = i + 1
+                  K.append((FRAME_CALL, V, [], remaining, saved_env, app_node))
+                  C = args[0]
+                  E = saved_env
+                  break
+
+               if ftag == FRAME_CALL:
+                  # frame = (FRAME_CALL, fn_value, collected, remaining, env, app_node)
+                  fn_value      = frame[1]
+                  collected     = frame[2]
+                  remaining     = frame[3]
+                  saved_env     = frame[4]
+                  app_node      = frame[5]
+                  new_collected = list(collected)
+                  new_collected.append(V)
+                  if len(remaining) == 0:
+                     # Invoke continuation: replace K with its snapshot.
+                     if is_continuation(fn_value):
+                        _wind_walk(ctx, as_continuation_wind(fn_value))
+                        _restore_handler_stack(as_continuation_handlers(fn_value))
+                        K = list(as_continuation_k(fn_value))
+                        V = _continuation_value(fn_value, new_collected)
+                        continue
+                     # Capture continuation: call/cc intercepted before its body.
+                     if _is_call_cc_primitive(fn_value):
+                        if len(new_collected) != 1:
+                           raise SchemeArityError(
+                              arity_mismatch_msg(as_primitive_name(fn_value),
+                                                 1, 1, len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        cont = make_continuation(
+                           list(K), list(_wind_stack), list(_handler_stack))
+                        user_proc = new_collected[0]
+                        # Apply the user proc with the continuation as its arg,
+                        # reusing the normal dispatch paths below.
+                        fn_value = user_proc
+                        new_collected = [cont]
+                     # apply: splice the list argument, rewrite the dispatch so
+                     # the target proc is tail-called through the normal CEK
+                     # path.  Avoids the Python stack frame that _prim_apply's
+                     # re-entry into cek_eval would create.  Loops so (apply apply
+                     # ...) collapses rather than firing the stub body.
+                     while _is_apply_primitive(fn_value):
+                        proc, flat_args = _unpack_apply_args(new_collected, app_node)
+                        if not (is_primitive(proc) or is_closure(proc)
+                                or is_case_closure(proc) or is_continuation(proc)
+                                or is_parameter(proc)):
+                           raise SchemeTypeError(
+                              'apply: first argument must be a procedure', app_node)
+                        fn_value = proc
+                        new_collected = flat_args
+                     # call-with-values: install consumer frame, tail-call producer.
+                     if _is_call_with_values_primitive(fn_value):
+                        if len(new_collected) != 2:
+                           raise SchemeArityError(
+                              arity_mismatch_msg('call-with-values', 2, 2,
+                                                 len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        producer = new_collected[0]
+                        consumer = new_collected[1]
+                        K.append((FRAME_CWV_CONSUMER, consumer, app_node))
+                        fn_value = producer
+                        new_collected = []
+                     # force: install result frame, tail-call the thunk (or return
+                     # the cached value immediately if the promise is already done).
+                     # R7RS-small 6.10 leaves force-of-non-promise implementation-
+                     # defined; we return non-promises unchanged so callers can
+                     # write (force x) without first checking promise?, matching
+                     # SRFI 155 and most R6RS impls.
+                     if _is_force_primitive(fn_value):
+                        if len(new_collected) != 1:
+                           raise SchemeArityError(
+                              arity_mismatch_msg('force', 1, 1, len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        p = new_collected[0]
+                        if not is_promise(p):
+                           V = p
+                           continue
+                        if as_promise_is_done(p):
+                           V = as_promise_payload(p)
+                           continue
+                        K.append((FRAME_FORCE_RESULT, p))
+                        fn_value = as_promise_payload(p)
+                        new_collected = []
+                     # make-parameter: if a converter is given, tail-call it with
+                     # the init value and wrap its return as a Parameter via
+                     # FRAME_MAKE_PARAMETER.  Without a converter, build the
+                     # parameter inline.
+                     if _is_make_parameter_primitive(fn_value):
+                        if len(new_collected) not in (1, 2):
+                           raise SchemeArityError(
+                              arity_mismatch_msg('make-parameter', 1, 2,
+                                                 len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        if len(new_collected) == 1:
+                           V = make_parameter(new_collected[0], None)
+                           continue
+                        converter = new_collected[1]
+                        init = new_collected[0]
+                        if not (is_primitive(converter) or is_closure(converter)
+                                or is_case_closure(converter)):
+                           raise SchemeTypeError(
+                              'make-parameter: converter must be a procedure',
+                              app_node)
+                        K.append((FRAME_MAKE_PARAMETER, converter))
+                        fn_value = converter
+                        new_collected = [init]
+                     # with-exception-handler: push handler on _handler_stack,
+                     # push FRAME_POP_HANDLER, tail-call thunk.  Handler is
+                     # popped on normal return via FRAME_POP_HANDLER, or
+                     # consumed by raise / raise-continuable.
+                     if _is_with_exception_handler_primitive(fn_value):
+                        if len(new_collected) != 2:
+                           raise SchemeArityError(
+                              arity_mismatch_msg('with-exception-handler', 2, 2,
+                                                 len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        handler = new_collected[0]
+                        thunk   = new_collected[1]
+                        _handler_stack.append(handler)
+                        K.append((FRAME_POP_HANDLER,))
+                        fn_value = thunk
+                        new_collected = []
+                     # raise (non-continuable): throw Python SchemeRaised so the
+                     # exception unwinds the CEK loop.  cek_eval's except block
+                     # routes to the topmost installed handler if any.
+                     if _is_raise_primitive(fn_value):
+                        if len(new_collected) != 1:
+                           raise SchemeArityError(
+                              arity_mismatch_msg('raise', 1, 1, len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        raise SchemeRaised(new_collected[0], app_node,
+                                           continuable=False)
+                     # raise-continuable: handler's return value flows back to
+                     # the raise-continuable call site (R7RS-correct).  Pop the
+                     # handler so a re-raise inside the handler reaches the next
+                     # outer one; FRAME_REINSTALL_HANDLER puts it back on return.
+                     if _is_raise_continuable_primitive(fn_value):
+                        if len(new_collected) != 1:
+                           raise SchemeArityError(
+                              arity_mismatch_msg('raise-continuable', 1, 1,
+                                                 len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        raised_val = new_collected[0]
+                        if not _handler_stack:
+                           raise SchemeRaised(raised_val, app_node, continuable=True)
+                        handler = _handler_stack.pop()
+                        K.append((FRAME_REINSTALL_HANDLER, handler))
+                        fn_value = handler
+                        new_collected = [raised_val]
+                     # eval: expand and analyze the datum once, then set C to the
+                     # expanded form and continue in the same cek_eval call.  Tail
+                     # calls inside the eval'd expression compose with the
+                     # surrounding continuation, so deep recursion through eval
+                     # doesn't add Python stack.  The optional env-spec argument
+                     # selects the evaluation environment: an env value from
+                     # (interaction-environment) or (environment ...).  Without
+                     # it, the caller's global env is used.
+                     if _is_eval_primitive(fn_value):
+                        if len(new_collected) not in (1, 2):
+                           raise SchemeArityError(
+                              arity_mismatch_msg('eval', 1, 2, len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        datum = new_collected[0]
+                        if len(new_collected) == 2:
+                           env_arg = new_collected[1]
+                           if not is_environment(env_arg):
+                              raise SchemeTypeError(
+                                 'eval: second argument must be an environment',
+                                 src_of(app_node) if app_node is not None else None)
+                           target_env = as_environment(env_arg)
+                        else:
+                           target_env = saved_env.getGlobalEnv()
+                        from pyscheme.Expander  import expand
+                        from pyscheme.Analyzer  import analyze
+                        from pyscheme.primitives import PRIMITIVE_ARITIES
+                        expanded = expand(datum)
+                        analyze(expanded, dict(PRIMITIVE_ARITIES))
+                        C = expanded
+                        E = target_env
+                        break
+                     # error: build an ErrorObject and throw Python SchemeUserError
+                     # (which subclasses SchemeRaised), letting cek_eval's except
+                     # path route to the handler stack.
+                     if _is_error_primitive(fn_value):
+                        if len(new_collected) < 1:
+                           raise SchemeArityError(
+                              arity_mismatch_msg('error', 1, None, len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        msg_arg = new_collected[0]
+                        if not is_string(msg_arg):
+                           raise SchemeTypeError(
+                              'error: first argument must be a string', app_node)
+                        msg = as_string(msg_arg)
+                        irritants = []
+                        i = 1
+                        while i < len(new_collected):
+                           irritants.append(new_collected[i])
+                           i = i + 1
+                        raise SchemeUserError(msg, irritants, app_node)
+                     # %with-parameters: apply converters, save old, install new,
+                     # push wind frame so we integrate with dynamic-wind / continuation
+                     # re-entry, tail-call thunk.
+                     if _is_with_parameters_primitive(fn_value):
+                        if len(new_collected) != 3:
+                           raise SchemeArityError(
+                              arity_mismatch_msg('%with-parameters', 3, 3,
+                                                 len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        install_prim, restore_prim = _build_parameterize_winds(
+                           new_collected[0], new_collected[1],
+                           ctx, saved_env, app_node)
+                        _wind_stack.append((install_prim, restore_prim))
+                        K.append((FRAME_DYNAMIC_WIND_AFTER, restore_prim))
+                        fn_value = new_collected[2]
+                        new_collected = []
+                     # dynamic-wind: install the wind frame in the CEK machine
+                     # so continuation captures see it and FRAME_DYNAMIC_WIND_AFTER
+                     # runs the after thunk when the body returns.
+                     if _is_dynamic_wind_primitive(fn_value):
+                        if len(new_collected) != 3:
+                           raise SchemeArityError(
+                              arity_mismatch_msg('dynamic-wind',
+                                                 3, 3, len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        before = new_collected[0]
+                        thunk  = new_collected[1]
+                        after  = new_collected[2]
+                        from pyscheme.primitives.meta import _apply_scheme_proc
+                        _apply_scheme_proc(before, [], ctx, saved_env, app_node)
+                        _wind_stack.append((before, after))
+                        K.append((FRAME_DYNAMIC_WIND_AFTER, after))
+                        fn_value = thunk
+                        new_collected = []
+                     pv = _apply_parameter_if(fn_value, len(new_collected), app_node)
+                     if pv is not None:
+                        V = pv
+                        continue
+                     # Record accessor: type-check the arg using the call-site
+                     # app_node so the error position points at the user's call,
+                     # not the define-record-type form.
+                     if is_record_accessor(fn_value):
+                        if len(new_collected) != 1:
+                           raise SchemeArityError(
+                              arity_mismatch_msg(
+                                 as_record_accessor_name(fn_value),
+                                 1, 1, len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        rt = as_record_accessor_type(fn_value)
+                        rec = new_collected[0]
+                        if not is_record(rec) or as_record_type(rec) is not rt:
+                           raise SchemeTypeError(
+                              as_record_accessor_name(fn_value)
+                              + ': argument is not a ' + as_record_type_name(rt),
+                              src_of(app_node) if app_node is not None else None)
+                        V = as_record_fields(rec)[as_record_accessor_index(fn_value)]
+                        continue
+                     # Record mutator: same pattern; V is VOID after assignment.
+                     if is_record_mutator(fn_value):
+                        if len(new_collected) != 2:
+                           raise SchemeArityError(
+                              arity_mismatch_msg(
+                                 as_record_mutator_name(fn_value),
+                                 2, 2, len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        rt = as_record_mutator_type(fn_value)
+                        rec = new_collected[0]
+                        if not is_record(rec) or as_record_type(rec) is not rt:
+                           raise SchemeTypeError(
+                              as_record_mutator_name(fn_value)
+                              + ': first argument is not a ' + as_record_type_name(rt),
+                              src_of(app_node) if app_node is not None else None)
+                        as_record_fields(rec)[as_record_mutator_index(fn_value)] = new_collected[1]
+                        V = VOID_VALUE
+                        continue
+                     if is_primitive(fn_value):
+                        V = as_primitive_fn(fn_value)(ctx, saved_env, new_collected, app_node)
+                        continue
+                     r = _apply_value(fn_value, new_collected, app_node)
+                     E = r.new_env
+                     C = r.body.car
+                     if is_cons(r.body.cdr):
+                        K.append((FRAME_SEQ, r.body.cdr, r.new_env))
+                     break
+                  new_remaining = []
+                  i = 1
+                  while i < len(remaining):
+                     new_remaining.append(remaining[i])
+                     i = i + 1
+                  K.append((FRAME_CALL, fn_value, new_collected,
+                            new_remaining, saved_env, app_node))
+                  C = remaining[0]
+                  E = saved_env
+                  break
+
+               if ftag == FRAME_SEQ:
+                  # frame = (FRAME_SEQ, remaining_body_cons, env)
+                  remaining = frame[1]
+                  saved_env = frame[2]
+                  E = saved_env
+                  C = remaining.car
+                  if is_cons(remaining.cdr):
+                     K.append((FRAME_SEQ, remaining.cdr, saved_env))
+                  break
+
+               if ftag == FRAME_WHEN:
+                  body      = frame[1]
+                  saved_env = frame[2]
+                  if isFalse(V):
+                     V = VOID_VALUE
+                     continue
+                  E = saved_env
                   C = body.car
                   if is_cons(body.cdr):
                      K.append((FRAME_SEQ, body.cdr, saved_env))
                   break
-               K.append((FRAME_COND, nxt, rest, saved_env))
-               C = kind[1]
-               break
-            # Test truthy - dispatch on clause kind.
-            kind = _classify_cond_clause(current)
-            if kind[0] == 'test-only':
-               continue   # V stays as the test value
-            if kind[0] == 'body':
-               body = kind[2]
-               E = saved_env
-               C = body.car
-               if is_cons(body.cdr):
-                  K.append((FRAME_SEQ, body.cdr, saved_env))
-               break
-            # 'arrow' - apply proc to test value
-            proc_expr = kind[2]
-            K.append((FRAME_COND_ARROW, V, saved_env))
-            C = proc_expr
-            E = saved_env
-            break
 
-         if ftag == FRAME_COND_ARROW:
-            test_value = frame[1]
-            saved_env  = frame[2]
-            if is_continuation(V):
-               _wind_walk(ctx, as_continuation_wind(V))
-               _restore_handler_stack(as_continuation_handlers(V))
-               K = list(as_continuation_k(V))
-               V = _continuation_value(V, [test_value])
-               continue
-            pv = _apply_parameter_if(V, 1, None)
-            if pv is not None:
-               V = pv
-               continue
-            if is_primitive(V):
-               V = as_primitive_fn(V)(ctx, saved_env, [test_value], None)
-               continue
-            r = _apply_value(V, [test_value], None)
-            E = r.new_env
-            C = r.body.car
-            if is_cons(r.body.cdr):
-               K.append((FRAME_SEQ, r.body.cdr, r.new_env))
-            break
+               if ftag == FRAME_UNLESS:
+                  body      = frame[1]
+                  saved_env = frame[2]
+                  if isFalse(V):
+                     E = saved_env
+                     C = body.car
+                     if is_cons(body.cdr):
+                        K.append((FRAME_SEQ, body.cdr, saved_env))
+                     break
+                  V = VOID_VALUE
+                  continue
 
-         if ftag == FRAME_CASE:
-            # V is the (possibly-matched) key value on first entry, or the
-            # outcome of the prior clause's no-match check on subsequent
-            # entries (ignored - we always look at the key, held in frame).
-            current_clause = frame[1]
-            remaining      = frame[2]
-            saved_env      = frame[3]
-            # First entry: V holds the key value.  We stash it back on any
-            # retry by re-pushing FRAME_CASE frames that carry the key
-            # alongside the remaining clauses.  Walk the current clause.
-            head = current_clause.car
-            if is_symbol(head) and as_symbol(head) == 'else':
-               body = current_clause.cdr
-               E = saved_env
-               C = body.car
-               if is_cons(body.cdr):
-                  K.append((FRAME_SEQ, body.cdr, saved_env))
-               break
-            # Datum-list match: head is the list of literal datums.
-            matched = False
-            cur = head
-            while is_cons(cur):
-               if eqv_atom(V, cur.car):
-                  matched = True
+               if ftag == FRAME_AND:
+                  remaining = frame[1]
+                  saved_env = frame[2]
+                  if isFalse(V):
+                     continue   # short-circuit: V stays #f
+                  if is_nil(remaining):
+                     continue   # V is the last truthy
+                  if is_cons(remaining.cdr):
+                     K.append((FRAME_AND, remaining.cdr, saved_env))
+                  C = remaining.car
+                  E = saved_env
                   break
-               cur = cur.cdr
-            if matched:
-               body = current_clause.cdr
-               E = saved_env
-               C = body.car
-               if is_cons(body.cdr):
-                  K.append((FRAME_SEQ, body.cdr, saved_env))
+
+               if ftag == FRAME_OR:
+                  remaining = frame[1]
+                  saved_env = frame[2]
+                  if not isFalse(V):
+                     continue   # short-circuit: V stays truthy
+                  if is_nil(remaining):
+                     continue   # V stays as last false
+                  if is_cons(remaining.cdr):
+                     K.append((FRAME_OR, remaining.cdr, saved_env))
+                  C = remaining.car
+                  E = saved_env
+                  break
+
+               if ftag == FRAME_COND:
+                  current   = frame[1]
+                  remaining = frame[2]
+                  saved_env = frame[3]
+                  if isFalse(V):
+                     # Test failed - advance to next clause.
+                     if is_nil(remaining):
+                        V = VOID_VALUE
+                        continue
+                     nxt  = remaining.car
+                     rest = remaining.cdr
+                     kind = _classify_cond_clause(nxt)
+                     E = saved_env
+                     if kind[0] == 'else':
+                        body = kind[1]
+                        C = body.car
+                        if is_cons(body.cdr):
+                           K.append((FRAME_SEQ, body.cdr, saved_env))
+                        break
+                     K.append((FRAME_COND, nxt, rest, saved_env))
+                     C = kind[1]
+                     break
+                  # Test truthy - dispatch on clause kind.
+                  kind = _classify_cond_clause(current)
+                  if kind[0] == 'test-only':
+                     continue   # V stays as the test value
+                  if kind[0] == 'body':
+                     body = kind[2]
+                     E = saved_env
+                     C = body.car
+                     if is_cons(body.cdr):
+                        K.append((FRAME_SEQ, body.cdr, saved_env))
+                     break
+                  # 'arrow' - apply proc to test value
+                  proc_expr = kind[2]
+                  K.append((FRAME_COND_ARROW, V, saved_env))
+                  C = proc_expr
+                  E = saved_env
+                  break
+
+               if ftag == FRAME_COND_ARROW:
+                  test_value = frame[1]
+                  saved_env  = frame[2]
+                  if is_continuation(V):
+                     _wind_walk(ctx, as_continuation_wind(V))
+                     _restore_handler_stack(as_continuation_handlers(V))
+                     K = list(as_continuation_k(V))
+                     V = _continuation_value(V, [test_value])
+                     continue
+                  pv = _apply_parameter_if(V, 1, None)
+                  if pv is not None:
+                     V = pv
+                     continue
+                  if is_primitive(V):
+                     V = as_primitive_fn(V)(ctx, saved_env, [test_value], None)
+                     continue
+                  r = _apply_value(V, [test_value], None)
+                  E = r.new_env
+                  C = r.body.car
+                  if is_cons(r.body.cdr):
+                     K.append((FRAME_SEQ, r.body.cdr, r.new_env))
+                  break
+
+               if ftag == FRAME_CASE:
+                  # V is the (possibly-matched) key value on first entry, or the
+                  # outcome of the prior clause's no-match check on subsequent
+                  # entries (ignored - we always look at the key, held in frame).
+                  current_clause = frame[1]
+                  remaining      = frame[2]
+                  saved_env      = frame[3]
+                  # First entry: V holds the key value.  We stash it back on any
+                  # retry by re-pushing FRAME_CASE frames that carry the key
+                  # alongside the remaining clauses.  Walk the current clause.
+                  head = current_clause.car
+                  if is_symbol(head) and as_symbol(head) == 'else':
+                     body = current_clause.cdr
+                     E = saved_env
+                     C = body.car
+                     if is_cons(body.cdr):
+                        K.append((FRAME_SEQ, body.cdr, saved_env))
+                     break
+                  # Datum-list match: head is the list of literal datums.
+                  matched = False
+                  cur = head
+                  while is_cons(cur):
+                     if eqv_atom(V, cur.car):
+                        matched = True
+                        break
+                     cur = cur.cdr
+                  if matched:
+                     body = current_clause.cdr
+                     E = saved_env
+                     C = body.car
+                     if is_cons(body.cdr):
+                        K.append((FRAME_SEQ, body.cdr, saved_env))
+                     break
+                  # No match; advance to the next clause (V stays as the key).
+                  if is_nil(remaining):
+                     V = VOID_VALUE
+                     continue
+                  nxt = remaining.car
+                  rst = remaining.cdr
+                  K.append((FRAME_CASE, nxt, rst, saved_env))
+                  continue
+
+               if ftag == FRAME_LET:
+                  names         = frame[1]
+                  collected     = frame[2]
+                  remaining     = frame[3]
+                  body          = frame[4]
+                  saved_env     = frame[5]
+                  new_collected = list(collected)
+                  new_collected.append(V)
+                  if len(remaining) == 0:
+                     bindings = {}
+                     i = 0
+                     while i < len(names):
+                        bindings[names[i]] = new_collected[i]
+                        i = i + 1
+                     new_env = Environment(saved_env, initialBindings=bindings)
+                     E = new_env
+                     C = body.car
+                     if is_cons(body.cdr):
+                        K.append((FRAME_SEQ, body.cdr, new_env))
+                     break
+                  new_remaining = []
+                  i = 1
+                  while i < len(remaining):
+                     new_remaining.append(remaining[i])
+                     i = i + 1
+                  K.append((FRAME_LET, names, new_collected,
+                            new_remaining, body, saved_env))
+                  C = remaining[0]
+                  E = saved_env
+                  break
+
+               if ftag == FRAME_LET_STAR:
+                  name      = frame[1]
+                  remaining = frame[2]
+                  body      = frame[3]
+                  saved_env = frame[4]
+                  new_env   = Environment(saved_env, initialBindings={name: V})
+                  if len(remaining) == 0:
+                     E = new_env
+                     C = body.car
+                     if is_cons(body.cdr):
+                        K.append((FRAME_SEQ, body.cdr, new_env))
+                     break
+                  new_remaining = []
+                  i = 1
+                  while i < len(remaining):
+                     new_remaining.append(remaining[i])
+                     i = i + 1
+                  next_pair = remaining[0]
+                  K.append((FRAME_LET_STAR, next_pair[0], new_remaining, body, new_env))
+                  C = next_pair[1]
+                  E = new_env
+                  break
+
+               if ftag == FRAME_LETREC:
+                  name      = frame[1]
+                  remaining = frame[2]
+                  body      = frame[3]
+                  saved_env = frame[4]
+                  saved_env.set(name, V)
+                  if len(remaining) == 0:
+                     E = saved_env
+                     C = body.car
+                     if is_cons(body.cdr):
+                        K.append((FRAME_SEQ, body.cdr, saved_env))
+                     break
+                  new_remaining = []
+                  i = 1
+                  while i < len(remaining):
+                     new_remaining.append(remaining[i])
+                     i = i + 1
+                  next_pair = remaining[0]
+                  K.append((FRAME_LETREC, next_pair[0], new_remaining, body, saved_env))
+                  C = next_pair[1]
+                  E = saved_env
+                  break
+
+               raise RuntimeError("unknown frame tag: " + str(ftag))
+
+            # fall through to outer `while True` - restart EVAL
+
+
+      # -------- Self-test --------
+
+      except _CATCHABLE_LOCAL as e:
+         # Walk K to find a handler frame; on the way, run any
+         # FRAME_DYNAMIC_WIND_AFTER thunks (errors swallowed, matching
+         # the C++ reference's exception-dispatch convention).  When
+         # the handler is found, dispatch it via _enter_proc which
+         # rewrites C / E / K / V in place; the next outer-loop
+         # iteration resumes the same activation record with the
+         # handler call set up.  No native recursion to invoke the
+         # handler, so a continuation captured inside the handler
+         # body sees the outer K-stack as its captured K.
+         from pyscheme.primitives.meta import _apply_scheme_proc
+         from pyscheme.AST import make_error_object
+         _w = K
+         handler = None
+         while _w:
+            frame = _w.pop()
+            ftag  = frame[0]
+            if ftag == FRAME_POP_HANDLER:
+               if not _handler_stack:
+                  break
+               handler = _handler_stack.pop()
                break
-            # No match; advance to the next clause (V stays as the key).
-            if is_nil(remaining):
-               V = VOID_VALUE
+            if ftag == FRAME_REINSTALL_HANDLER:
                continue
-            nxt = remaining.car
-            rst = remaining.cdr
-            K.append((FRAME_CASE, nxt, rst, saved_env))
-            continue
-
-         if ftag == FRAME_LET:
-            names         = frame[1]
-            collected     = frame[2]
-            remaining     = frame[3]
-            body          = frame[4]
-            saved_env     = frame[5]
-            new_collected = list(collected)
-            new_collected.append(V)
-            if len(remaining) == 0:
-               bindings = {}
-               i = 0
-               while i < len(names):
-                  bindings[names[i]] = new_collected[i]
-                  i = i + 1
-               new_env = Environment(saved_env, initialBindings=bindings)
-               E = new_env
-               C = body.car
-               if is_cons(body.cdr):
-                  K.append((FRAME_SEQ, body.cdr, new_env))
-               break
-            new_remaining = []
-            i = 1
-            while i < len(remaining):
-               new_remaining.append(remaining[i])
-               i = i + 1
-            K.append((FRAME_LET, names, new_collected,
-                      new_remaining, body, saved_env))
-            C = remaining[0]
-            E = saved_env
-            break
-
-         if ftag == FRAME_LET_STAR:
-            name      = frame[1]
-            remaining = frame[2]
-            body      = frame[3]
-            saved_env = frame[4]
-            new_env   = Environment(saved_env, initialBindings={name: V})
-            if len(remaining) == 0:
-               E = new_env
-               C = body.car
-               if is_cons(body.cdr):
-                  K.append((FRAME_SEQ, body.cdr, new_env))
-               break
-            new_remaining = []
-            i = 1
-            while i < len(remaining):
-               new_remaining.append(remaining[i])
-               i = i + 1
-            next_pair = remaining[0]
-            K.append((FRAME_LET_STAR, next_pair[0], new_remaining, body, new_env))
-            C = next_pair[1]
-            E = new_env
-            break
-
-         if ftag == FRAME_LETREC:
-            name      = frame[1]
-            remaining = frame[2]
-            body      = frame[3]
-            saved_env = frame[4]
-            saved_env.set(name, V)
-            if len(remaining) == 0:
-               E = saved_env
-               C = body.car
-               if is_cons(body.cdr):
-                  K.append((FRAME_SEQ, body.cdr, saved_env))
-               break
-            new_remaining = []
-            i = 1
-            while i < len(remaining):
-               new_remaining.append(remaining[i])
-               i = i + 1
-            next_pair = remaining[0]
-            K.append((FRAME_LETREC, next_pair[0], new_remaining, body, saved_env))
-            C = next_pair[1]
-            E = saved_env
-            break
-
-         raise RuntimeError("unknown frame tag: " + str(ftag))
-
-      # fall through to outer `while True` - restart EVAL
-
-
-# -------- Self-test --------
-
+            if ftag == FRAME_DYNAMIC_WIND_AFTER:
+               after = frame[1]
+               if _wind_stack:
+                  _wind_stack.pop()
+               try:
+                  _apply_scheme_proc(after, [], ctx, None, None)
+               except BaseException:
+                  pass
+         if handler is None:
+            raise
+         if isinstance(e, SchemeRaised):
+            raised_value = e.value
+         else:
+            raised_value = make_error_object(e.msg, [])
+         result = _enter_proc(handler, [raised_value], ctx, E, None)
+         if result[0] == 'value':
+            V = result[1]
+            skip_eval = True
+         elif result[0] == 'cont':
+            K = result[1]
+            V = result[2]
+            skip_eval = True
+         else:  # 'enter'
+            C = result[1]
+            E = result[2]
+            if result[3] is not None:
+               K.append((FRAME_SEQ, result[3], E))
+         continue
 if __name__ == '__main__':
    # When run as `python -m pyscheme.Evaluator` this module loads as __main__.
    # Modules imported below (Analyzer, primitives) do `from pyscheme.Evaluator import ...`

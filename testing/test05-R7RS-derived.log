@@ -1188,6 +1188,14 @@ Primitive  |  args: pre-evaluated
 %%% (call/cc)
 %%% ^
 
+;;; A continuation captured outside, invoked from inside an exception
+;;; handler body, escapes back to the surrounding context.  This relies
+;;; on _cek_loop's in-loop exception dispatch (handler invocation does
+;;; not introduce a new cek_eval activation), so the K snapshot taken at
+;;; call/cc time really is the K seen by the handler.
+>>> (call/cc (lambda (escape) (with-exception-handler (lambda (e) (escape (list 'escaped e))) (lambda () (raise 'oops)))))
+==> (escaped oops)
+
 ;;; -------- dynamic-wind (R7RS 6.10) --------
 
 ;;; Normal flow: before, thunk, after run in order; thunk's value is returned.
