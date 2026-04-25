@@ -1849,12 +1849,17 @@ def _cek_loop(expr, env, ctx):
             if result[3] is not None:
                K.append((FRAME_SEQ, result[3], E))
          continue
+
+
+# -------- Self-test --------
+
 if __name__ == '__main__':
    # When run as `python -m pyscheme.Evaluator` this module loads as __main__.
-   # Modules imported below (Analyzer, primitives) do `from pyscheme.Evaluator import ...`
-   # which would otherwise load a SECOND copy of this module under the name
-   # pyscheme.Evaluator, producing two distinct SchemeArityError / SchemeTypeError
-   # classes.  Alias __main__ so the absolute import finds us.
+   # The primitives package below imports cek_eval and _apply_value via
+   # `from pyscheme.Evaluator import ...`, which would otherwise load a
+   # second copy of this module under the name pyscheme.Evaluator and
+   # produce duplicate value tags / class instances.  Alias __main__ in
+   # sys.modules so the absolute import resolves to this same module.
    import sys
    sys.modules['pyscheme.Evaluator'] = sys.modules[__name__]
 
