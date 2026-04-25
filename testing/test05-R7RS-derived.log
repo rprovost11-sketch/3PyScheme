@@ -1234,18 +1234,12 @@ Primitive  |  args: pre-evaluated
 >>> (define captured-k #f) (with-exception-handler (lambda (e) (list 'handled e)) (lambda () (call/cc (lambda (k) (set! captured-k k) 0)))) (captured-k 99)
 ==> 99
 
-;;; If an after-thunk itself raises during error unwinding, the cleanup
-;;; condition propagates and routes through the handler stack instead
-;;; of the original (R7RS does not specify which error wins; we surface
-;;; the cleanup error so the user sees that cleanup failed).
+;;; If an after-thunk itself raises during error unwinding, the new
+;;; exception is silently swallowed so the original error continues to
+;;; propagate.  R7RS does not specify which wins; the C++ reference
+;;; impl makes this same choice (see evaluator.cpp's exception dispatch).
 >>> (guard (e (#t (list 'caught e))) (dynamic-wind (lambda () 0) (lambda () (raise 'body-bad)) (lambda () (raise 'cleanup-bad))))
-==> (caught cleanup-bad)
-
-;;; Without a handler, the cleanup error propagates to the top level.
->>> (dynamic-wind (lambda () 0) (lambda () (raise 'body-bad)) (lambda () (raise 'cleanup-bad)))
-%%% SchemeRaised: line 1, col 70: cleanup-bad
-%%% (dynamic-wind (lambda () 0) (lambda () (raise 'body-bad)) (lambda () (raise 'cleanup-bad)))
-%%%                                                                      ^
+==> (caught body-bad)
 
 ;;; -------- define-library / import / export (R7RS 5.6) --------
 

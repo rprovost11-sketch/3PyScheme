@@ -670,17 +670,10 @@ def cek_eval(expr, env, ctx=None):
       # can introspect via error-object-message / error-object-irritants.
       # If no handler catches, re-raise the latest exception verbatim so
       # the listener formats it with its original class name.
-      current_e = e
-      try:
-         _unwind_winds_on_error(ctx, wind_depth_entry)
-      except _CATCHABLE as cleanup_e:
-         # An after-thunk raised during error unwinding; route the
-         # cleanup condition through the handler stack instead of the
-         # original.  The remaining winds beyond the failing one are
-         # not unwound (most languages do the same when cleanup fails).
-         current_e = cleanup_e
+      _unwind_winds_on_error(ctx, wind_depth_entry)
       from pyscheme.primitives.meta import _apply_scheme_proc
       from pyscheme.AST import make_error_object
+      current_e = e
       while len(_handler_stack) > handler_depth_entry:
          if isinstance(current_e, SchemeRaised):
             raised_value = current_e.value
@@ -812,18 +805,19 @@ def _process_define_library(C, ctx):
 
 def _unwind_winds_on_error(ctx, target_depth):
    """Pop wind entries installed during a failed cek_eval call and call
-   their after thunks.  R7RS does not specify behavior when an after-
-   thunk itself raises during cleanup.  We let the new exception
-   propagate rather than silently swallow it: the original error remains
-   linked via Python's __context__ chain (PEP 3134), and the user sees
-   the cleanup failure rather than having it disappear.  Remaining wind
-   entries beyond the failing one are not unwound, which matches what
-   most languages do when cleanup itself fails."""
+   their after thunks.  R7RS does not specify what happens when an
+   after-thunk itself raises during cleanup; the C++ reference (see
+   evaluator.cpp's exception dispatch) deliberately swallows them so
+   the original error continues to propagate, and we match that choice
+   here for C-port consistency."""
    from pyscheme.primitives.meta import _apply_scheme_proc
    while len(_wind_stack) > target_depth:
       wf = _wind_stack[len(_wind_stack) - 1]
       _wind_stack.pop()
-      _apply_scheme_proc(wf[1], [], ctx, None, None)
+      try:
+         _apply_scheme_proc(wf[1], [], ctx, None, None)
+      except BaseException:
+         pass
 
 
 def _cek_loop(expr, env, ctx):
