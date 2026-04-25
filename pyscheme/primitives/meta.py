@@ -42,22 +42,31 @@ from pyscheme.Environment import SchemeTypeError, SchemeUserError, SchemeRaised
 CATEGORY = 'meta'
 
 
-def _prim_error(ctx, env, args, app_node):
-   msg_arg = args[0]
-   if not is_string(msg_arg):
-      raise SchemeTypeError(
-         'error: first argument must be a string', app_node)
-   msg = as_string(msg_arg)
-   irritants = []
-   i = 1
-   while i < len(args):
-      irritants.append(args[i])
-      i = i + 1
-   raise SchemeUserError(msg, irritants, app_node)
+def _prim_error_unreached(ctx, env, args, app_node):
+   # The Evaluator intercepts error at FRAME_CALL dispatch so that raised
+   # errors flow through the CEK-level handler stack rather than Python
+   # exceptions.  This body fires only if the interceptor is bypassed.
+   raise SchemeTypeError(
+      'error: cannot be called through a re-entering path in this '
+      'implementation', app_node)
 
 
-def _prim_raise(ctx, env, args, app_node):
-   raise SchemeRaised(args[0], app_node, continuable=False)
+def _prim_raise_unreached(ctx, env, args, app_node):
+   raise SchemeTypeError(
+      'raise: cannot be called through a re-entering path in this '
+      'implementation', app_node)
+
+
+def _prim_raise_continuable_unreached(ctx, env, args, app_node):
+   raise SchemeTypeError(
+      'raise-continuable: cannot be called through a re-entering path '
+      'in this implementation', app_node)
+
+
+def _prim_with_exception_handler_unreached(ctx, env, args, app_node):
+   raise SchemeTypeError(
+      'with-exception-handler: cannot be called through a re-entering '
+      'path in this implementation', app_node)
 
 
 def _prim_call_cc_unreached(ctx, env, args, app_node):
@@ -83,29 +92,6 @@ def _prim_dynamic_wind_unreached(ctx, env, args, app_node):
       app_node)
 
 
-def _prim_raise_continuable(ctx, env, args, app_node):
-   raise SchemeRaised(args[0], app_node, continuable=True)
-
-
-def _prim_with_exception_handler(ctx, env, args, app_node):
-   # (with-exception-handler handler thunk)
-   # Install handler for the dynamic extent of thunk's execution.  On
-   # SchemeRaised (and its SchemeUserError subclass), call handler with
-   # the raised value.  Handler's return value becomes the return value
-   # of with-exception-handler whether raise was continuable or not; the
-   # control always unwinds to here because we rely on Python try/except
-   # to intercept the condition.  (Strict R7RS makes handler-returns-after-
-   # non-continuable-raise undefined; we pick the practical behavior because
-   # guard's desugaring depends on it.)
-   handler = args[0]
-   thunk   = args[1]
-   try:
-      return _apply_scheme_proc(thunk, [], ctx, env, app_node)
-   except SchemeRaised as e:
-      # Run handler outside the try so a raise inside it propagates.
-      return _apply_scheme_proc(handler, [e.value], ctx, env, app_node)
-
-
 def _prim_error_object_message(ctx, env, args, app_node):
    obj = args[0]
    if not is_error_object(obj):
@@ -122,81 +108,34 @@ def _prim_error_object_irritants(ctx, env, args, app_node):
    return list_from_items(list(as_error_object_irritants(obj)))
 
 
-def _prim_apply(ctx, env, args, app_node):
-   # (apply proc arg1 arg2 ... argN list)
-   # The last argument must be a proper list; it's appended to any
-   # preceding leading arguments before proc is called.
-   from pyscheme.Evaluator import cek_eval, _apply_value
-
-   proc = args[0]
-   combined = []
-   i = 1
-   while i < len(args) - 1:
-      combined.append(args[i])
-      i = i + 1
-   last = args[len(args) - 1]
-   cur = last
-   while is_cons(cur):
-      combined.append(cur.car)
-      cur = cur.cdr
-   if not is_nil(cur):
-      raise SchemeTypeError(
-         'apply: last argument must be a proper list', app_node)
-
-   if is_primitive(proc):
-      return as_primitive_fn(proc)(ctx, env, combined, app_node)
-   if is_closure(proc) or is_case_closure(proc):
-      r = _apply_value(proc, combined, app_node)
-      body = r.body
-      # Single-form body: evaluate the one expression directly.  Multiple
-      # forms: wrap in a synthesized (begin body...) and evaluate that.
-      if is_cons(body) and is_nil(body.cdr):
-         return cek_eval(body.car, r.new_env, ctx)
-      begin_sym  = make_symbol('begin', None)
-      begin_form = alloc_cons(begin_sym, body, None)
-      return cek_eval(begin_form, r.new_env, ctx)
-
+def _prim_apply_unreached(ctx, env, args, app_node):
+   # The Evaluator intercepts apply at FRAME_CALL dispatch to tail-call
+   # the target procedure through the normal CEK path.  This body only
+   # fires if the interception was bypassed (e.g., apply substituted
+   # via macro hygiene into a position other than operator position,
+   # which isn't well-defined).
    raise SchemeTypeError(
-      'apply: first argument must be a procedure', app_node)
+      'apply: cannot be called through a re-entering path in this '
+      'implementation', app_node)
 
 
-def _prim_eval(ctx, env, args, app_node):
-   # (eval <datum> [<env-spec>])
-   # The second argument (R7RS environment specifier) is accepted but
-   # ignored; evaluation always runs in the current global environment.
-   from pyscheme.Expander   import expand
-   from pyscheme.Analyzer   import analyze
-   from pyscheme.Evaluator  import cek_eval
-   from pyscheme.primitives import PRIMITIVE_ARITIES
-
-   datum      = args[0]
-   expanded   = expand(datum)
-   static_env = dict(PRIMITIVE_ARITIES)
-   analyze(expanded, static_env)
-   return cek_eval(expanded, env.getGlobalEnv(), ctx)
+def _prim_eval_unreached(ctx, env, args, app_node):
+   # The Evaluator intercepts eval at FRAME_CALL dispatch so the expanded
+   # datum runs in the same cek_eval call (preserving outer TCO).  This
+   # body fires only if the interception was bypassed.
+   raise SchemeTypeError(
+      'eval: cannot be called through a re-entering path in this '
+      'implementation', app_node)
 
 
-def _prim_force(ctx, env, args, app_node):
-   # Iterative force: re-enter cek_eval on the thunk's body.  If the body
-   # yields another promise, collapse the outer promise into the inner one
-   # (this is what gives delay-force its stack-safety property).
-   from pyscheme.Evaluator import cek_eval, _apply_value
-
-   p = args[0]
-   if not is_promise(p):
-      raise SchemeTypeError(
-         'force: argument must be a promise', app_node)
-   while not as_promise_is_done(p):
-      thunk = as_promise_payload(p)
-      r = _apply_value(thunk, [], app_node)
-      body = r.body
-      # delay/delay-force synthesize a single-form body; no begin-wrap needed.
-      v = cek_eval(body.car, r.new_env, ctx)
-      if is_promise(v):
-         promise_become(p, v)
-      else:
-         promise_resolve(p, v)
-   return as_promise_payload(p)
+def _prim_force_unreached(ctx, env, args, app_node):
+   # The Evaluator intercepts force at FRAME_CALL dispatch to keep the
+   # thunk evaluation tail-position and drive the delay-force chain via
+   # FRAME_FORCE_RESULT frames rather than a Python while loop.  This body
+   # fires only if the interception was bypassed.
+   raise SchemeTypeError(
+      'force: cannot be called through a re-entering path in this '
+      'implementation', app_node)
 
 
 def _prim_make_promise(ctx, env, args, app_node):
@@ -328,141 +267,45 @@ def _apply_scheme_proc(proc, arg_values, ctx, env, app_node):
    raise SchemeTypeError('expected a procedure', app_node)
 
 
-def _prim_make_parameter(ctx, env, args, app_node):
-   # (make-parameter init) or (make-parameter init converter)
-   init = args[0]
-   if len(args) == 2:
-      converter = args[1]
-      if not (is_primitive(converter) or is_closure(converter)
-              or is_case_closure(converter)):
-         raise SchemeTypeError(
-            'make-parameter: converter must be a procedure', app_node)
-      converted = _apply_scheme_proc(converter, [init], ctx, env, app_node)
-      return make_parameter(converted, converter)
-   return make_parameter(init, None)
-
-
-def _prim_with_parameters(ctx, env, args, app_node):
-   # (%with-parameters params-list values-list thunk)
-   # Dynamically bind each parameter to the corresponding value for the
-   # duration of thunk's execution.  Converter, if any, is applied to each
-   # new value before binding.  Restores original values on any exit
-   # (normal or exception) via Python try/finally.
-   params_list = args[0]
-   values_list = args[1]
-   thunk       = args[2]
-
-   params = []
-   cur = params_list
-   while is_cons(cur):
-      p = cur.car
-      if not is_parameter(p):
-         raise SchemeTypeError(
-            '%with-parameters: non-parameter in parameterize binding',
-            app_node)
-      params.append(p)
-      cur = cur.cdr
-   if not is_nil(cur):
-      raise SchemeTypeError(
-         '%with-parameters: parameter list must be proper', app_node)
-
-   new_values = []
-   cur = values_list
-   while is_cons(cur):
-      new_values.append(cur.car)
-      cur = cur.cdr
-   if not is_nil(cur):
-      raise SchemeTypeError(
-         '%with-parameters: value list must be proper', app_node)
-
-   if len(params) != len(new_values):
-      raise SchemeTypeError(
-         '%with-parameters: parameter / value count mismatch', app_node)
-
-   # Apply converters for each parameter that has one; freeze the final
-   # to-be-installed values before touching any parameter.
-   installed = []
-   i = 0
-   while i < len(params):
-      conv = as_parameter_converter(params[i])
-      if conv is None:
-         installed.append(new_values[i])
-      else:
-         installed.append(_apply_scheme_proc(conv, [new_values[i]], ctx, env,
-                                             app_node))
-      i = i + 1
-
-   # Save old values, install new ones, run thunk, restore on any exit.
-   saved = []
-   i = 0
-   while i < len(params):
-      saved.append(as_parameter_value(params[i]))
-      i = i + 1
-   i = 0
-   while i < len(params):
-      set_parameter_value(params[i], installed[i])
-      i = i + 1
-   try:
-      return _apply_scheme_proc(thunk, [], ctx, env, app_node)
-   finally:
-      i = 0
-      while i < len(params):
-         set_parameter_value(params[i], saved[i])
-         i = i + 1
-
-
-def _prim_call_with_values(ctx, env, args, app_node):
-   # (call-with-values producer consumer)
-   # Invoke producer with no args; its result (unwrapped if multi-values) is
-   # used as the argument list for consumer.  Reuses _apply_value so we
-   # cover CLOSURE, CASE_CLOSURE, and PRIMITIVE producers/consumers.
-   from pyscheme.Evaluator import cek_eval, _apply_value
-
-   producer = args[0]
-   consumer = args[1]
-   if is_primitive(producer):
-      produced = as_primitive_fn(producer)(ctx, env, [], app_node)
-   elif is_closure(producer) or is_case_closure(producer):
-      r = _apply_value(producer, [], app_node)
-      body = r.body
-      if is_cons(body) and is_nil(body.cdr):
-         produced = cek_eval(body.car, r.new_env, ctx)
-      else:
-         begin_sym  = make_symbol('begin', None)
-         begin_form = alloc_cons(begin_sym, body, None)
-         produced = cek_eval(begin_form, r.new_env, ctx)
-   else:
-      raise SchemeTypeError(
-         'call-with-values: producer must be a procedure', app_node)
-
-   if is_multi_values(produced):
-      consumer_args = as_multi_values_list(produced)
-   else:
-      consumer_args = [produced]
-
-   if is_primitive(consumer):
-      return as_primitive_fn(consumer)(ctx, env, consumer_args, app_node)
-   if is_closure(consumer) or is_case_closure(consumer):
-      r = _apply_value(consumer, consumer_args, app_node)
-      body = r.body
-      if is_cons(body) and is_nil(body.cdr):
-         return cek_eval(body.car, r.new_env, ctx)
-      begin_sym  = make_symbol('begin', None)
-      begin_form = alloc_cons(begin_sym, body, None)
-      return cek_eval(begin_form, r.new_env, ctx)
+def _prim_make_parameter_unreached(ctx, env, args, app_node):
+   # The Evaluator intercepts make-parameter at FRAME_CALL dispatch so
+   # the converter is tail-called through the CEK path, driven by
+   # FRAME_MAKE_PARAMETER.  This body fires only if interception was
+   # bypassed.
    raise SchemeTypeError(
-      'call-with-values: consumer must be a procedure', app_node)
+      'make-parameter: cannot be called through a re-entering path '
+      'in this implementation', app_node)
+
+
+def _prim_with_parameters_unreached(ctx, env, args, app_node):
+   # The Evaluator intercepts %with-parameters at FRAME_CALL dispatch to
+   # run the thunk in tail position and integrate with the wind stack for
+   # continuation / exception handling.  This body fires only if the
+   # interception was bypassed.
+   raise SchemeTypeError(
+      '%with-parameters: cannot be called through a re-entering path '
+      'in this implementation', app_node)
+
+
+def _prim_call_with_values_unreached(ctx, env, args, app_node):
+   # The Evaluator intercepts call-with-values at FRAME_CALL dispatch so
+   # the producer and consumer are tail-called through the CEK path,
+   # driven by FRAME_CWV_CONSUMER.  This body fires only if interception
+   # was bypassed.
+   raise SchemeTypeError(
+      'call-with-values: cannot be called through a re-entering path '
+      'in this implementation', app_node)
 
 
 def register():
-   register_primitive('error', (1, None), _prim_error,
+   register_primitive('error', (1, None), _prim_error_unreached,
       doc=(
          "Raise a user error.  The first argument is a string message;\n"
          "any trailing arguments are appended to the message as irritants\n"
          "separated by spaces.  Does not return."),
       category=CATEGORY)
 
-   register_primitive('apply', (2, None), _prim_apply,
+   register_primitive('apply', (2, None), _prim_apply_unreached,
       usage='(apply <proc> <arg>... <list>)',
       doc=(
          "Call <proc> with the elements of <list> as its arguments, optionally\n"
@@ -471,7 +314,7 @@ def register():
          "when <list> has elements elem1..elem_n."),
       category=CATEGORY)
 
-   register_primitive('eval', (1, 2), _prim_eval,
+   register_primitive('eval', (1, 2), _prim_eval_unreached,
       usage='(eval <datum> [<env-spec>])',
       doc=(
          "Evaluate <datum> as a Scheme expression in the current global\n"
@@ -479,7 +322,7 @@ def register():
          "accepted for compatibility but ignored in this implementation."),
       category=CATEGORY)
 
-   register_primitive('force', (1, 1), _prim_force,
+   register_primitive('force', (1, 1), _prim_force_unreached,
       doc=(
          "Force a promise, returning its value.  The promise's thunk runs\n"
          "at most once; subsequent forces return the cached value.  If the\n"
@@ -505,7 +348,7 @@ def register():
          "to a single-value context is an error."),
       category=CATEGORY)
 
-   register_primitive('call-with-values', (2, 2), _prim_call_with_values,
+   register_primitive('call-with-values', (2, 2), _prim_call_with_values_unreached,
       usage='(call-with-values <producer> <consumer>)',
       doc=(
          "Call <producer> with no arguments.  Pass its return value(s)\n"
@@ -538,7 +381,7 @@ def register():
       category=CATEGORY)
 
    # Parameter objects
-   register_primitive('make-parameter', (1, 2), _prim_make_parameter,
+   register_primitive('make-parameter', (1, 2), _prim_make_parameter_unreached,
       usage='(make-parameter <init> [<converter>])',
       doc=(
          "Return a new parameter object with initial value <init>.  When\n"
@@ -549,14 +392,14 @@ def register():
          "stored value.  R7RS 4.2.6."),
       category=CATEGORY)
 
-   register_primitive('%with-parameters', (3, 3), _prim_with_parameters,
+   register_primitive('%with-parameters', (3, 3), _prim_with_parameters_unreached,
       doc=(
          "Dynamically bind parameters for the extent of a thunk.  Internal:\n"
          "the Expander emits calls to %with-parameters for parameterize."),
       category=CATEGORY)
 
    # Exception handling
-   register_primitive('raise', (1, 1), _prim_raise,
+   register_primitive('raise', (1, 1), _prim_raise_unreached,
       doc=(
          "Raise a non-continuable exception carrying the given value.\n"
          "If a with-exception-handler (or guard) handler catches it, the\n"
@@ -564,7 +407,7 @@ def register():
          "because there is no valid continuation to return to.  R7RS 6.11."),
       category=CATEGORY)
 
-   register_primitive('raise-continuable', (1, 1), _prim_raise_continuable,
+   register_primitive('raise-continuable', (1, 1), _prim_raise_continuable_unreached,
       doc=(
          "Raise a continuable exception carrying the given value.  When\n"
          "caught by with-exception-handler, the handler's return value\n"
@@ -572,7 +415,7 @@ def register():
       category=CATEGORY)
 
    register_primitive('with-exception-handler', (2, 2),
-      _prim_with_exception_handler,
+      _prim_with_exception_handler_unreached,
       usage='(with-exception-handler <handler> <thunk>)',
       doc=(
          "Install <handler> for the dynamic extent of (<thunk>).  When a\n"

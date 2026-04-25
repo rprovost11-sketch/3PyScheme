@@ -71,18 +71,25 @@ from __future__ import annotations
 from pyscheme.Environment import (
    Environment,
    SchemeArityError, SchemeUnboundError, SchemeTypeError,
+   SchemeUserError, SchemeRaised,
    arity_mismatch_msg,
 )
 from pyscheme.AST import (
    ConsCell, NIL_VALUE, VOID_VALUE, alloc_cons,
    is_cons, is_nil, is_symbol, is_boolean, is_string, is_primitive,
+   is_closure, is_promise,
    is_case_closure, is_multi_values, is_parameter, is_continuation,
    as_symbol, as_boolean, as_string, as_primitive_fn, as_primitive_name,
    as_closure_params, as_closure_body, as_closure_env, as_closure_rest_name,
    as_case_closure_clauses, as_case_closure_env, as_parameter_value,
    as_continuation_k, as_continuation_wind,
+   as_promise_is_done, as_promise_payload,
+   as_multi_values_list,
+   promise_resolve, promise_become, set_parameter_value,
+   as_parameter_converter,
    make_boolean, make_closure, make_case_closure, make_promise_lazy,
-   make_continuation, make_multi_values, eqv_atom,
+   make_continuation, make_multi_values, make_primitive, make_parameter,
+   eqv_atom,
    src_of,
    VOID, BOOLEAN, COMPLEX, REAL, RATIONAL, INTEGER, CHARACTER, STRING,
    CLOSURE, PAIR, NIL, PRIMITIVE, CASE_CLOSURE, PROMISE, MULTI_VALUES, SYMBOL,
@@ -108,6 +115,11 @@ FRAME_LET_STAR   = 13
 FRAME_LETREC     = 14
 FRAME_CASE       = 15
 FRAME_DYNAMIC_WIND_AFTER = 16
+FRAME_CWV_CONSUMER       = 17
+FRAME_FORCE_RESULT       = 18
+FRAME_MAKE_PARAMETER     = 19
+FRAME_POP_HANDLER        = 20
+FRAME_REINSTALL_HANDLER  = 21
 
 
 # -------- Helper functions ------------------------------------------
@@ -269,6 +281,189 @@ def _is_dynamic_wind_primitive(V):
    return is_primitive(V) and as_primitive_name(V) == 'dynamic-wind'
 
 
+def _is_apply_primitive(V):
+   """Check if V is the apply primitive.  Intercepted at application dispatch
+   so the call becomes fully TCO-preserving: instead of the primitive body
+   re-entering cek_eval, we rewrite the dispatch so the target proc is
+   tail-called via the normal CEK path."""
+   return is_primitive(V) and as_primitive_name(V) == 'apply'
+
+
+def _is_call_with_values_primitive(V):
+   return is_primitive(V) and as_primitive_name(V) == 'call-with-values'
+
+
+def _is_force_primitive(V):
+   return is_primitive(V) and as_primitive_name(V) == 'force'
+
+
+def _is_with_parameters_primitive(V):
+   return is_primitive(V) and as_primitive_name(V) == '%with-parameters'
+
+
+def _is_make_parameter_primitive(V):
+   return is_primitive(V) and as_primitive_name(V) == 'make-parameter'
+
+
+def _is_with_exception_handler_primitive(V):
+   return is_primitive(V) and as_primitive_name(V) == 'with-exception-handler'
+
+
+def _is_raise_primitive(V):
+   return is_primitive(V) and as_primitive_name(V) == 'raise'
+
+
+def _is_raise_continuable_primitive(V):
+   return is_primitive(V) and as_primitive_name(V) == 'raise-continuable'
+
+
+def _is_error_primitive(V):
+   return is_primitive(V) and as_primitive_name(V) == 'error'
+
+
+def _is_eval_primitive(V):
+   return is_primitive(V) and as_primitive_name(V) == 'eval'
+
+
+# Module-level CEK exception handler stack.  Innermost handler is at the
+# end.  Parallels _wind_stack; cek_eval snapshots depth at entry and
+# truncates on exception escape.
+_handler_stack = []
+
+
+def _build_parameterize_winds(params_list, values_list, ctx, saved_env, app_node):
+   """Prepare a parameterize wind frame: walk the parameter / value lists,
+   apply converters, compute install-and-save state, and return a pair of
+   Python-backed primitives (install_thunk, restore_thunk) that wind_walk
+   and FRAME_DYNAMIC_WIND_AFTER can invoke as Scheme procedures.  Also
+   installs the new values so the thunk sees them immediately; on normal
+   return FRAME_DYNAMIC_WIND_AFTER pops and calls restore_thunk, and on
+   exception _unwind_winds_on_error does the same."""
+   from pyscheme.primitives.meta import _apply_scheme_proc
+
+   params = []
+   cur = params_list
+   while is_cons(cur):
+      p = cur.car
+      if not is_parameter(p):
+         raise SchemeTypeError(
+            '%with-parameters: non-parameter in parameterize binding',
+            app_node)
+      params.append(p)
+      cur = cur.cdr
+   if not is_nil(cur):
+      raise SchemeTypeError(
+         '%with-parameters: parameter list must be proper', app_node)
+
+   new_vals_raw = []
+   cur = values_list
+   while is_cons(cur):
+      new_vals_raw.append(cur.car)
+      cur = cur.cdr
+   if not is_nil(cur):
+      raise SchemeTypeError(
+         '%with-parameters: value list must be proper', app_node)
+
+   if len(params) != len(new_vals_raw):
+      raise SchemeTypeError(
+         '%with-parameters: parameter / value count mismatch', app_node)
+
+   installed = []
+   i = 0
+   while i < len(params):
+      conv = as_parameter_converter(params[i])
+      if conv is None:
+         installed.append(new_vals_raw[i])
+      else:
+         installed.append(
+            _apply_scheme_proc(conv, [new_vals_raw[i]], ctx, saved_env, app_node))
+      i = i + 1
+
+   saved_values = []
+   i = 0
+   while i < len(params):
+      saved_values.append(as_parameter_value(params[i]))
+      i = i + 1
+
+   # Install new values now so the thunk sees them.
+   i = 0
+   while i < len(params):
+      set_parameter_value(params[i], installed[i])
+      i = i + 1
+
+   # Build installer (called by _wind_walk on continuation re-entry) and
+   # restorer (called by FRAME_DYNAMIC_WIND_AFTER / _unwind_winds_on_error).
+   def installer(ctx2, env2, args2, app_node2):
+      j = 0
+      while j < len(params):
+         set_parameter_value(params[j], installed[j])
+         j = j + 1
+      return VOID_VALUE
+
+   def restorer(ctx2, env2, args2, app_node2):
+      j = 0
+      while j < len(params):
+         set_parameter_value(params[j], saved_values[j])
+         j = j + 1
+      return VOID_VALUE
+
+   return (make_primitive('%parameterize-install', installer),
+           make_primitive('%parameterize-restore', restorer))
+
+
+def _enter_proc(fn_value, args, ctx, saved_env, app_node):
+   """Dispatch a procedure application with known args.  Returns a
+   next-state descriptor so frame handlers can update the CEK state
+   without duplicating the FRAME_CALL terminal-dispatch logic:
+     ('value', V)                 - primitive or parameter produced V
+     ('cont',  new_K, new_V)      - continuation invoked; restore K and V
+     ('enter', C, new_env, seq)   - closure entered; eval C in new_env;
+                                    push FRAME_SEQ(seq, new_env) if seq is
+                                    not None (multi-form body)"""
+   if is_continuation(fn_value):
+      _wind_walk(ctx, as_continuation_wind(fn_value))
+      return ('cont',
+              list(as_continuation_k(fn_value)),
+              _continuation_value(fn_value, args))
+   pv = _apply_parameter_if(fn_value, len(args), app_node)
+   if pv is not None:
+      return ('value', pv)
+   if is_primitive(fn_value):
+      V = as_primitive_fn(fn_value)(ctx, saved_env, args, app_node)
+      return ('value', V)
+   if is_closure(fn_value) or is_case_closure(fn_value):
+      r = _apply_value(fn_value, args, app_node)
+      if is_cons(r.body.cdr):
+         return ('enter', r.body.car, r.new_env, r.body.cdr)
+      return ('enter', r.body.car, r.new_env, None)
+   raise SchemeTypeError(
+      'expected a procedure', app_node)
+
+
+def _unpack_apply_args(collected, app_node):
+   """(apply proc arg1 arg2 ... argN list) has the tail list spliced onto
+   the leading args.  Returns (proc, flat_args) or raises SchemeTypeError."""
+   if len(collected) < 2:
+      raise SchemeArityError(
+         arity_mismatch_msg('apply', 2, None, len(collected)),
+         src_of(app_node) if app_node is not None else None)
+   proc = collected[0]
+   flat_args = []
+   i = 1
+   while i < len(collected) - 1:
+      flat_args.append(collected[i])
+      i = i + 1
+   last = collected[len(collected) - 1]
+   cur = last
+   while is_cons(cur):
+      flat_args.append(cur.car)
+      cur = cur.cdr
+   if not is_nil(cur):
+      raise SchemeTypeError(
+         'apply: last argument must be a proper list', app_node)
+   return (proc, flat_args)
+
+
 def _continuation_value(cont, arg_values):
    """Value to install when invoking a continuation with the given arg list.
    0 args -> VOID, 1 arg -> that arg, 2+ -> MULTI_VALUES container."""
@@ -388,11 +583,31 @@ def cek_eval(expr, env, ctx=None):
    # FRAME_DYNAMIC_WIND_AFTER frames installed during this cek_eval call
    # if an exception escapes the inner loop.  The inner loop is in a
    # helper function so we can wrap it in a single try/except.
-   wind_depth_entry = len(_wind_stack)
+   wind_depth_entry    = len(_wind_stack)
+   handler_depth_entry = len(_handler_stack)
    try:
       return _cek_loop(expr, env, ctx)
+   except SchemeRaised as e:
+      # Route the raised value through the installed handler stack.  If a
+      # handler itself raises, try the next outer handler with the new
+      # value.  Each invocation costs one Python stack frame, bounded by
+      # the depth of nested with-exception-handlers.  Once handlers are
+      # exhausted, propagate the final SchemeRaised to the caller.
+      _unwind_winds_on_error(ctx, wind_depth_entry)
+      from pyscheme.primitives.meta import _apply_scheme_proc
+      while len(_handler_stack) > handler_depth_entry:
+         handler = _handler_stack.pop()
+         try:
+            return _apply_scheme_proc(handler, [e.value], ctx, env, None)
+         except SchemeRaised as e2:
+            e = e2
+      while len(_handler_stack) > handler_depth_entry:
+         _handler_stack.pop()
+      raise e
    except BaseException:
       _unwind_winds_on_error(ctx, wind_depth_entry)
+      while len(_handler_stack) > handler_depth_entry:
+         _handler_stack.pop()
       raise
 
 
@@ -792,16 +1007,15 @@ def _cek_loop(expr, env, ctx):
          if not K:
             return V
 
-         # Multi-values reach this point only when the producing expression
-         # flowed into a single-value context (arg slot, test, init, etc.).
-         # The call-with-values primitive handles its consumer inside its own
-         # body, not via frames, so any frame here expects a single value.
-         if is_multi_values(V):
-            raise SchemeTypeError(
-               'multiple values delivered to a single-value context', None)
-
          frame = K.pop()
          ftag  = frame[0]
+
+         # Multi-values are only valid when the top frame is the
+         # call-with-values consumer - every other frame expects a
+         # single value.
+         if is_multi_values(V) and ftag != FRAME_CWV_CONSUMER:
+            raise SchemeTypeError(
+               'multiple values delivered to a single-value context', None)
 
          if ftag == FRAME_DEFINE:
             E = frame[2]
@@ -837,6 +1051,81 @@ def _cek_loop(expr, env, ctx):
                _wind_stack.pop()
             _apply_scheme_proc(after_thunk, [], ctx, None, None)
             V = body_result
+            continue
+
+         if ftag == FRAME_CWV_CONSUMER:
+            # frame = (FRAME_CWV_CONSUMER, consumer, app_node)
+            # V is whatever the producer returned.  Unpack multi-values (if
+            # applicable) and tail-call the consumer via _enter_proc.
+            consumer  = frame[1]
+            app_node  = frame[2]
+            if is_multi_values(V):
+               consumer_args = as_multi_values_list(V)
+            else:
+               consumer_args = [V]
+            result = _enter_proc(consumer, consumer_args, ctx, E, app_node)
+            if result[0] == 'value':
+               V = result[1]
+               continue
+            if result[0] == 'cont':
+               K = result[1]
+               V = result[2]
+               continue
+            C = result[1]
+            E = result[2]
+            if result[3] is not None:
+               K.append((FRAME_SEQ, result[3], E))
+            break
+
+         if ftag == FRAME_POP_HANDLER:
+            # Thunk returned normally; pop the installed handler and let V
+            # flow.  No work needed beyond popping the stack entry.
+            if _handler_stack:
+               _handler_stack.pop()
+            continue
+
+         if ftag == FRAME_REINSTALL_HANDLER:
+            # raise-continuable's handler returned; push it back so nested
+            # raises in the enclosing with-exception-handler scope still
+            # see it.  V (handler's return) flows back to the raise-
+            # continuable's call site unchanged.
+            _handler_stack.append(frame[1])
+            continue
+
+         if ftag == FRAME_MAKE_PARAMETER:
+            # frame = (FRAME_MAKE_PARAMETER, converter)
+            # V is the converter's return value; wrap it as a Parameter.
+            V = make_parameter(V, frame[1])
+            continue
+
+         if ftag == FRAME_FORCE_RESULT:
+            # frame = (FRAME_FORCE_RESULT, promise)
+            # The promise's thunk has produced V.  Resolve or become, and
+            # iterate if we ended up with another unforced promise.
+            p = frame[1]
+            if is_promise(V):
+               promise_become(p, V)
+               if as_promise_is_done(p):
+                  V = as_promise_payload(p)
+                  continue
+               # Still not done - iterate: push another FORCE_RESULT and
+               # tail-call the (now inner) thunk.
+               K.append((FRAME_FORCE_RESULT, p))
+               thunk = as_promise_payload(p)
+               result = _enter_proc(thunk, [], ctx, E, None)
+               if result[0] == 'value':
+                  V = result[1]
+                  continue
+               if result[0] == 'cont':
+                  K = result[1]
+                  V = result[2]
+                  continue
+               C = result[1]
+               E = result[2]
+               if result[3] is not None:
+                  K.append((FRAME_SEQ, result[3], E))
+               break
+            promise_resolve(p, V)
             continue
 
          if ftag == FRAME_ARG:
@@ -903,6 +1192,171 @@ def _cek_loop(expr, env, ctx):
                   # reusing the normal dispatch paths below.
                   fn_value = user_proc
                   new_collected = [cont]
+               # apply: splice the list argument, rewrite the dispatch so
+               # the target proc is tail-called through the normal CEK
+               # path.  Avoids the Python stack frame that _prim_apply's
+               # re-entry into cek_eval would create.  Loops so (apply apply
+               # ...) collapses rather than firing the stub body.
+               while _is_apply_primitive(fn_value):
+                  proc, flat_args = _unpack_apply_args(new_collected, app_node)
+                  if not (is_primitive(proc) or is_closure(proc)
+                          or is_case_closure(proc) or is_continuation(proc)
+                          or is_parameter(proc)):
+                     raise SchemeTypeError(
+                        'apply: first argument must be a procedure', app_node)
+                  fn_value = proc
+                  new_collected = flat_args
+               # call-with-values: install consumer frame, tail-call producer.
+               if _is_call_with_values_primitive(fn_value):
+                  if len(new_collected) != 2:
+                     raise SchemeArityError(
+                        arity_mismatch_msg('call-with-values', 2, 2,
+                                           len(new_collected)),
+                        src_of(app_node) if app_node is not None else None)
+                  producer = new_collected[0]
+                  consumer = new_collected[1]
+                  K.append((FRAME_CWV_CONSUMER, consumer, app_node))
+                  fn_value = producer
+                  new_collected = []
+               # force: install result frame, tail-call the thunk (or return
+               # the cached value immediately if the promise is already done).
+               if _is_force_primitive(fn_value):
+                  if len(new_collected) != 1:
+                     raise SchemeArityError(
+                        arity_mismatch_msg('force', 1, 1, len(new_collected)),
+                        src_of(app_node) if app_node is not None else None)
+                  p = new_collected[0]
+                  if not is_promise(p):
+                     raise SchemeTypeError(
+                        'force: argument must be a promise', app_node)
+                  if as_promise_is_done(p):
+                     V = as_promise_payload(p)
+                     continue
+                  K.append((FRAME_FORCE_RESULT, p))
+                  fn_value = as_promise_payload(p)
+                  new_collected = []
+               # make-parameter: if a converter is given, tail-call it with
+               # the init value and wrap its return as a Parameter via
+               # FRAME_MAKE_PARAMETER.  Without a converter, build the
+               # parameter inline.
+               if _is_make_parameter_primitive(fn_value):
+                  if len(new_collected) not in (1, 2):
+                     raise SchemeArityError(
+                        arity_mismatch_msg('make-parameter', 1, 2,
+                                           len(new_collected)),
+                        src_of(app_node) if app_node is not None else None)
+                  if len(new_collected) == 1:
+                     V = make_parameter(new_collected[0], None)
+                     continue
+                  converter = new_collected[1]
+                  init = new_collected[0]
+                  if not (is_primitive(converter) or is_closure(converter)
+                          or is_case_closure(converter)):
+                     raise SchemeTypeError(
+                        'make-parameter: converter must be a procedure',
+                        app_node)
+                  K.append((FRAME_MAKE_PARAMETER, converter))
+                  fn_value = converter
+                  new_collected = [init]
+               # with-exception-handler: push handler on _handler_stack,
+               # push FRAME_POP_HANDLER, tail-call thunk.  Handler is
+               # popped on normal return via FRAME_POP_HANDLER, or
+               # consumed by raise / raise-continuable.
+               if _is_with_exception_handler_primitive(fn_value):
+                  if len(new_collected) != 2:
+                     raise SchemeArityError(
+                        arity_mismatch_msg('with-exception-handler', 2, 2,
+                                           len(new_collected)),
+                        src_of(app_node) if app_node is not None else None)
+                  handler = new_collected[0]
+                  thunk   = new_collected[1]
+                  _handler_stack.append(handler)
+                  K.append((FRAME_POP_HANDLER,))
+                  fn_value = thunk
+                  new_collected = []
+               # raise (non-continuable): throw Python SchemeRaised so the
+               # exception unwinds the CEK loop.  cek_eval's except block
+               # routes to the topmost installed handler if any.
+               if _is_raise_primitive(fn_value):
+                  if len(new_collected) != 1:
+                     raise SchemeArityError(
+                        arity_mismatch_msg('raise', 1, 1, len(new_collected)),
+                        src_of(app_node) if app_node is not None else None)
+                  raise SchemeRaised(new_collected[0], app_node,
+                                     continuable=False)
+               # raise-continuable: handler's return value flows back to
+               # the raise-continuable call site (R7RS-correct).  Pop the
+               # handler so a re-raise inside the handler reaches the next
+               # outer one; FRAME_REINSTALL_HANDLER puts it back on return.
+               if _is_raise_continuable_primitive(fn_value):
+                  if len(new_collected) != 1:
+                     raise SchemeArityError(
+                        arity_mismatch_msg('raise-continuable', 1, 1,
+                                           len(new_collected)),
+                        src_of(app_node) if app_node is not None else None)
+                  raised_val = new_collected[0]
+                  if not _handler_stack:
+                     raise SchemeRaised(raised_val, app_node, continuable=True)
+                  handler = _handler_stack.pop()
+                  K.append((FRAME_REINSTALL_HANDLER, handler))
+                  fn_value = handler
+                  new_collected = [raised_val]
+               # eval: expand and analyze the datum once, then set C to the
+               # expanded form and continue in the same cek_eval call.  Tail
+               # calls inside the eval'd expression compose with the
+               # surrounding continuation, so deep recursion through eval
+               # doesn't add Python stack.  The optional env-spec argument
+               # is accepted but ignored - same documented limitation as
+               # before.
+               if _is_eval_primitive(fn_value):
+                  if len(new_collected) not in (1, 2):
+                     raise SchemeArityError(
+                        arity_mismatch_msg('eval', 1, 2, len(new_collected)),
+                        src_of(app_node) if app_node is not None else None)
+                  datum = new_collected[0]
+                  from pyscheme.Expander  import expand
+                  from pyscheme.Analyzer  import analyze
+                  from pyscheme.primitives import PRIMITIVE_ARITIES
+                  expanded = expand(datum)
+                  analyze(expanded, dict(PRIMITIVE_ARITIES))
+                  C = expanded
+                  E = saved_env.getGlobalEnv()
+                  break
+               # error: build an ErrorObject and throw Python SchemeUserError
+               # (which subclasses SchemeRaised), letting cek_eval's except
+               # path route to the handler stack.
+               if _is_error_primitive(fn_value):
+                  if len(new_collected) < 1:
+                     raise SchemeArityError(
+                        arity_mismatch_msg('error', 1, None, len(new_collected)),
+                        src_of(app_node) if app_node is not None else None)
+                  msg_arg = new_collected[0]
+                  if not is_string(msg_arg):
+                     raise SchemeTypeError(
+                        'error: first argument must be a string', app_node)
+                  msg = as_string(msg_arg)
+                  irritants = []
+                  i = 1
+                  while i < len(new_collected):
+                     irritants.append(new_collected[i])
+                     i = i + 1
+                  raise SchemeUserError(msg, irritants, app_node)
+               # %with-parameters: apply converters, save old, install new,
+               # push wind frame so we integrate with dynamic-wind / continuation
+               # re-entry, tail-call thunk.
+               if _is_with_parameters_primitive(fn_value):
+                  if len(new_collected) != 3:
+                     raise SchemeArityError(
+                        arity_mismatch_msg('%with-parameters', 3, 3,
+                                           len(new_collected)),
+                        src_of(app_node) if app_node is not None else None)
+                  install_prim, restore_prim = _build_parameterize_winds(
+                     new_collected[0], new_collected[1],
+                     ctx, saved_env, app_node)
+                  _wind_stack.append((install_prim, restore_prim))
+                  K.append((FRAME_DYNAMIC_WIND_AFTER, restore_prim))
+                  fn_value = new_collected[2]
+                  new_collected = []
                # dynamic-wind: install the wind frame in the CEK machine
                # so continuation captures see it and FRAME_DYNAMIC_WIND_AFTER
                # runs the after thunk when the body returns.

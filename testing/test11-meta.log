@@ -53,6 +53,11 @@
 >>> (apply apply (list + (list 1 2 3)))
 ==> 6
 
+;;; Deep tail recursion through apply: each iteration tail-calls loop via
+;;; apply.  Without CEK-level apply dispatch this would blow Python stack.
+>>> (define (loop n acc) (if (zero? n) acc (apply loop (list (- n 1) (+ acc 1))))) (loop 100000 0)
+==> 100000
+
 ;;; Type errors.
 >>> (apply + 'not-a-list)
 %%% SchemeTypeError: line 1, col 1: apply: last argument must be a proper list
@@ -107,6 +112,11 @@
 ;;; Nested eval.
 >>> (eval '(eval '(+ 100 1)))
 ==> 101
+
+;;; Deep tail recursion through eval: each iteration tail-calls loop via
+;;; eval.  Without CEK-level eval dispatch this would blow Python stack.
+>>> (define (loop n) (if (zero? n) 'done (eval (list 'loop (- n 1))))) (loop 100000)
+==> done
 
 ;;; Second argument is accepted but ignored.
 >>> (eval '(+ 2 3) 'ignored)

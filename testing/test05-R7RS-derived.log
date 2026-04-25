@@ -651,6 +651,12 @@ Primitive  |  args: pre-evaluated
 >>> (let ((x (values 1 2))) x)
 %%% SchemeTypeError: multiple values delivered to a single-value context
 
+;;; Deep tail recursion through call-with-values: each iteration tail-calls
+;;; loop via call-with-values.  Without CEK-level dispatch this would blow
+;;; Python stack.
+>>> (define (loop n) (if (zero? n) 'done (call-with-values (lambda () (values (- n 1))) loop))) (loop 100000)
+==> done
+
 ;;; -------- shape errors --------
 
 >>> (let-values)
@@ -802,6 +808,12 @@ Primitive  |  args: pre-evaluated
 >>> (define c (make-parameter 1 (lambda (x) (+ x 100)))) (list (c) (parameterize ((c 2)) (c)) (parameterize ((c 3)) (c)) (c))
 ==> (101 102 103 101)
 
+;;; Deep tail recursion through parameterize: each iteration tail-calls
+;;; loop inside a parameterize body.  Without CEK-level integration this
+;;; would blow Python stack.  K grows O(n) here but Python stack does not.
+>>> (define p (make-parameter 0)) (define (loop n) (if (zero? n) (p) (parameterize ((p (+ (p) 1))) (loop (- n 1))))) (loop 100000)
+==> 100000
+
 ;;; Exception safety: parameterize restores even when body raises.
 >>> (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom"))
 %%% SchemeUserError: line 1, col 54: boom
@@ -885,10 +897,21 @@ Primitive  |  args: pre-evaluated
 %%% (error-object-message 42)
 %%% ^
 
-;;; raise-continuable: handler's result becomes the with-exception-handler's
-;;; return (our implementation always unwinds; see limitations).
+;;; raise-continuable: handler's result flows back to the raise-continuable
+;;; call site (R7RS 6.11).  In a sole-form thunk this looks the same as
+;;; "handler return == with-exception-handler return".
 >>> (with-exception-handler (lambda (v) (+ v 1)) (lambda () (raise-continuable 100)))
 ==> 101
+
+;;; ...but in a composite expression, the handler's return value is the
+;;; raise-continuable's value, not the with-exception-handler's value.
+>>> (with-exception-handler (lambda (v) (+ v 1)) (lambda () (+ 1 (raise-continuable 100))))
+==> 102
+
+;;; Deep tail recursion through with-exception-handler.  FRAME_POP_HANDLER
+;;; in the CEK keeps Python stack flat across iterations.
+>>> (define (loop n) (with-exception-handler (lambda (v) v) (lambda () (if (zero? n) 'done (loop (- n 1)))))) (loop 100000)
+==> done
 
 ;;; guard: first matching clause wins, its body is the guard's return.
 >>> (guard (e ((symbol? e) (list 'sym e)) ((number? e) (list 'num e))) (raise 'alpha))
