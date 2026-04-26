@@ -39,7 +39,7 @@ from pyscheme.AST import (
    as_symbol, as_string, src_of,
    make_symbol, ConsCell, REPL_FILENAME,
    SYMBOL, VOID,
-   new_scope, symbol_add_scope, add_scope_to_form,
+   new_scope, symbol_add_scope, add_scope_to_form, as_symbol_scopes,
 )
 from pyscheme.syntax_rules import hygiene_gensym
 
@@ -72,15 +72,16 @@ def get_runtime_env():
 _MAX_EXPAND_ITER = 200
 
 
-def _lookup_macro(name):
-   """Return the SyntaxTransformer bound to `name` in the current runtime
-   env (walking the env's parent chain), or None."""
+def _lookup_macro(sym):
+   """Return the SyntaxTransformer bound to sym in the current runtime env
+   (walking the parent chain), or None.  sym is the full symbol node so
+   scope_set-aware lookup can discriminate introduced identifiers."""
    from pyscheme.Environment import SchemeUnboundError
    env = _runtime_env_ref[0]
    if env is None:
       return None
    try:
-      val = env.lookup(name)
+      val = env.lookup(as_symbol(sym), as_symbol_scopes(sym))
    except SchemeUnboundError:
       return None
    if is_syntax_transformer(val):
@@ -131,7 +132,7 @@ def expand(sexpr):
             return _expand_let_syntax(sexpr, True)
          # 2. User macro expansion: if name is bound to a transformer,
          #    expand once then loop.
-         tr = _lookup_macro(name)
+         tr = _lookup_macro(head)
          if tr is not None:
             from pyscheme.syntax_rules import apply_syntax_transformer
             sexpr = apply_syntax_transformer(tr, sexpr)
@@ -160,7 +161,8 @@ def _expand_define_syntax(sexpr):
       raise SchemeSyntaxError(
          'define-syntax: expected (define-syntax <name> <transformer>)',
          src_of(sexpr))
-   macro_name = as_symbol(sexpr.cdr.car)
+   macro_sym  = sexpr.cdr.car
+   macro_name = as_symbol(macro_sym)
    if not is_cons(sexpr.cdr.cdr):
       raise SchemeSyntaxError(
          'define-syntax: missing transformer', src_of(sexpr))
@@ -173,7 +175,7 @@ def _expand_define_syntax(sexpr):
    t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), macro_name)
    env = _runtime_env_ref[0]
    if env is not None:
-      env.bind(macro_name, t)
+      env.bind(macro_name, t, as_symbol_scopes(macro_sym))
    return VOID_VALUE
 
 
@@ -213,7 +215,8 @@ def _expand_let_syntax(sexpr, is_letrec):
          if (not is_cons(b) or not is_symbol(b.car) or not is_cons(b.cdr)):
             raise SchemeSyntaxError(
                'let-syntax: malformed binding', src_of(b))
-         bname = as_symbol(b.car)
+         bsym  = b.car
+         bname = as_symbol(bsym)
          tr_expr = b.cdr.car
          if (not is_cons(tr_expr) or not is_symbol(tr_expr.car)
                or as_symbol(tr_expr.car) != 'syntax-rules'):
@@ -221,7 +224,7 @@ def _expand_let_syntax(sexpr, is_letrec):
                'let-syntax: transformer must be (syntax-rules ...)',
                src_of(tr_expr))
          t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), bname)
-         child_env.bind(bname, t)
+         child_env.bind(bname, t, as_symbol_scopes(bsym))
          cur = cur.cdr
       # Now expand the body with the child env active (for both let and
       # letrec variants).  Add a fresh scope to the body so its identifiers

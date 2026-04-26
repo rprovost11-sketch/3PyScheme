@@ -80,7 +80,7 @@ from pyscheme.AST import (
    is_closure, is_promise,
    is_case_closure, is_multi_values, is_parameter, is_continuation,
    is_environment, is_record, is_record_accessor, is_record_mutator,
-   as_symbol, as_boolean, as_string, as_primitive_fn, as_primitive_name,
+   as_symbol, as_symbol_scopes, as_boolean, as_string, as_primitive_fn, as_primitive_name,
    as_closure_params, as_closure_body, as_closure_env, as_closure_rest_name,
    as_case_closure_clauses, as_case_closure_env, as_parameter_value,
    as_continuation_k, as_continuation_wind,
@@ -1033,14 +1033,14 @@ def _cek_loop(expr, env, ctx):
 
                      if name == 'define':
                         # (define name value)
-                        K.append((FRAME_DEFINE, as_symbol(C.cdr.car), E))
+                        K.append((FRAME_DEFINE, C.cdr.car, E))
                         C = C.cdr.cdr.car
                         continue
 
                      if name == 'set!':
                         # (set! name value)
                         name_sexpr = C.cdr.car
-                        K.append((FRAME_SET, as_symbol(name_sexpr), E, src_of(name_sexpr)))
+                        K.append((FRAME_SET, name_sexpr, E, src_of(name_sexpr)))
                         C = C.cdr.cdr.car
                         continue
 
@@ -1227,7 +1227,7 @@ def _cek_loop(expr, env, ctx):
 
                if is_symbol(C):
                   try:
-                     V = E.lookup(as_symbol(C))
+                     V = E.lookup(as_symbol(C), as_symbol_scopes(C))
                   except SchemeUnboundError as e:
                      e.src = src_of(C)
                      raise
@@ -1259,14 +1259,14 @@ def _cek_loop(expr, env, ctx):
 
                if ftag == FRAME_DEFINE:
                   E = frame[2]
-                  E.bind(frame[1], V)
+                  E.bind(as_symbol(frame[1]), V, as_symbol_scopes(frame[1]))
                   V = VOID_VALUE
                   continue
 
                if ftag == FRAME_SET:
                   E = frame[2]
                   try:
-                     E.set(frame[1], V)
+                     E.set(as_symbol(frame[1]), V, as_symbol_scopes(frame[1]))
                   except SchemeUnboundError as e:
                      e.src = frame[3]
                      raise
