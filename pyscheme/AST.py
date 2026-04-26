@@ -8,7 +8,7 @@ sentinels are tagged tuples - immutable arms of the Value variant.
 C port layout:
    ConsCell     -> struct ConsCell { GcHeader h; Value car; Value cdr; SourceInfo* src; };
    SourceInfo   -> struct SourceInfo { int line; int col; char* source_line; char* filename; };
-   (SYMBOL, s)  -> Value with tag SYMBOL, payload Symbol*
+   (SYMBOL, name, scope_set, src) -> Value tag SYMBOL; scope_set is a ScopeSet* in C
    (NIL,)       -> Value with tag NIL, no payload (singleton)
    (VOID,)      -> Value with tag VOID, no payload (singleton)
 
@@ -227,7 +227,7 @@ def make_string(s, src=None):
    return (STRING, s, src)
 
 def make_symbol(name, src=None):
-   return (SYMBOL, name, src)
+   return (SYMBOL, name, frozenset(), src)
 
 def make_closure(params, body, env, rest_name, docstring):
    return (CLOSURE, params, body, env, rest_name, docstring)
@@ -303,6 +303,32 @@ def make_port(port_obj):
 EOF_VALUE = (EOF,)
 def make_eof():
    return EOF_VALUE
+
+
+# --- Scope-set helpers ------------------------------------------------
+# Scope IDs are small positive integers.  Each fresh scope is unique.
+# In the C port these map to a uint64_t bitmask or a heap-allocated set.
+
+_scope_counter = 0
+
+def new_scope():
+   global _scope_counter
+   _scope_counter = _scope_counter + 1
+   return _scope_counter
+
+def symbol_add_scope(sym, scope_id):
+   """Return sym with scope_id added to its scope_set (no-op if already present)."""
+   scopes = sym[2]
+   if scope_id in scopes:
+      return sym
+   return (SYMBOL, sym[1], scopes | frozenset([scope_id]), sym[3])
+
+def symbol_flip_scope(sym, scope_id):
+   """Return sym with scope_id toggled in its scope_set."""
+   scopes = sym[2]
+   if scope_id in scopes:
+      return (SYMBOL, sym[1], scopes - frozenset([scope_id]), sym[3])
+   return (SYMBOL, sym[1], scopes | frozenset([scope_id]), sym[3])
 
 
 # --- Predicates --------------------------------------------------------
@@ -430,7 +456,7 @@ def src_of(val):
       return None
    tag = val[0]
    if tag == SYMBOL:
-      return val[2]
+      return val[3]
    if tag == INTEGER:
       return val[2]
    if tag == REAL:
@@ -484,6 +510,9 @@ def as_string(val):
 
 def as_symbol(val):
    return val[1]
+
+def as_symbol_scopes(val):
+   return val[2]
 
 def as_closure_params(val):
    return val[1]
@@ -771,9 +800,25 @@ if __name__ == '__main__':
    check('as_symbol',        as_symbol(sym) == 'x')
    check('symbol not cons',  not is_cons(sym))
    check('src_of sym None',  src_of(sym) is None)
+   check('symbol scopes empty', as_symbol_scopes(sym) == frozenset())
 
    sym2 = make_symbol('y', si)
    check('src_of sym with src', src_of(sym2) is si)
+
+   # scope helpers
+   sc1 = new_scope()
+   sc2 = new_scope()
+   check('new_scope distinct',   sc1 != sc2)
+   sym3 = symbol_add_scope(sym, sc1)
+   check('add_scope adds',        sc1 in as_symbol_scopes(sym3))
+   check('add_scope name unchanged', as_symbol(sym3) == 'x')
+   check('add_scope src unchanged',  src_of(sym3) is None)
+   check('add_scope idempotent',  symbol_add_scope(sym3, sc1) is sym3)
+   sym4 = symbol_flip_scope(sym, sc1)
+   check('flip_scope adds when absent', sc1 in as_symbol_scopes(sym4))
+   sym5 = symbol_flip_scope(sym4, sc1)
+   check('flip_scope removes when present', sc1 not in as_symbol_scopes(sym5))
+   check('flip_scope name unchanged', as_symbol(sym5) == 'x')
 
    # Closure
    cls = make_closure(('x',), NIL_VALUE, None, None, 'doc')
