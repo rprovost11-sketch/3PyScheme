@@ -1,0 +1,231 @@
+;;; ============================================================
+;;; test15-numbers2.log
+;;; R7RS §6.2 numeric tower Phase 2:
+;;;   #b / #o / #d / #x radix prefixes
+;;;   #e / #i exactness prefixes (and combinations)
+;;;   a+bi / a-bi / +bi / -bi / +i / -i complex literals
+;;;   number->string and string->number for prefixed / complex forms
+;;; ============================================================
+
+;;; -------- radix prefix literals --------
+
+>>> #b1010
+==> 10
+
+>>> #o17
+==> 15
+
+>>> #d42
+==> 42
+
+>>> #xff
+==> 255
+
+>>> #xDEAD
+==> 57005
+
+;;; Negative binary.
+>>> #b-1010
+==> -10
+
+;;; Negative octal.
+>>> #o-17
+==> -15
+
+;;; Upper-case hex prefix.
+>>> #XFF
+==> 255
+
+;;; -------- exactness prefix literals --------
+
+;;; #e on an integer is a no-op (already exact).
+>>> #e42
+==> 42
+
+;;; #e on an integer-valued real -> exact integer.
+>>> #e3.0
+==> 3
+
+;;; #i on an integer -> inexact real.
+>>> #i42
+==> 42.0
+
+>>> #i3
+==> 3.0
+
+;;; -------- combined prefix literals --------
+
+>>> #e#b1010
+==> 10
+
+;;; prefix order may be reversed.
+>>> #b#e1010
+==> 10
+
+>>> #i#b1010
+==> 10.0
+
+>>> #i#xff
+==> 255.0
+
+;;; -------- prefix errors --------
+
+;;; Duplicate radix prefix.
+>>> #b#o1010
+%%% line 1, col 1: duplicate radix prefix: '#b#o1010'
+%%% #b#o1010
+%%% ^
+
+;;; Duplicate exactness prefix.
+>>> #e#e42
+%%% line 1, col 1: duplicate exactness prefix: '#e#e42'
+%%% #e#e42
+%%% ^
+
+;;; #e applied to a non-integer real is an error in Phase 2.
+>>> #e1.5
+%%% line 1, col 1: #e applied to non-integer real '1.5'; rational support not yet implemented
+%%% #e1.5
+%%% ^
+
+;;; #e cannot be applied to infinity.
+>>> #e+inf.0
+%%% line 1, col 1: #e cannot be applied to +inf.0
+%%% #e+inf.0
+%%% ^
+
+;;; -------- complex literals --------
+
+>>> 3+4i
+==> 3.0+4.0i
+
+>>> 3-4i
+==> 3.0-4.0i
+
+;;; Pure imaginary.
+>>> +2i
+==> 0.0+2.0i
+
+>>> -2i
+==> 0.0-2.0i
+
+;;; Unit imaginary.
+>>> +i
+==> 0.0+1.0i
+
+>>> -i
+==> 0.0-1.0i
+
+;;; Real-valued float components.
+>>> 1.5+2.5i
+==> 1.5+2.5i
+
+>>> 0.0-3.0i
+==> 0.0-3.0i
+
+;;; Imaginary part with exponent.
+>>> 1.0+2.5e1i
+==> 1.0+25.0i
+
+;;; Special real components.
+>>> +inf.0+0.0i
+==> +inf.0+0.0i
+
+>>> 0.0+inf.0i
+==> 0.0++inf.0i
+
+>>> +nan.0+0.0i
+==> +nan.0+0.0i
+
+;;; -------- type predicates on complex --------
+
+>>> (number? 3+4i)
+==> #t
+
+>>> (complex? 3+4i)
+==> #t
+
+>>> (real? 3+4i)
+==> #f
+
+>>> (rational? 3+4i)
+==> #f
+
+>>> (integer? 3+4i)
+==> #f
+
+;;; -------- equality on complex --------
+
+>>> (equal? 3+4i 3+4i)
+==> #t
+
+>>> (equal? 3+4i 3+5i)
+==> #f
+
+>>> (equal? +i +i)
+==> #t
+
+;;; -------- number->string for complex --------
+
+>>> (number->string 3+4i)
+==> "3.0+4.0i"
+
+>>> (number->string 0.0+1.0i)
+==> "0.0+1.0i"
+
+>>> (number->string 3.0-4.0i)
+==> "3.0-4.0i"
+
+>>> (number->string 0.0+0.0i)
+==> "0.0+0.0i"
+
+;;; -------- string->number with radix prefixes --------
+
+>>> (string->number "#b1010")
+==> 10
+
+>>> (string->number "#o17")
+==> 15
+
+>>> (string->number "#xff")
+==> 255
+
+;;; #e prefix: exact conversion.
+>>> (string->number "#e3.0")
+==> 3
+
+;;; #i prefix: inexact conversion.
+>>> (string->number "#i42")
+==> 42.0
+
+;;; Combined prefix.
+>>> (string->number "#e#b1010")
+==> 10
+
+>>> (string->number "#i#xff")
+==> 255.0
+
+;;; Unrecognised prefix returns #f.
+>>> (string->number "#z42")
+==> #f
+
+;;; -------- string->number for complex --------
+
+>>> (string->number "3+4i")
+==> 3.0+4.0i
+
+>>> (string->number "3-4i")
+==> 3.0-4.0i
+
+>>> (string->number "+2i")
+==> 0.0+2.0i
+
+>>> (string->number "+i")
+==> 0.0+1.0i
+
+>>> (string->number "-i")
+==> 0.0-1.0i
+
+;;; Unrecognised string returns #f.
+>>> (string->number "not-a-number")
+==> #f

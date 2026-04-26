@@ -59,6 +59,7 @@ Public API:
     SchemeSyntaxError                 -> raised on any lex/read error
 """
 import re
+import math as _math
 
 from pyscheme.AST import (
    alloc_cons, NIL_VALUE, SourceInfo, ConsCell, is_cons, is_nil,
@@ -286,13 +287,152 @@ def _starts_like_number(s):
 
 
 def _try_parse_prefixed_number(text, src):
-   """Parse #b/#o/#d/#x/#e/#i prefix forms.  Stub; full impl in Phase 2."""
+   """Parse #b/#o/#d/#x/#e/#i prefix forms.
+   Returns a Token or raises SchemeSyntaxError.  Returns None only when
+   the second character is not a recognised prefix letter (so the caller
+   can report 'unknown #-syntax')."""
+   radix = -1   # -1 = not yet specified
+   exact = -1   # -1 = unspecified; 1 = exact; 0 = inexact
+   i = 0
+   while i < len(text) and text[i] == '#':
+      if i + 1 >= len(text):
+         return None
+      ch = text[i + 1].lower()
+      if ch == 'b':
+         if radix != -1:
+            raise SchemeSyntaxError("duplicate radix prefix: %r" % text, src)
+         radix = 2
+         i = i + 2
+      elif ch == 'o':
+         if radix != -1:
+            raise SchemeSyntaxError("duplicate radix prefix: %r" % text, src)
+         radix = 8
+         i = i + 2
+      elif ch == 'd':
+         if radix != -1:
+            raise SchemeSyntaxError("duplicate radix prefix: %r" % text, src)
+         radix = 10
+         i = i + 2
+      elif ch == 'x':
+         if radix != -1:
+            raise SchemeSyntaxError("duplicate radix prefix: %r" % text, src)
+         radix = 16
+         i = i + 2
+      elif ch == 'e':
+         if exact != -1:
+            raise SchemeSyntaxError("duplicate exactness prefix: %r" % text, src)
+         exact = 1
+         i = i + 2
+      elif ch == 'i':
+         if exact != -1:
+            raise SchemeSyntaxError("duplicate exactness prefix: %r" % text, src)
+         exact = 0
+         i = i + 2
+      else:
+         return None
+   if radix == -1:
+      radix = 10
+   rest = text[i:]
+   if not rest:
+      raise SchemeSyntaxError("number prefix with no digits: %r" % text, src)
+   # Try integer with given radix.
+   try:
+      n = int(rest, radix)
+      if exact == 0:
+         return Token(TOK_REAL, float(n), src)
+      return Token(TOK_INT, n, src)
+   except ValueError:
+      pass
+   # Try real (radix 10 only).
+   if radix == 10:
+      if rest == '+inf.0':
+         if exact == 1:
+            raise SchemeSyntaxError("#e cannot be applied to +inf.0", src)
+         return Token(TOK_REAL, float('inf'), src)
+      if rest == '-inf.0':
+         if exact == 1:
+            raise SchemeSyntaxError("#e cannot be applied to -inf.0", src)
+         return Token(TOK_REAL, float('-inf'), src)
+      if rest == '+nan.0':
+         if exact == 1:
+            raise SchemeSyntaxError("#e cannot be applied to +nan.0", src)
+         return Token(TOK_REAL, float('nan'), src)
+      try:
+         f = float(rest)
+         if exact == 1:
+            if not _math.isfinite(f):
+               raise SchemeSyntaxError(
+                  "#e applied to non-finite real %r" % rest, src)
+            if f.is_integer():
+               return Token(TOK_INT, int(f), src)
+            raise SchemeSyntaxError(
+               "#e applied to non-integer real %r; "
+               "rational support not yet implemented" % rest, src)
+         return Token(TOK_REAL, f, src)
+      except ValueError:
+         pass
+   raise SchemeSyntaxError("invalid prefixed number: %r" % text, src)
+
+
+def _parse_number_for_complex(s):
+   """Parse a real-number string as a Python float for use as a complex component."""
+   if s == '+inf.0':
+      return float('inf')
+   if s == '-inf.0':
+      return float('-inf')
+   if s == '+nan.0':
+      return float('nan')
+   try:
+      return float(s)
+   except ValueError:
+      pass
    return None
 
 
 def _try_parse_complex_literal(text, src):
-   """Parse a+bi / a-bi / +bi / -bi / +i / -i complex literals.  Stub; full impl in Phase 2."""
-   return None
+   """Parse a+bi / a-bi / +bi / -bi / +i / -i complex literals.
+   text ends in 'i' and has length >= 2."""
+   body = text[:-1]   # strip trailing 'i'
+   if not body:
+      return None   # bare 'i' is an identifier
+
+   # Find the rightmost +/- that is not an exponent sign
+   # (i.e. not preceded by 'e' or 'E').
+   split = -1
+   j = len(body) - 1
+   while j >= 0:
+      c = body[j]
+      if c == '+' or c == '-':
+         if j > 0 and body[j - 1].lower() == 'e':
+            j = j - 1
+            continue
+         split = j
+         break
+      j = j - 1
+
+   if split == -1:
+      return None   # no sign separator found
+
+   real_str  = body[:split]
+   sign_imag = body[split:]   # sign + magnitude, e.g. "+4" / "-3.5" / "+" / "-"
+
+   if real_str == '':
+      re_val = 0.0
+   else:
+      re_val = _parse_number_for_complex(real_str)
+      if re_val is None:
+         return None
+
+   if sign_imag == '+':
+      im_val = 1.0
+   elif sign_imag == '-':
+      im_val = -1.0
+   else:
+      im_val = _parse_number_for_complex(sign_imag)
+      if im_val is None:
+         return None
+
+   return Token(TOK_COMPLEX, (float(re_val), float(im_val)), src)
 
 
 def _decode_string_escapes(raw, src):

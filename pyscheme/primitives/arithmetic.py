@@ -14,8 +14,11 @@ import math
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
-   is_integer, is_real, is_string, as_integer, as_real, as_string,
-   make_integer, make_real, make_boolean, make_string, make_multi_values,
+   is_integer, is_real, is_rational, is_complex,
+   is_string,
+   as_integer, as_real, as_complex_real, as_complex_imag, as_string,
+   make_integer, make_real, make_complex, make_boolean, make_string,
+   make_multi_values,
 )
 from pyscheme.Environment import SchemeTypeError
 
@@ -333,6 +336,72 @@ def _prim_denominator(ctx, env, args, app_node):
       app_node)
 
 
+def _format_num_str(f):
+   """Format a float as R7RS surface syntax (used by number->string for complex)."""
+   if math.isnan(f):
+      return '+nan.0'
+   if f == float('inf'):
+      return '+inf.0'
+   if f == float('-inf'):
+      return '-inf.0'
+   s = repr(f)
+   if '.' not in s and 'e' not in s:
+      s = s + '.0'
+   return s
+
+
+def _parse_number_for_stn(s):
+   """Parse a real-number string for string->number complex parsing."""
+   if s == '+inf.0':
+      return float('inf')
+   if s == '-inf.0':
+      return float('-inf')
+   if s == '+nan.0':
+      return float('nan')
+   try:
+      return float(s)
+   except ValueError:
+      pass
+   return None
+
+
+def _parse_complex_for_stn(s):
+   """Parse a+bi style string into (re_float, im_float) or None."""
+   body = s[:-1]   # strip 'i'
+   if not body:
+      return None
+   split = -1
+   j = len(body) - 1
+   while j >= 0:
+      c = body[j]
+      if c == '+' or c == '-':
+         if j > 0 and body[j - 1].lower() == 'e':
+            j = j - 1
+            continue
+         split = j
+         break
+      j = j - 1
+   if split == -1:
+      return None
+   real_str  = body[:split]
+   sign_imag = body[split:]
+   if real_str == '':
+      re_val = 0.0
+   else:
+      re_val = _parse_number_for_stn(real_str)
+      if re_val is None:
+         return None
+   if sign_imag == '+':
+      im_val = 1.0
+   elif sign_imag == '-':
+      im_val = -1.0
+   else:
+      im_val = _parse_number_for_stn(sign_imag)
+      if im_val is None:
+         return None
+   return (float(re_val), float(im_val))
+
+
 def _prim_number_to_string(ctx, env, args, app_node):
    v = args[0]
    radix = 10
@@ -370,6 +439,18 @@ def _prim_number_to_string(ctx, env, args, app_node):
       if '.' not in s and 'e' not in s:
          s = s + '.0'
       return make_string(s)
+   if is_complex(v):
+      if radix != 10:
+         raise SchemeTypeError(
+            'number->string: only radix 10 supported for complex numbers',
+            app_node)
+      re = as_complex_real(v)
+      im = as_complex_imag(v)
+      re_s = _format_num_str(re)
+      im_s = _format_num_str(im)
+      if math.isnan(im) or im >= 0:
+         return make_string(re_s + '+' + im_s + 'i')
+      return make_string(re_s + im_s + 'i')
    raise SchemeTypeError(
       'number->string: argument must be a number', app_node)
 
@@ -476,19 +557,87 @@ def _prim_string_to_number(ctx, env, args, app_node):
          raise SchemeTypeError(
             'string->number: radix must be an integer', app_node)
       radix = as_integer(r)
+   # Strip #b/#o/#d/#x/#e/#i prefix(es) from the string.
+   explicit_radix = False
+   exact = -1   # -1 = unspecified; 1 = exact; 0 = inexact
+   while len(s) >= 2 and s[0] == '#':
+      ch = s[1].lower()
+      if ch == 'b':
+         if explicit_radix:
+            return make_boolean(False)
+         radix = 2
+         explicit_radix = True
+         s = s[2:]
+      elif ch == 'o':
+         if explicit_radix:
+            return make_boolean(False)
+         radix = 8
+         explicit_radix = True
+         s = s[2:]
+      elif ch == 'd':
+         if explicit_radix:
+            return make_boolean(False)
+         radix = 10
+         explicit_radix = True
+         s = s[2:]
+      elif ch == 'x':
+         if explicit_radix:
+            return make_boolean(False)
+         radix = 16
+         explicit_radix = True
+         s = s[2:]
+      elif ch == 'e':
+         if exact != -1:
+            return make_boolean(False)
+         exact = 1
+         s = s[2:]
+      elif ch == 'i':
+         if exact != -1:
+            return make_boolean(False)
+         exact = 0
+         s = s[2:]
+      else:
+         return make_boolean(False)
+   if not s:
+      return make_boolean(False)
+   # Try complex literal (radix 10 only, ends in 'i').
+   if radix == 10 and s.endswith('i') and len(s) >= 2:
+      tup = _parse_complex_for_stn(s)
+      if tup is not None:
+         if exact == 1:
+            return make_boolean(False)   # exact complex not yet supported
+         return make_complex(tup[0], tup[1])
+   # Try integer.
    try:
-      return make_integer(int(s, radix))
+      n = int(s, radix)
+      if exact == 0:
+         return make_real(float(n))
+      return make_integer(n)
    except (ValueError, TypeError):
       pass
+   # Try real (radix 10 only).
    if radix == 10:
       if s == '+inf.0':
+         if exact == 1:
+            return make_boolean(False)
          return make_real(float('inf'))
       if s == '-inf.0':
+         if exact == 1:
+            return make_boolean(False)
          return make_real(float('-inf'))
       if s == '+nan.0':
+         if exact == 1:
+            return make_boolean(False)
          return make_real(float('nan'))
       try:
-         return make_real(float(s))
+         f = float(s)
+         if exact == 1:
+            if not math.isfinite(f):
+               return make_boolean(False)
+            if f.is_integer():
+               return make_integer(int(f))
+            return make_boolean(False)   # non-integer real: Phase 3 rational
+         return make_real(f)
       except (ValueError, TypeError):
          pass
    return make_boolean(False)

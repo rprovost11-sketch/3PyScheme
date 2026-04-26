@@ -37,6 +37,20 @@ from pyscheme.AST import (
 )
 
 
+def _format_float(f):
+   """Render a Python float as R7RS surface syntax."""
+   if _math.isnan(f):
+      return '+nan.0'
+   if f == float('inf'):
+      return '+inf.0'
+   if f == float('-inf'):
+      return '-inf.0'
+   s = repr(f)
+   if '.' not in s and 'e' not in s:
+      s = s + '.0'
+   return s
+
+
 _CHAR_NAMES_REVERSE = {
    ' ':    'space',
    '\n':   'newline',
@@ -61,26 +75,17 @@ def pretty_print(val):
    if is_integer(val):
       return str(as_integer(val))
    if is_real(val):
-      f = as_real(val)
-      if _math.isnan(f):
-         return '+nan.0'
-      if f == float('inf'):
-         return '+inf.0'
-      if f == float('-inf'):
-         return '-inf.0'
-      s = repr(f)
-      if '.' not in s and 'e' not in s:
-         s = s + '.0'
-      return s
+      return _format_float(as_real(val))
    if is_rational(val):
       return str(as_rational_num(val)) + '/' + str(as_rational_den(val))
    if is_complex(val):
-      imag = as_complex_imag(val)
-      if imag >= 0:
-         sign = '+'
-      else:
-         sign = ''
-      return str(as_complex_real(val)) + sign + str(imag) + 'i'
+      re = as_complex_real(val)
+      im = as_complex_imag(val)
+      re_s = _format_float(re)
+      im_s = _format_float(im)
+      if _math.isnan(im) or im >= 0:
+         return re_s + '+' + im_s + 'i'
+      return re_s + im_s + 'i'
    if is_boolean(val):
       if as_boolean(val):
          return '#t'
