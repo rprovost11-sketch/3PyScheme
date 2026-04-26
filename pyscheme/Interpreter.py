@@ -37,8 +37,6 @@ from pyscheme.Expander    import set_runtime_env
 
 class Interpreter(InterpreterBase):
    def __init__(self):
-      if sys.getrecursionlimit() < 2000:
-         sys.setrecursionlimit(2000)
       self._env = None
       self._static_env = {}
       self._ctx = Context()
@@ -46,6 +44,8 @@ class Interpreter(InterpreterBase):
 
    def reboot(self, outStrm=None):
       """Reset the interpreter to a fresh global environment."""
+      if sys.getrecursionlimit() < 2000:
+         sys.setrecursionlimit(2000)
       self._env = Environment()
       install_primitives(self._env)
       # Populate the R7RS library registry from global env.  Must happen
