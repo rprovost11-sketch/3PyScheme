@@ -178,3 +178,52 @@
 
 >>> (let ((sct 42)) (scm sct))
 ==> 99
+
+;;; -------- internal define-syntax in lambda body (R7RS §5.3.2) --------
+
+;;; define-syntax is valid as an internal definition; it must be
+;;; visible for the rest of the body but must not leak out.
+
+>>> (define (ids-sq x)
+...   (define-syntax ids-square (syntax-rules () ((_ n) (* n n))))
+...   (ids-square x))
+==> #<void>
+
+>>> (ids-sq 7)
+==> 49
+
+;;; Interleaved with a define in the same body.
+>>> (define (ids-mixed x)
+...   (define y (* x 2))
+...   (define-syntax ids-add-y (syntax-rules () ((_ n) (+ n y))))
+...   (ids-add-y x))
+==> #<void>
+
+>>> (ids-mixed 3)
+==> 9
+
+;;; Inside a let body.
+>>> (let ()
+...   (define-syntax ids-times3 (syntax-rules () ((_ n) (* n 3))))
+...   (ids-times3 5))
+==> 15
+
+;;; -------- letrec-syntax mutual forward reference --------
+
+;;; All transformers in a letrec-syntax block must be mutually visible
+;;; in each other's def-env after the two-pass binding update.
+;;; The earlier-defined macro references the later-defined one.
+
+>>> (letrec-syntax
+...   ((lmfwd-a (syntax-rules () ((_) (lmfwd-b))))
+...    (lmfwd-b (syntax-rules () ((_) 42))))
+...   (lmfwd-a))
+==> 42
+
+;;; Reverse order: later-defined references earlier-defined (already
+;;; worked via scope-set lookup; still works after two-pass update).
+>>> (letrec-syntax
+...   ((lmrev-a (syntax-rules () ((_) 99)))
+...    (lmrev-b (syntax-rules () ((_) (lmrev-a)))))
+...   (lmrev-b))
+==> 99

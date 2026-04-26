@@ -254,6 +254,7 @@ def _expand_let_syntax(sexpr, is_letrec):
    if is_letrec:
       _runtime_env_ref[0] = child_env
    try:
+      bound_transformers = []
       cur = bindings
       while is_cons(cur):
          b = cur.car
@@ -270,7 +271,17 @@ def _expand_let_syntax(sexpr, is_letrec):
                src_of(tr_expr))
          t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), bname)
          child_env.bind(bname, t, as_symbol_scopes(bsym))
+         if is_letrec:
+            bound_transformers.append(t)
          cur = cur.cdr
+      # letrec-syntax two-pass: update every transformer's def_env to the
+      # final snapshot so all siblings are mutually visible (R7RS §4.3.1).
+      if is_letrec and bound_transformers:
+         final_env = _current_macro_env()
+         i = 0
+         while i < len(bound_transformers):
+            bound_transformers[i].def_env = dict(final_env)
+            i = i + 1
       # Now expand the body with the child env active (for both let and
       # letrec variants).  Add a fresh scope to the body so its identifiers
       # are distinguished from same-named identifiers at the use site.
@@ -340,22 +351,36 @@ def _is_head(form, name):
            and as_symbol(form.car) == name)
 
 
-def _collect_body_forms(body_cons):
-   """Walk a body cons chain.  Expand each form (except define-values,
-   which _expand_body intercepts so the formals can be hoisted as
-   letrec* bindings rather than buried inside a begin).  If the
-   expanded result is a (begin ...), splice its children into the
-   surrounding sequence.  Return a Python list of body forms."""
+def _collect_body_forms(body_cons, local_env_ref):
+   """Walk a body cons chain.  Expand each form (except define-values and
+   define-syntax, which _expand_body handles specially).  If the expanded
+   result is a (begin ...), splice its children into the surrounding sequence.
+   Return a Python list of body forms.
+
+   local_env_ref is a 1-element list.  Initially [None].  When the first
+   internal define-syntax is encountered a child env is created, installed
+   as the active macro env, and the outer env is saved in local_env_ref[0]
+   so _expand_body can restore it in its finally block."""
    out = []
    cur = body_cons
    while is_cons(cur):
       raw = cur.car
       if _is_head(raw, 'define-values'):
          out.append(raw)
+      elif _is_head(raw, 'define-syntax'):
+         # Internal syntax definition (R7RS §5.3.2): install in a local env
+         # that shadows the outer env for the rest of this body only.
+         if local_env_ref[0] is None:
+            from pyscheme.Environment import Environment
+            outer = _runtime_env_ref[0]
+            child = Environment(parent=outer) if outer is not None else Environment()
+            local_env_ref[0] = outer   # save outer for restore by _expand_body
+            _runtime_env_ref[0] = child
+         expand(raw)   # installs transformer in child env; returns VOID (discarded)
       else:
          form = expand(raw)
          if _is_head(form, 'begin'):
-            out.extend(_collect_body_forms(form.cdr))
+            out.extend(_collect_body_forms(form.cdr, local_env_ref))
          else:
             out.append(form)
       cur = cur.cdr
@@ -364,68 +389,74 @@ def _collect_body_forms(body_cons):
 
 def _expand_body(body_cons, src):
    """Expand a body, hoisting leading internal definitions into a letrec*.
-   Handles (define <sym> <init>) and (define-values <formals> <expr>);
-   returns a body cons chain ready to be placed where the original body
-   went.  No hoisting needed -> the body is returned without a wrapper."""
-   forms = _collect_body_forms(body_cons)
-   bindings = []
-   body_prefix = []
-   i = 0
-   while i < len(forms):
-      f = forms[i]
-      if _is_head(f, 'define'):
-         # Canonical (define <sym> <init>) after _expand_define.
-         if (not is_cons(f.cdr) or not is_symbol(f.cdr.car)
-               or not is_cons(f.cdr.cdr) or not is_nil(f.cdr.cdr.cdr)):
-            break
-         bindings.append((f.cdr.car, f.cdr.cdr.car, f.src))
-         i = i + 1
-         continue
-      if _is_head(f, 'define-values'):
-         if (not is_cons(f.cdr) or not is_cons(f.cdr.cdr)
-               or not is_nil(f.cdr.cdr.cdr)):
-            break
-         formals_sexpr = f.cdr.car
-         expr          = f.cdr.cdr.car
-         fixed, rest = _mv_collect_formals(formals_sexpr)
-         if fixed is None:
-            break
-         fsrc = f.src
-         k = 0
-         while k < len(fixed):
-            bindings.append((make_symbol(fixed[k], fsrc), VOID_VALUE, fsrc))
-            k = k + 1
-         if rest is not None:
-            bindings.append((make_symbol(rest, fsrc), VOID_VALUE, fsrc))
-         body_prefix.append(_dv_build_setter(fixed, rest, expand(expr), fsrc))
-         i = i + 1
-         continue
-      break
-   if not bindings:
-      result = NIL_VALUE
-      j = len(forms) - 1
+   Handles (define <sym> <init>), (define-values <formals> <expr>), and
+   (define-syntax <name> <transformer>); returns a body cons chain ready
+   to be placed where the original body went.  No hoisting needed -> the
+   body is returned without a wrapper."""
+   local_env_ref = [None]
+   try:
+      forms = _collect_body_forms(body_cons, local_env_ref)
+      bindings = []
+      body_prefix = []
+      i = 0
+      while i < len(forms):
+         f = forms[i]
+         if _is_head(f, 'define'):
+            # Canonical (define <sym> <init>) after _expand_define.
+            if (not is_cons(f.cdr) or not is_symbol(f.cdr.car)
+                  or not is_cons(f.cdr.cdr) or not is_nil(f.cdr.cdr.cdr)):
+               break
+            bindings.append((f.cdr.car, f.cdr.cdr.car, f.src))
+            i = i + 1
+            continue
+         if _is_head(f, 'define-values'):
+            if (not is_cons(f.cdr) or not is_cons(f.cdr.cdr)
+                  or not is_nil(f.cdr.cdr.cdr)):
+               break
+            formals_sexpr = f.cdr.car
+            expr          = f.cdr.cdr.car
+            fixed, rest = _mv_collect_formals(formals_sexpr)
+            if fixed is None:
+               break
+            fsrc = f.src
+            k = 0
+            while k < len(fixed):
+               bindings.append((make_symbol(fixed[k], fsrc), VOID_VALUE, fsrc))
+               k = k + 1
+            if rest is not None:
+               bindings.append((make_symbol(rest, fsrc), VOID_VALUE, fsrc))
+            body_prefix.append(_dv_build_setter(fixed, rest, expand(expr), fsrc))
+            i = i + 1
+            continue
+         break
+      if not bindings:
+         result = NIL_VALUE
+         j = len(forms) - 1
+         while j >= 0:
+            result = alloc_cons(forms[j], result, src)
+            j = j - 1
+         return result
+      rest_forms = body_prefix + forms[i:]
+      bindings_chain = NIL_VALUE
+      j = len(bindings) - 1
       while j >= 0:
-         result = alloc_cons(forms[j], result, src)
+         name_sym, init, fsrc = bindings[j]
+         pair = list_from_items([name_sym, init], fsrc)
+         bindings_chain = alloc_cons(pair, bindings_chain, src)
          j = j - 1
-      return result
-   rest_forms = body_prefix + forms[i:]
-   bindings_chain = NIL_VALUE
-   j = len(bindings) - 1
-   while j >= 0:
-      name_sym, init, fsrc = bindings[j]
-      pair = list_from_items([name_sym, init], fsrc)
-      bindings_chain = alloc_cons(pair, bindings_chain, src)
-      j = j - 1
-   rest_chain = NIL_VALUE
-   j = len(rest_forms) - 1
-   while j >= 0:
-      rest_chain = alloc_cons(rest_forms[j], rest_chain, src)
-      j = j - 1
-   letrec_sym = make_symbol('letrec*', src)
-   letrec_form = alloc_cons(letrec_sym,
-                            alloc_cons(bindings_chain, rest_chain, src),
-                            src)
-   return alloc_cons(letrec_form, NIL_VALUE, src)
+      rest_chain = NIL_VALUE
+      j = len(rest_forms) - 1
+      while j >= 0:
+         rest_chain = alloc_cons(rest_forms[j], rest_chain, src)
+         j = j - 1
+      letrec_sym = make_symbol('letrec*', src)
+      letrec_form = alloc_cons(letrec_sym,
+                               alloc_cons(bindings_chain, rest_chain, src),
+                               src)
+      return alloc_cons(letrec_form, NIL_VALUE, src)
+   finally:
+      if local_env_ref[0] is not None:
+         _runtime_env_ref[0] = local_env_ref[0]
 
 
 # ---- sugar handlers (each returns an S-expression) ----

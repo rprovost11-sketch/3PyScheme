@@ -277,3 +277,67 @@
 
 ;;; Shadowed 'then': pattern no longer matches; produces no-match error.
 ;;; (We just confirm the non-shadowed case matches correctly above.)
+
+;;; -------- _ and ... in literals list (R7RS §4.3.2 error) --------
+
+;;; R7RS says it is an error for _ or ... to appear in the literals list.
+;;; parse_syntax_rules must reject them.
+
+>>> (define-syntax bad-underscore (syntax-rules (_) ((_ x) x)))
+%%% line 1, col 46: syntax-rules: '_' cannot appear in literals list
+%%% (define-syntax bad-underscore (syntax-rules (_) ((_ x) x)))
+%%%                                              ^
+
+>>> (define-syntax bad-ellipsis (syntax-rules (...) ((_ x) x)))
+%%% line 1, col 44: syntax-rules: '...' cannot appear in literals list
+%%% (define-syntax bad-ellipsis (syntax-rules (...) ((_ x) x)))
+%%%                                            ^
+
+;;; Custom ellipsis identifier is also rejected if it appears in literals.
+>>> (define-syntax bad-custom-ell (syntax-rules ~~ (~~ ((_ x) x))))
+%%% line 1, col 49: syntax-rules: '~~' cannot appear in literals list
+%%% (define-syntax bad-custom-ell (syntax-rules ~~ (~~ ((_ x) x))))
+%%%                                                 ^
+
+;;; -------- (... template) ellipsis escape form (R7RS §4.3.2) --------
+
+;;; (... <tmpl>) expands <tmpl> treating the ellipsis as a literal datum,
+;;; not as an operator.  Primary use: meta-macros that generate syntax-rules
+;;; forms whose templates need literal ... symbols.
+
+;;; Simplest case: (... ...) in a template produces the symbol ...
+>>> (define-syntax esc-sym
+...   (syntax-rules ()
+...     ((_) '(... ...))))
+==> #<void>
+
+>>> (esc-sym)
+==> ...
+
+;;; A meta-macro that generates a list-collecting syntax-rules transformer.
+;;; The inner (... ...) tokens become literal ... in the generated syntax-rules.
+>>> (define-syntax def-collector
+...   (syntax-rules ()
+...     ((_ name)
+...      (define-syntax name
+...        (syntax-rules ()
+...          ((_ x (... ...)) (list x (... ...))))))))
+==> #<void>
+
+>>> (def-collector esc-collect)
+==> #<void>
+
+>>> (esc-collect 1 2 3)
+==> (1 2 3)
+
+>>> (esc-collect)
+==> ()
+
+;;; (... x) where x is a pvar: escape is a no-op when x has no inner ...
+>>> (define-syntax esc-pvar
+...   (syntax-rules ()
+...     ((_ x) (... x))))
+==> #<void>
+
+>>> (esc-pvar 42)
+==> 42

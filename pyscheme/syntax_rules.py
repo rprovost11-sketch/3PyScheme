@@ -426,6 +426,11 @@ def _instantiate(tmpl, match, ellipsis_sym, use_src):
          return symbol_flip_scope(tmpl, match.intro_scopes[s])
       return tmpl
    if is_cons(tmpl):
+      # R7RS §4.3.2 escape: (ellipsis inner) disables ellipsis inside inner.
+      # Expand inner substituting pvars normally but treating ... as a datum.
+      if (_is_ellipsis(tmpl.car, ellipsis_sym)
+            and is_cons(tmpl.cdr) and is_nil(tmpl.cdr.cdr)):
+         return _instantiate(tmpl.cdr.car, match, '\x00no-ellipsis\x00', use_src)
       return _instantiate_list(tmpl, match, ellipsis_sym, use_src)
    if is_vector(tmpl):
       return _instantiate_vector(as_vector_items(tmpl), match, ellipsis_sym, use_src)
@@ -631,7 +636,12 @@ def parse_syntax_rules(tail, def_env, name):
       if not is_symbol(cur.car):
          raise SchemeSyntaxError(
             'syntax-rules: literal must be a symbol', src_of(cur.car))
-      literals.append(as_symbol(cur.car))
+      lit_name = as_symbol(cur.car)
+      if lit_name == '_' or lit_name == ellipsis_sym:
+         raise SchemeSyntaxError(
+            "syntax-rules: '" + lit_name + "' cannot appear in literals list",
+            src_of(cur.car))
+      literals.append(lit_name)
       cur = cur.cdr
    # Capture definition-time scope_set for each literal (for free-identifier=?).
    # R7RS: a literal matches if the use-site identifier has the same name AND
