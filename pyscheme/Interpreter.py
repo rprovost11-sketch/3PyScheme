@@ -18,6 +18,7 @@ Public API:
 """
 
 import os
+import sys
 
 from pyscheme.Parser        import parse, SchemeSyntaxError
 from pyscheme.Expander      import expand
@@ -36,6 +37,8 @@ from pyscheme.Expander    import set_runtime_env
 
 class Interpreter(InterpreterBase):
    def __init__(self):
+      if sys.getrecursionlimit() < 2000:
+         sys.setrecursionlimit(2000)
       self._env = None
       self._static_env = {}
       self._ctx = Context()

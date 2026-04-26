@@ -32,10 +32,6 @@ Public API:
                        rewritten to core forms.
 """
 import os
-import sys
-
-if sys.getrecursionlimit() < 2000:
-   sys.setrecursionlimit(2000)
 
 from pyscheme.AST import (
    alloc_cons, NIL_VALUE, VOID_VALUE, list_from_items,
