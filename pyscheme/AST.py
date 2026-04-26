@@ -343,6 +343,20 @@ def add_scope_to_form(form, scope_id):
       if new_car is form.car and new_cdr is form.cdr:
          return form
       return alloc_cons(new_car, new_cdr, form.src)
+   if is_vector(form):
+      old_items = as_vector_items(form)
+      new_items = []
+      changed = False
+      i = 0
+      while i < len(old_items):
+         new_item = add_scope_to_form(old_items[i], scope_id)
+         new_items.append(new_item)
+         if new_item is not old_items[i]:
+            changed = True
+         i = i + 1
+      if not changed:
+         return form
+      return make_vector(new_items)
    return form
 
 

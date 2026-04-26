@@ -67,7 +67,7 @@ from pyscheme.AST import (
    as_integer, as_real, as_string, as_character, as_boolean, as_symbol,
    as_rational_num, as_rational_den,
    make_integer, make_real, make_rational, make_string, make_character,
-   make_boolean, make_symbol,
+   make_boolean, make_symbol, make_vector,
    REAL, RATIONAL, INTEGER, CHARACTER, BOOLEAN, STRING, SYMBOL, NIL,
 )
 from pyscheme.Environment import _PositionedSchemeError
@@ -77,6 +77,7 @@ from pyscheme.Environment import _PositionedSchemeError
 
 TOK_LPAREN            = 'LPAREN'
 TOK_RPAREN            = 'RPAREN'
+TOK_VECTOR_LPAREN     = 'VECTOR_LPAREN'
 TOK_QUOTE             = 'QUOTE'
 TOK_QUASIQUOTE        = 'QUASIQUOTE'
 TOK_UNQUOTE           = 'UNQUOTE'
@@ -125,6 +126,7 @@ _TOKEN_RE = re.compile(r'''
     | (?P<QUOTE>')
     | (?P<DOT>\.(?=[\s()'"`,;]|$))                                         # lone . is the dotted-pair marker
     | (?P<STRING>"(?:[^"\\]|\\.)*")
+    | (?P<VECTOR_LPAREN>\#\()
     | (?P<CHAR>\#\\(?:[a-zA-Z]+|.))
     | (?P<TRUE>\#t(?:rue)?)
     | (?P<FALSE>\#f(?:alse)?)
@@ -218,6 +220,8 @@ def _build_token(kind, text, src):
       return Token(TOK_LPAREN, '(', src)
    if kind == 'RPAREN':
       return Token(TOK_RPAREN, ')', src)
+   if kind == 'VECTOR_LPAREN':
+      return Token(TOK_VECTOR_LPAREN, '#(', src)
    if kind == 'QUOTE':
       return Token(TOK_QUOTE, "'", src)
    if kind == 'QUASIQUOTE':
@@ -346,6 +350,8 @@ class Parser:
          return make_symbol(tok.value, tok.src)
       if kind == TOK_LPAREN:
          return self._read_list()
+      if kind == TOK_VECTOR_LPAREN:
+         return self._read_vector()
       if kind == TOK_QUOTE:
          quote_tok = self._advance()
          datum     = self.parse_expr()
@@ -377,6 +383,18 @@ class Parser:
       if kind == TOK_EOF:
          raise SchemeSyntaxError("unexpected end of input", tok.src)
       raise SchemeSyntaxError("unexpected token %s" % kind, tok.src)
+
+   def _read_vector(self):
+      vec_tok = self._advance()   # consume '#('
+      items = []
+      while True:
+         tok = self._peek()
+         if tok.kind == TOK_RPAREN:
+            self._advance()
+            return make_vector(items)
+         if tok.kind == TOK_EOF:
+            raise SchemeSyntaxError('unterminated vector literal', vec_tok.src)
+         items.append(self.parse_expr())
 
    def _read_list(self):
       lparen = self._advance()   # consume '('

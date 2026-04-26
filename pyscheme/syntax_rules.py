@@ -18,9 +18,10 @@ Full syntactic-closure hygiene is a documented follow-up limitation.
 
 from pyscheme.AST import (
    is_cons, is_nil, is_symbol, is_string, is_integer, is_real, is_boolean,
-   is_character,
+   is_character, is_vector,
    as_symbol, as_string, as_integer, as_real, as_boolean, as_character,
-   alloc_cons, make_symbol, list_from_items, src_of, eqv_atom,
+   as_vector_items,
+   alloc_cons, make_symbol, make_vector, list_from_items, src_of, eqv_atom,
    make_syntax_transformer, is_syntax_transformer,
    NIL_VALUE, SYMBOL,
    new_scope, symbol_flip_scope, add_scope_to_form,
@@ -99,6 +100,9 @@ def collect_pvars(pat, literals, ellipsis_sym, out):
    if is_cons(pat):
       collect_pvars(pat.car, literals, ellipsis_sym, out)
       collect_pvars(pat.cdr, literals, ellipsis_sym, out)
+   if is_vector(pat):
+      for item in as_vector_items(pat):
+         collect_pvars(item, literals, ellipsis_sym, out)
 
 
 def collect_pvars_with_depth(pat, literals, ellipsis_sym, out, depth):
@@ -128,6 +132,20 @@ def collect_pvars_with_depth(pat, literals, ellipsis_sym, out, depth):
             cur = rest
       if not is_nil(cur):
          collect_pvars_with_depth(cur, literals, ellipsis_sym, out, depth)
+   if is_vector(pat):
+      items = as_vector_items(pat)
+      i = 0
+      n = len(items)
+      while i < n:
+         has_ell = (i + 1 < n
+                    and is_symbol(items[i + 1])
+                    and as_symbol(items[i + 1]) == ellipsis_sym)
+         if has_ell:
+            collect_pvars_with_depth(items[i], literals, ellipsis_sym, out, depth + 1)
+            i = i + 2
+         else:
+            collect_pvars_with_depth(items[i], literals, ellipsis_sym, out, depth)
+            i = i + 1
 
 
 # ── Free-identifier collector ──────────────────────────────────────────────
@@ -156,6 +174,9 @@ def collect_free_ids(tmpl, pvars, literals, ellipsis_sym, out):
          return
       collect_free_ids(tmpl.car, pvars, literals, ellipsis_sym, out)
       collect_free_ids(tmpl.cdr, pvars, literals, ellipsis_sym, out)
+   if is_vector(tmpl):
+      for item in as_vector_items(tmpl):
+         collect_free_ids(item, pvars, literals, ellipsis_sym, out)
 
 
 # ── Pattern matching ────────────────────────────────────────────────────────
@@ -181,6 +202,17 @@ def _datum_equal(a, b):
       return _datum_equal(a.cdr, b.cdr)
    if is_nil(a) and is_nil(b):
       return True
+   if is_vector(a) and is_vector(b):
+      ia = as_vector_items(a)
+      ib = as_vector_items(b)
+      if len(ia) != len(ib):
+         return False
+      i = 0
+      while i < len(ia):
+         if not _datum_equal(ia[i], ib[i]):
+            return False
+         i = i + 1
+      return True
    return False
 
 
@@ -202,6 +234,11 @@ def _match_pattern(pat, form, literals, ellipsis_sym, out):
       return True
    if is_cons(pat):
       return _match_list_pattern(pat, form, literals, ellipsis_sym, out)
+   if is_vector(pat):
+      if not is_vector(form):
+         return False
+      return _match_vector_pattern(as_vector_items(pat), as_vector_items(form),
+                                   literals, ellipsis_sym, out)
    if is_nil(pat):
       return is_nil(form)
    # Literal datum (number, string, etc.).
@@ -278,6 +315,51 @@ def _match_list_pattern(pat_list, form_list, literals, ellipsis_sym, out):
    return False
 
 
+def _match_vector_pattern(pat_items, form_items, literals, ellipsis_sym, out):
+   """Match a vector pattern (Python list) against a vector form (Python list).
+   Supports ellipsis and tail patterns identically to _match_list_pattern."""
+   i = 0
+   j = 0
+   n_pat  = len(pat_items)
+   n_form = len(form_items)
+   while i < n_pat:
+      pat_elem = pat_items[i]
+      has_ell  = (i + 1 < n_pat
+                  and _is_ellipsis(pat_items[i + 1], ellipsis_sym))
+      if has_ell:
+         suffix_count = n_pat - (i + 2)
+         available    = n_form - j
+         if available < suffix_count:
+            return False
+         n_ellipsis = available - suffix_count
+         pvar_depths = {}
+         collect_pvars_with_depth(pat_elem, literals, ellipsis_sym, pvar_depths, 0)
+         for pv in pvar_depths:
+            out.ellipsis[pv]  = []
+            out.ell_depth[pv] = pvar_depths[pv] + 1
+         k = 0
+         while k < n_ellipsis:
+            sub = _SyntaxMatch()
+            if not _match_pattern(pat_elem, form_items[j + k],
+                                   literals, ellipsis_sym, sub):
+               return False
+            for key in sub.scalars:
+               out.ellipsis[key].append(sub.scalars[key])
+            for key in sub.ellipsis:
+               out.ellipsis[key].append(sub.ellipsis[key])
+            k = k + 1
+         j = j + n_ellipsis
+         i = i + 2
+         continue
+      if j >= n_form:
+         return False
+      if not _match_pattern(pat_elem, form_items[j], literals, ellipsis_sym, out):
+         return False
+      i = i + 1
+      j = j + 1
+   return j == n_form
+
+
 # ── Template instantiation ──────────────────────────────────────────────────
 
 def _collect_ell_refs(tmpl, match, out):
@@ -291,6 +373,9 @@ def _collect_ell_refs(tmpl, match, out):
    if is_cons(tmpl):
       _collect_ell_refs(tmpl.car, match, out)
       _collect_ell_refs(tmpl.cdr, match, out)
+   if is_vector(tmpl):
+      for item in as_vector_items(tmpl):
+         _collect_ell_refs(item, match, out)
 
 
 def _instantiate(tmpl, match, ellipsis_sym, use_src):
@@ -307,7 +392,59 @@ def _instantiate(tmpl, match, ellipsis_sym, use_src):
       return tmpl
    if is_cons(tmpl):
       return _instantiate_list(tmpl, match, ellipsis_sym, use_src)
+   if is_vector(tmpl):
+      return _instantiate_vector(as_vector_items(tmpl), match, ellipsis_sym, use_src)
    return tmpl
+
+
+def _instantiate_vector(tmpl_items, match, ellipsis_sym, use_src):
+   """Instantiate a vector template; returns a fresh vector value."""
+   output = []
+   i = 0
+   n = len(tmpl_items)
+   while i < n:
+      elem    = tmpl_items[i]
+      has_ell = (i + 1 < n
+                 and _is_ellipsis(tmpl_items[i + 1], ellipsis_sym))
+      if has_ell:
+         ell_syms = []
+         _collect_ell_refs(elem, match, ell_syms)
+         if ell_syms:
+            count = len(match.ellipsis[ell_syms[0]])
+            k = 0
+            while k < count:
+               sub = _SyntaxMatch()
+               for key in match.scalars:
+                  sub.scalars[key] = match.scalars[key]
+               for key in match.renames:
+                  sub.renames[key] = match.renames[key]
+               for key in match.intro_scopes:
+                  sub.intro_scopes[key] = match.intro_scopes[key]
+               for key in match.ellipsis:
+                  sub.ellipsis[key]  = match.ellipsis[key]
+                  sub.ell_depth[key] = match.ell_depth.get(key, 0)
+               j = 0
+               while j < len(ell_syms):
+                  sv     = ell_syms[j]
+                  d      = match.ell_depth[sv]
+                  peeled = match.ellipsis[sv][k]
+                  if d == 1:
+                     sub.scalars[sv] = peeled
+                     if sv in sub.ellipsis:
+                        del sub.ellipsis[sv]
+                     if sv in sub.ell_depth:
+                        del sub.ell_depth[sv]
+                  else:
+                     sub.ellipsis[sv]  = peeled
+                     sub.ell_depth[sv] = d - 1
+                  j = j + 1
+               output.append(_instantiate(elem, sub, ellipsis_sym, use_src))
+               k = k + 1
+         i = i + 2
+         continue
+      output.append(_instantiate(elem, match, ellipsis_sym, use_src))
+      i = i + 1
+   return make_vector(output)
 
 
 def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src):

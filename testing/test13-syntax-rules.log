@@ -1,0 +1,192 @@
+;;; ============================================================
+;;; test13-syntax-rules.log
+;;; R7RS syntax-rules completeness: _, tail patterns, custom
+;;; ellipsis, and vector patterns (pattern and template).
+;;; ============================================================
+
+;;; -------- _ wildcard --------
+
+;;; _ matches any subform without binding a pattern variable.
+
+>>> (define-syntax sr-fst (syntax-rules () ((_ a _) a)))
+==> #<void>
+
+>>> (sr-fst 1 99)
+==> 1
+
+>>> (define-syntax sr-snd (syntax-rules () ((_ _ b) b)))
+==> #<void>
+
+>>> (sr-snd 99 2)
+==> 2
+
+;;; _ in a nested position.
+>>> (define-syntax sr-cadr (syntax-rules () ((_ (_ b . _)) b)))
+==> #<void>
+
+>>> (sr-cadr (0 42 99 100))
+==> 42
+
+;;; Multiple _ in one pattern - each is independent.
+>>> (define-syntax sr-mid (syntax-rules () ((_ _ b _) b)))
+==> #<void>
+
+>>> (sr-mid 1 2 3)
+==> 2
+
+;;; -------- Tail patterns after ellipsis --------
+
+;;; R7RS 4.3.2: fixed patterns may appear after an ellipsis subpattern
+;;; in the same list.  The ellipsis grabs as many elements as possible
+;;; leaving enough for the suffix patterns.
+
+>>> (define-syntax sr-last (syntax-rules () ((_ _ ... x) x)))
+==> #<void>
+
+>>> (sr-last 1 2 3)
+==> 3
+
+>>> (sr-last 42)
+==> 42
+
+;;; Prefix and suffix both present.
+>>> (define-syntax sr-wrap (syntax-rules ()
+...   ((_ first mid ... last) (list first last (list mid ...)))))
+==> #<void>
+
+>>> (sr-wrap 1 2 3 4)
+==> (1 4 (2 3))
+
+>>> (sr-wrap 1 2)
+==> (1 2 ())
+
+;;; Two fixed suffix elements.
+>>> (define-syntax sr-drop-last2 (syntax-rules ()
+...   ((_ x ... _ _) (list x ...))))
+==> #<void>
+
+>>> (sr-drop-last2 1 2 3 4 5)
+==> (1 2 3)
+
+;;; -------- Custom ellipsis identifier --------
+
+;;; (syntax-rules <ellipsis-id> (literals) rules...) uses a custom
+;;; identifier in place of the default ... .
+
+>>> (define-syntax sr-mylist
+...   (syntax-rules :::
+...     ()
+...     ((_ x :::) (list x :::))))
+==> #<void>
+
+>>> (sr-mylist 1 2 3)
+==> (1 2 3)
+
+>>> (sr-mylist)
+==> ()
+
+;;; Custom ellipsis with literal and suffix.
+>>> (define-syntax sr-myappend
+...   (syntax-rules ~~
+...     ()
+...     ((_ x ~~ last) (append (list x ~~) (list last)))))
+==> #<void>
+
+>>> (sr-myappend 1 2 3 99)
+==> (1 2 3 99)
+
+;;; -------- Vector patterns --------
+
+;;; --- fixed-length vector pattern ---
+
+>>> (define-syntax vp-fst (syntax-rules () ((_ #(a b)) a)))
+==> #<void>
+
+>>> (vp-fst #(10 20))
+==> 10
+
+>>> (define-syntax vp-snd (syntax-rules () ((_ #(a b)) b)))
+==> #<void>
+
+>>> (vp-snd #(10 20))
+==> 20
+
+;;; --- vector pattern with ellipsis ---
+
+>>> (define-syntax vp->list (syntax-rules () ((_ #(x ...)) (list x ...))))
+==> #<void>
+
+>>> (vp->list #(1 2 3))
+==> (1 2 3)
+
+>>> (vp->list #())
+==> ()
+
+;;; --- vector template ---
+
+>>> (define-syntax vp-make (syntax-rules () ((_ a b c) #(a b c))))
+==> #<void>
+
+>>> (vp-make 1 2 3)
+==> #(1 2 3)
+
+;;; --- vector template with ellipsis ---
+
+>>> (define-syntax vp-list->vec (syntax-rules () ((_ x ...) (vector x ...))))
+==> #<void>
+
+>>> (vp-list->vec 4 5 6)
+==> #(4 5 6)
+
+>>> (vp-list->vec)
+==> #()
+
+;;; --- tail pattern inside a vector ---
+
+>>> (define-syntax vp-last (syntax-rules () ((_ #(_ ... z)) z)))
+==> #<void>
+
+>>> (vp-last #(1 2 3))
+==> 3
+
+>>> (vp-last #(99))
+==> 99
+
+;;; --- literal vector in pattern ---
+
+>>> (define-syntax vp-is12 (syntax-rules ()
+...   ((_ #(1 2)) #t)
+...   ((_ _)      #f)))
+==> #<void>
+
+>>> (vp-is12 #(1 2))
+==> #t
+
+>>> (vp-is12 #(1 3))
+==> #f
+
+>>> (vp-is12 #(1 2 3))
+==> #f
+
+;;; --- vector pattern does not match a list ---
+
+>>> (vp-is12 (1 2))
+==> #f
+
+;;; --- nested vector inside a list pattern ---
+
+>>> (define-syntax vp-nested (syntax-rules ()
+...   ((_ x #(a b) y) (list x a b y))))
+==> #<void>
+
+>>> (vp-nested 0 #(1 2) 3)
+==> (0 1 2 3)
+
+;;; --- vector with hygiene: introduced binding does not capture pvar ---
+
+>>> (define-syntax vp-hyg (syntax-rules ()
+...   ((_ #(x y)) (let ((vt 99)) (+ x y)))))
+==> #<void>
+
+>>> (let ((vt 1)) (vp-hyg #(10 20)))
+==> 30
