@@ -32,6 +32,10 @@ Public API:
                        rewritten to core forms.
 """
 import os
+import sys
+
+if sys.getrecursionlimit() < 2000:
+   sys.setrecursionlimit(2000)
 
 from pyscheme.AST import (
    alloc_cons, NIL_VALUE, VOID_VALUE, list_from_items,
@@ -76,7 +80,7 @@ _MAX_EXPAND_ITER = 200
 # argument).  _expand_list calls expand() recursively for each sub-form, so
 # depth grows with the form tree plus any macro recursion.  500 is generous for
 # normal code but catches runaway cross-call recursion before Python's own limit.
-_MAX_EXPAND_DEPTH = 150
+_MAX_EXPAND_DEPTH = 500
 _expand_depth = [0]
 
 
