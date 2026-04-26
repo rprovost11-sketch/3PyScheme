@@ -5,6 +5,8 @@ The set here covers R7RS 6.2 / 6.3 / 6.4 / 6.7 type predicates plus
 the small-integer numeric predicates (zero?, positive?, ...).
 """
 
+import math as _math
+
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
    is_integer, is_real, is_rational, is_complex,
@@ -96,6 +98,36 @@ def _prim_odd_p(ctx, env, args, app_node):
    return make_boolean(_int_or_error(args[0], 'odd?', app_node) % 2 != 0)
 
 
+def _prim_finite_p(ctx, env, args, app_node):
+   v = args[0]
+   if is_integer(v) or is_rational(v):
+      return make_boolean(True)
+   if is_real(v):
+      f = as_real(v)
+      return make_boolean(_math.isfinite(f))
+   raise SchemeTypeError('finite?: argument must be a number', app_node)
+
+
+def _prim_infinite_p(ctx, env, args, app_node):
+   v = args[0]
+   if is_integer(v) or is_rational(v):
+      return make_boolean(False)
+   if is_real(v):
+      f = as_real(v)
+      return make_boolean(_math.isinf(f))
+   raise SchemeTypeError('infinite?: argument must be a number', app_node)
+
+
+def _prim_nan_p(ctx, env, args, app_node):
+   v = args[0]
+   if is_integer(v) or is_rational(v):
+      return make_boolean(False)
+   if is_real(v):
+      f = as_real(v)
+      return make_boolean(_math.isnan(f))
+   raise SchemeTypeError('nan?: argument must be a number', app_node)
+
+
 def _prim_boolean_p(ctx, env, args, app_node):
    return make_boolean(is_boolean(args[0]))
 
@@ -181,4 +213,13 @@ def register():
       category=CATEGORY)
    register_primitive('error-object?', (1, 1), _prim_error_object_p,
       doc='Return #t if a is an error object (produced by the error primitive).',
+      category=CATEGORY)
+   register_primitive('finite?', (1, 1), _prim_finite_p,
+      doc='Return #t if z is a finite number (not +inf.0, -inf.0, or +nan.0).',
+      category=CATEGORY)
+   register_primitive('infinite?', (1, 1), _prim_infinite_p,
+      doc='Return #t if z is a real infinity (+inf.0 or -inf.0).',
+      category=CATEGORY)
+   register_primitive('nan?', (1, 1), _prim_nan_p,
+      doc='Return #t if z is +nan.0.',
       category=CATEGORY)

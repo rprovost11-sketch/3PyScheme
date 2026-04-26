@@ -18,6 +18,8 @@ Atoms are tagged tuples; pairs are ConsCell instances.
     (NIL,)                          ->  "()"
     ConsCell(car, cdr, src)         ->  "(a b c)" or "(a . b)"
 """
+import math as _math
+
 from pyscheme.AST import (
    is_cons, is_nil, is_void, is_boolean, is_integer, is_real, is_rational,
    is_complex, is_character, is_string, is_symbol, is_closure, is_primitive,
@@ -59,8 +61,15 @@ def pretty_print(val):
    if is_integer(val):
       return str(as_integer(val))
    if is_real(val):
-      s = repr(as_real(val))
-      if '.' not in s and 'e' not in s and 'n' not in s:
+      f = as_real(val)
+      if _math.isnan(f):
+         return '+nan.0'
+      if f == float('inf'):
+         return '+inf.0'
+      if f == float('-inf'):
+         return '-inf.0'
+      s = repr(f)
+      if '.' not in s and 'e' not in s:
          s = s + '.0'
       return s
    if is_rational(val):

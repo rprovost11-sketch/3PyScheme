@@ -66,7 +66,7 @@ from pyscheme.AST import (
    is_boolean, is_symbol,
    as_integer, as_real, as_string, as_character, as_boolean, as_symbol,
    as_rational_num, as_rational_den,
-   make_integer, make_real, make_rational, make_string, make_character,
+   make_integer, make_real, make_rational, make_complex, make_string, make_character,
    make_boolean, make_symbol, make_vector,
    REAL, RATIONAL, INTEGER, CHARACTER, BOOLEAN, STRING, SYMBOL, NIL,
 )
@@ -86,6 +86,7 @@ TOK_DOT               = 'DOT'
 TOK_INT               = 'INT'
 TOK_REAL              = 'REAL'
 TOK_RATIONAL          = 'RATIONAL'
+TOK_COMPLEX           = 'COMPLEX'
 TOK_STRING            = 'STRING'
 TOK_CHAR              = 'CHAR'
 TOK_BOOL              = 'BOOL'
@@ -250,8 +251,21 @@ def _build_token(kind, text, src):
       parts = text.split('/')
       return Token(TOK_RATIONAL, (int(parts[0]), int(parts[1])), src)
    if kind == 'IDENT':
+      if text == '+inf.0':
+         return Token(TOK_REAL, float('inf'), src)
+      if text == '-inf.0':
+         return Token(TOK_REAL, float('-inf'), src)
+      if text == '+nan.0':
+         return Token(TOK_REAL, float('nan'), src)
       if text.startswith('#'):
+         tok = _try_parse_prefixed_number(text, src)
+         if tok is not None:
+            return tok
          raise SchemeSyntaxError("unknown #-syntax: %r" % text, src)
+      if text.endswith('i') and len(text) >= 2:
+         tok = _try_parse_complex_literal(text, src)
+         if tok is not None:
+            return tok
       if _starts_like_number(text):
          raise SchemeSyntaxError(
             "malformed number or identifier: %r" % text, src)
@@ -269,6 +283,16 @@ def _starts_like_number(s):
    if s[0] == '.' and len(s) > 1 and s[1].isdigit():
       return True
    return False
+
+
+def _try_parse_prefixed_number(text, src):
+   """Parse #b/#o/#d/#x/#e/#i prefix forms.  Stub; full impl in Phase 2."""
+   return None
+
+
+def _try_parse_complex_literal(text, src):
+   """Parse a+bi / a-bi / +bi / -bi / +i / -i complex literals.  Stub; full impl in Phase 2."""
+   return None
 
 
 def _decode_string_escapes(raw, src):
@@ -336,6 +360,9 @@ class Parser:
       if kind == TOK_RATIONAL:
          self._advance()
          return make_rational(tok.value[0], tok.value[1], tok.src)
+      if kind == TOK_COMPLEX:
+         self._advance()
+         return make_complex(tok.value[0], tok.value[1], tok.src)
       if kind == TOK_STRING:
          self._advance()
          return make_string(tok.value, tok.src)

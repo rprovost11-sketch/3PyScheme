@@ -85,24 +85,30 @@ def _prim_mul(ctx, env, args, app_node):
 
 
 def _exact_div(a, b):
-   """Divide two numbers.  If both are int and the result is exact,
-   return an int; otherwise return a float.  Callers ensure b != 0."""
+   """Divide two numbers.  Exact integer / exact integer -> int when evenly
+   divisible, otherwise float.  Float zero divisor -> ±inf per R7RS."""
    if isinstance(a, int) and isinstance(b, int) and a % b == 0:
       return a // b
-   return a / b
+   fa = float(a)
+   fb = float(b)
+   if fb == 0.0:
+      if math.isnan(fa) or fa == 0.0:
+         return float('nan')
+      return math.copysign(float('inf'), fa)
+   return fa / fb
 
 
 def _prim_div(ctx, env, args, app_node):
    if len(args) == 1:
       n = _num(args[0], '/', app_node, 1)
-      if n == 0:
+      if isinstance(n, int) and n == 0:
          raise SchemeTypeError('/: division by zero', app_node)
       return _wrap(_exact_div(1, n))
    result = _num(args[0], '/', app_node, 1)
    i = 1
    while i < len(args):
       divisor = _num(args[i], '/', app_node, i + 1)
-      if divisor == 0:
+      if isinstance(divisor, int) and divisor == 0:
          raise SchemeTypeError('/: division by zero', app_node)
       result = _exact_div(result, divisor)
       i = i + 1
@@ -232,29 +238,37 @@ def _prim_floor(ctx, env, args, app_node):
    v = _num(args[0], 'floor', app_node, 1)
    if isinstance(v, int):
       return make_integer(v)
-   return make_real(math.floor(v))
+   if not math.isfinite(v):
+      return make_real(v)
+   return make_real(float(math.floor(v)))
 
 
 def _prim_ceiling(ctx, env, args, app_node):
    v = _num(args[0], 'ceiling', app_node, 1)
    if isinstance(v, int):
       return make_integer(v)
-   return make_real(math.ceil(v))
+   if not math.isfinite(v):
+      return make_real(v)
+   return make_real(float(math.ceil(v)))
 
 
 def _prim_truncate(ctx, env, args, app_node):
    v = _num(args[0], 'truncate', app_node, 1)
    if isinstance(v, int):
       return make_integer(v)
-   return make_real(math.trunc(v))
+   if not math.isfinite(v):
+      return make_real(v)
+   return make_real(float(math.trunc(v)))
 
 
 def _prim_round(ctx, env, args, app_node):
    v = _num(args[0], 'round', app_node, 1)
    if isinstance(v, int):
       return make_integer(v)
+   if not math.isfinite(v):
+      return make_real(v)
    # R7RS specifies banker's rounding (round half to even); Python's round() does this.
-   return make_real(round(v))
+   return make_real(float(round(v)))
 
 
 def _prim_exact_p(ctx, env, args, app_node):
@@ -467,11 +481,83 @@ def _prim_string_to_number(ctx, env, args, app_node):
    except (ValueError, TypeError):
       pass
    if radix == 10:
+      if s == '+inf.0':
+         return make_real(float('inf'))
+      if s == '-inf.0':
+         return make_real(float('-inf'))
+      if s == '+nan.0':
+         return make_real(float('nan'))
       try:
          return make_real(float(s))
       except (ValueError, TypeError):
          pass
    return make_boolean(False)
+
+
+def _prim_exp(ctx, env, args, app_node):
+   v = _num(args[0], 'exp', app_node, 1)
+   try:
+      return make_real(math.exp(float(v)))
+   except OverflowError:
+      return make_real(float('inf'))
+
+
+def _prim_log(ctx, env, args, app_node):
+   v = _num(args[0], 'log', app_node, 1)
+   f = float(v)
+   if f == 0.0:
+      r = float('-inf')
+   elif f < 0.0:
+      r = float('nan')
+   else:
+      r = math.log(f)
+   if len(args) >= 2:
+      base = _num(args[1], 'log', app_node, 2)
+      b = float(base)
+      if b == 0.0 or b < 0.0:
+         r = float('nan')
+      else:
+         r = r / math.log(b)
+   return make_real(r)
+
+
+def _prim_sin(ctx, env, args, app_node):
+   v = _num(args[0], 'sin', app_node, 1)
+   return make_real(math.sin(float(v)))
+
+
+def _prim_cos(ctx, env, args, app_node):
+   v = _num(args[0], 'cos', app_node, 1)
+   return make_real(math.cos(float(v)))
+
+
+def _prim_tan(ctx, env, args, app_node):
+   v = _num(args[0], 'tan', app_node, 1)
+   return make_real(math.tan(float(v)))
+
+
+def _prim_asin(ctx, env, args, app_node):
+   v = _num(args[0], 'asin', app_node, 1)
+   f = float(v)
+   if f < -1.0 or f > 1.0:
+      return make_real(float('nan'))
+   return make_real(math.asin(f))
+
+
+def _prim_acos(ctx, env, args, app_node):
+   v = _num(args[0], 'acos', app_node, 1)
+   f = float(v)
+   if f < -1.0 or f > 1.0:
+      return make_real(float('nan'))
+   return make_real(math.acos(f))
+
+
+def _prim_atan(ctx, env, args, app_node):
+   v = _num(args[0], 'atan', app_node, 1)
+   if len(args) >= 2:
+      v2 = _num(args[1], 'atan', app_node, 2)
+      return make_real(math.atan2(float(v), float(v2)))
+   return make_real(math.atan(float(v)))
 
 
 def register():
@@ -611,4 +697,31 @@ def register():
    register_primitive('features', (0, 0), _prim_features,
       doc=('Return a list of feature identifiers supported by this '
            'implementation.  R7RS 5.6.2.'),
+      category=CATEGORY)
+   register_primitive('exp', (1, 1), _prim_exp,
+      doc='Return e raised to the power z.  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('log', (1, 2), _prim_log,
+      doc=('(log z) returns the natural log.  (log z w) returns log base w.\n'
+           '(log 0) returns -inf.0.  Negative real inputs return +nan.0 in '
+           'the real-only tower.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('sin', (1, 1), _prim_sin,
+      doc='Return the sine of z (radians).  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('cos', (1, 1), _prim_cos,
+      doc='Return the cosine of z (radians).  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('tan', (1, 1), _prim_tan,
+      doc='Return the tangent of z (radians).  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('asin', (1, 1), _prim_asin,
+      doc='Return the arcsine of z in radians.  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('acos', (1, 1), _prim_acos,
+      doc='Return the arccosine of z in radians.  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('atan', (1, 2), _prim_atan,
+      doc=('(atan z) returns the arctangent.  (atan y x) returns atan2(y,x).\n'
+           'R7RS 6.2.6.'),
       category=CATEGORY)
