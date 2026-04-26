@@ -39,6 +39,7 @@ from pyscheme.AST import (
    as_symbol, as_string, src_of,
    make_symbol, ConsCell, REPL_FILENAME,
    SYMBOL, VOID,
+   new_scope, symbol_add_scope,
 )
 from pyscheme.syntax_rules import hygiene_gensym
 
@@ -50,6 +51,24 @@ from pyscheme.syntax_rules import hygiene_gensym
 # letrec-syntax temporarily swap this to a child env for their body.
 # None when no interpreter has wired us up yet.
 _runtime_env_ref = [None]
+
+
+# ---- sets-of-scopes: form walker ------------------------------------------
+
+def _add_scope_to_form(form, scope_id):
+   """Return form with scope_id added to every symbol atom (recursive).
+   Skips the contents of (quote ...) since those are data, not code."""
+   if is_symbol(form):
+      return symbol_add_scope(form, scope_id)
+   if is_cons(form):
+      if is_symbol(form.car) and as_symbol(form.car) == 'quote':
+         return form
+      new_car = _add_scope_to_form(form.car, scope_id)
+      new_cdr = _add_scope_to_form(form.cdr, scope_id)
+      if new_car is form.car and new_cdr is form.cdr:
+         return form
+      return alloc_cons(new_car, new_cdr, form.src)
+   return form
 
 
 def set_runtime_env(env):
@@ -218,18 +237,20 @@ def _expand_let_syntax(sexpr, is_letrec):
          child_env.bind(bname, t)
          cur = cur.cdr
       # Now expand the body with the child env active (for both let and
-      # letrec variants).
+      # letrec variants).  Add a fresh scope to the body so its identifiers
+      # are distinguished from same-named identifiers at the use site.
       _runtime_env_ref[0] = child_env
       src = sexpr.src
+      sc = new_scope()
       if is_cons(body.cdr):
          body_items = [make_symbol('begin', src)]
          bcur = body
          while is_cons(bcur):
-            body_items.append(bcur.car)
+            body_items.append(_add_scope_to_form(bcur.car, sc))
             bcur = bcur.cdr
          wrapped = list_from_items(body_items, src)
       else:
-         wrapped = body.car
+         wrapped = _add_scope_to_form(body.car, sc)
       return expand(wrapped)
    finally:
       _runtime_env_ref[0] = outer_env
@@ -433,12 +454,16 @@ def _expand_let_family(sexpr, head_name):
       return _expand_list(sexpr)
    if is_nil(body_cons):
       return _expand_list(sexpr)
-   new_bindings = _expand_let_bindings(bindings_form, src)
+   sc = new_scope()
+   scoped_bindings = _add_scope_to_form(bindings_form, sc)
+   scoped_body     = _add_scope_to_form(body_cons, sc)
+   new_bindings = _expand_let_bindings(scoped_bindings, src)
    if new_bindings is None:
       return _expand_list(sexpr)
-   expanded_body = _expand_body(body_cons, src)
+   expanded_body = _expand_body(scoped_body, src)
    if named_name is not None:
-      tail = alloc_cons(named_name,
+      scoped_loop_name = symbol_add_scope(named_name, sc)
+      tail = alloc_cons(scoped_loop_name,
                 alloc_cons(new_bindings, expanded_body, src),
                 src)
    else:
@@ -502,10 +527,13 @@ def _expand_lambda(sexpr):
    if is_nil(body):
       return _expand_list(sexpr)
    src = sexpr.src
-   expanded_body = _expand_body(body, src)
+   sc = new_scope()
+   scoped_formals = _add_scope_to_form(formals, sc)
+   scoped_body    = _add_scope_to_form(body, sc)
+   expanded_body = _expand_body(scoped_body, src)
    lambda_sym = make_symbol('lambda', src)
    return alloc_cons(lambda_sym,
-                     alloc_cons(formals, expanded_body, src),
+                     alloc_cons(scoped_formals, expanded_body, src),
                      src)
 
 
@@ -549,9 +577,12 @@ def _expand_case_lambda(sexpr):
          return _expand_list(sexpr)
       formals = clause.car
       body    = clause.cdr
-      expanded_body = _expand_body(body, clause.src)
+      sc = new_scope()
+      scoped_formals = _add_scope_to_form(formals, sc)
+      scoped_body    = _add_scope_to_form(body, sc)
+      expanded_body = _expand_body(scoped_body, clause.src)
       expanded_clauses.append(
-         alloc_cons(formals, expanded_body, clause.src))
+         alloc_cons(scoped_formals, expanded_body, clause.src))
       cur = cur.cdr
    if not is_nil(cur):
       return _expand_list(sexpr)
