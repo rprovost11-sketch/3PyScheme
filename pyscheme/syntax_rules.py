@@ -20,12 +20,30 @@ from pyscheme.AST import (
    is_cons, is_nil, is_symbol, is_string, is_integer, is_real, is_boolean,
    is_character, is_vector,
    as_symbol, as_string, as_integer, as_real, as_boolean, as_character,
-   as_vector_items,
+   as_vector_items, as_symbol_scopes,
    alloc_cons, make_symbol, make_vector, list_from_items, src_of, eqv_atom,
    make_syntax_transformer, is_syntax_transformer,
    NIL_VALUE, SYMBOL,
-   new_scope, symbol_flip_scope, add_scope_to_form,
+   new_scope, symbol_flip_scope, add_scope_to_form, strip_scope_from_form,
 )
+
+# Active binding database for the current apply_syntax_transformer call.
+# Set at the start of each call; None when called outside the Expander
+# (e.g., from the self-test).  Single-threaded expansion makes this safe.
+_active_bound_index = None
+
+
+def _is_identifier_bound(name, scope_set, bound_index):
+   """Return True if name has any registered binding with scope-set T where
+   T is a subset of scope_set.  This implements the scope-set binding lookup
+   from Flatt 2016: a binding (name, T) is visible at scope_set S iff T ⊆ S."""
+   entries = bound_index.get(name)
+   if entries is None:
+      return False
+   for T in entries:
+      if T <= scope_set:
+         return True
+   return False
 
 
 # Syntactic keywords that must not be renamed during hygienic expansion.
@@ -216,36 +234,57 @@ def _datum_equal(a, b):
    return False
 
 
-def _match_pattern(pat, form, literals, ellipsis_sym, out):
-   """Match one pattern node against one form node.  Returns True and
-   fills `out`, or False."""
+def _match_pattern(pat, form, literals, lit_scopes, sc_use, ellipsis_sym, out):
+   """Match one pattern node against one form node.  Returns True and fills
+   `out`, or False.
+   lit_scopes: dict name -> frozenset (definition-time scope_set of the literal).
+   sc_use: scope id stamped onto the input form for this macro application."""
    if is_symbol(pat):
       s = as_symbol(pat)
       if s == '_':
          return True
-      # Literal identifier: must match the same symbol exactly.
+      # Literal identifier: R7RS free-identifier=?.
+      # Name must match; then both must be bound to the same binding, or
+      # both must be unbound (free).  We consult _active_bound_index to
+      # determine whether each side has a variable binding in scope.
       i = 0
       while i < len(literals):
          if s == literals[i]:
-            return is_symbol(form) and as_symbol(form) == s
+            if not (is_symbol(form) and as_symbol(form) == s):
+               return False
+            def_sc  = lit_scopes.get(s, frozenset())
+            use_sc  = as_symbol_scopes(form) - {sc_use}
+            if _active_bound_index is not None:
+               def_bound = _is_identifier_bound(s, def_sc, _active_bound_index)
+               use_bound = _is_identifier_bound(s, use_sc, _active_bound_index)
+               if def_bound != use_bound:
+                  return False
+               if not def_bound:
+                  return True   # both free -> free-identifier=? succeeds
+               # Both bound: fall through to scope-set equality as tiebreak.
+            return use_sc == def_sc
          i = i + 1
-      # Pattern variable: bind.
-      out.scalars[s] = form
+      # Pattern variable: bind (strip sc_use to prevent scope accumulation
+      # across recursive macro applications).
+      out.scalars[s] = strip_scope_from_form(form, sc_use)
       return True
    if is_cons(pat):
-      return _match_list_pattern(pat, form, literals, ellipsis_sym, out)
+      return _match_list_pattern(pat, form, literals, lit_scopes,
+                                 sc_use, ellipsis_sym, out)
    if is_vector(pat):
       if not is_vector(form):
          return False
       return _match_vector_pattern(as_vector_items(pat), as_vector_items(form),
-                                   literals, ellipsis_sym, out)
+                                   literals, lit_scopes, sc_use, ellipsis_sym,
+                                   out)
    if is_nil(pat):
       return is_nil(form)
    # Literal datum (number, string, etc.).
    return _datum_equal(pat, form)
 
 
-def _match_list_pattern(pat_list, form_list, literals, ellipsis_sym, out):
+def _match_list_pattern(pat_list, form_list, literals, lit_scopes,
+                        sc_use, ellipsis_sym, out):
    """Match a list-shaped pattern against a list-shaped form.  Handles
    ellipsis, fixed prefix, and improper (dotted) tail."""
    while is_cons(pat_list):
@@ -256,7 +295,6 @@ def _match_list_pattern(pat_list, form_list, literals, ellipsis_sym, out):
       if has_ell:
          suffix_pat  = pat_rest.cdr
          suffix_need = _list_length_approx(suffix_pat)
-         # Collect form elements into a Python list.
          form_vec = []
          tmp = form_list
          while is_cons(tmp):
@@ -266,43 +304,38 @@ def _match_list_pattern(pat_list, form_list, literals, ellipsis_sym, out):
          if total < suffix_need:
             return False
          n_ellipsis = total - suffix_need
-         # Record each pvar under pat_elem with its depth + 1.
          pvar_depths = {}
          collect_pvars_with_depth(pat_elem, literals, ellipsis_sym, pvar_depths, 0)
          for pv in pvar_depths:
             out.ellipsis[pv] = []
             out.ell_depth[pv] = pvar_depths[pv] + 1
-         # Match pat_elem against each ellipsis-covered form element.
          i = 0
          while i < n_ellipsis:
             sub = _SyntaxMatch()
-            if not _match_pattern(pat_elem, form_vec[i], literals, ellipsis_sym, sub):
+            if not _match_pattern(pat_elem, form_vec[i], literals, lit_scopes,
+                                   sc_use, ellipsis_sym, sub):
                return False
-            # Scalars from sub -> append to ellipsis list in outer.
             for k in sub.scalars:
                out.ellipsis[k].append(sub.scalars[k])
-            # Inner ellipsis -> wrap inner list as a value, append to outer.
             for k in sub.ellipsis:
                out.ellipsis[k].append(sub.ellipsis[k])
             i = i + 1
-         # Rebuild suffix form from form_vec[n_ellipsis:] and continue.
          suffix_form = NIL_VALUE
          j = total - 1
          while j >= n_ellipsis:
             suffix_form = alloc_cons(form_vec[j], suffix_form)
             j = j - 1
-         return _match_list_pattern(suffix_pat, suffix_form, literals, ellipsis_sym, out)
-      # Normal element.
+         return _match_list_pattern(suffix_pat, suffix_form, literals,
+                                    lit_scopes, sc_use, ellipsis_sym, out)
       if not is_cons(form_list):
          return False
-      if not _match_pattern(pat_elem, form_list.car, literals, ellipsis_sym, out):
+      if not _match_pattern(pat_elem, form_list.car, literals, lit_scopes,
+                             sc_use, ellipsis_sym, out):
          return False
       pat_list = pat_rest
       form_list = form_list.cdr
-   # Pattern list exhausted.
    if is_nil(pat_list):
       return is_nil(form_list)
-   # Improper list: dotted tail is a rest pvar.
    if is_symbol(pat_list):
       s = as_symbol(pat_list)
       i = 0
@@ -310,12 +343,13 @@ def _match_list_pattern(pat_list, form_list, literals, ellipsis_sym, out):
          if s == literals[i]:
             return False
          i = i + 1
-      out.scalars[s] = form_list
+      out.scalars[s] = strip_scope_from_form(form_list, sc_use)
       return True
    return False
 
 
-def _match_vector_pattern(pat_items, form_items, literals, ellipsis_sym, out):
+def _match_vector_pattern(pat_items, form_items, literals, lit_scopes,
+                          sc_use, ellipsis_sym, out):
    """Match a vector pattern (Python list) against a vector form (Python list).
    Supports ellipsis and tail patterns identically to _match_list_pattern."""
    i = 0
@@ -340,8 +374,8 @@ def _match_vector_pattern(pat_items, form_items, literals, ellipsis_sym, out):
          k = 0
          while k < n_ellipsis:
             sub = _SyntaxMatch()
-            if not _match_pattern(pat_elem, form_items[j + k],
-                                   literals, ellipsis_sym, sub):
+            if not _match_pattern(pat_elem, form_items[j + k], literals,
+                                   lit_scopes, sc_use, ellipsis_sym, sub):
                return False
             for key in sub.scalars:
                out.ellipsis[key].append(sub.scalars[key])
@@ -353,7 +387,8 @@ def _match_vector_pattern(pat_items, form_items, literals, ellipsis_sym, out):
          continue
       if j >= n_form:
          return False
-      if not _match_pattern(pat_elem, form_items[j], literals, ellipsis_sym, out):
+      if not _match_pattern(pat_elem, form_items[j], literals, lit_scopes,
+                             sc_use, ellipsis_sym, out):
          return False
       i = i + 1
       j = j + 1
@@ -517,26 +552,32 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src):
 
 # ── Transformer application ─────────────────────────────────────────────────
 
-def apply_syntax_transformer(t, form):
+def apply_syntax_transformer(t, form, bound_index=None):
    """Try each rule in order; on match, instantiate the template with
-   sets-of-scopes hygiene.  Raises SchemeSyntaxError if no pattern matches."""
+   sets-of-scopes hygiene.  Raises SchemeSyntaxError if no pattern matches.
+   bound_index, when supplied by the Expander, is the binding database used
+   for free-identifier=? literal matching."""
+   global _active_bound_index
+   _active_bound_index = bound_index
    from pyscheme.Parser import SchemeSyntaxError
-   literals = t.literals
+   literals     = t.literals
+   lit_scopes   = t.literal_bindings   # name -> definition-time scope_set
    ellipsis_sym = t.ellipsis
-   use_src  = src_of(form)
-   sc_use   = new_scope()
-   sc_intro = new_scope()
-   scoped_form = add_scope_to_form(form, sc_use)
+   use_src      = src_of(form)
+   sc_use       = new_scope()
+   sc_intro     = new_scope()
+   scoped_form  = add_scope_to_form(form, sc_use)
    i = 0
    while i < len(t.rules):
-      pattern = t.rules[i][0]
+      pattern  = t.rules[i][0]
       template = t.rules[i][1]
       if is_cons(pattern):
-         match = _SyntaxMatch()
+         match     = _SyntaxMatch()
          form_tail = scoped_form.cdr if is_cons(scoped_form) else NIL_VALUE
-         if _match_list_pattern(pattern.cdr, form_tail,
-                                literals, ellipsis_sym, match):
-            _apply_hygiene(t, pattern, template, match, literals, ellipsis_sym, sc_intro)
+         if _match_list_pattern(pattern.cdr, form_tail, literals, lit_scopes,
+                                sc_use, ellipsis_sym, match):
+            _apply_hygiene(t, pattern, template, match, literals, ellipsis_sym,
+                           sc_intro)
             return _instantiate(template, match, ellipsis_sym, use_src)
       i = i + 1
    raise SchemeSyntaxError(
@@ -592,6 +633,19 @@ def parse_syntax_rules(tail, def_env, name):
             'syntax-rules: literal must be a symbol', src_of(cur.car))
       literals.append(as_symbol(cur.car))
       cur = cur.cdr
+   # Capture definition-time scope_set for each literal (for free-identifier=?).
+   # R7RS: a literal matches if the use-site identifier has the same name AND
+   # resolves to the same binding (i.e., same scope context).  We store the
+   # literal symbol's scope_set as parsed; at match time we compare against
+   # the form symbol's scope_set minus sc_use.
+   lit_scope_map = {}
+   cur2 = lit_list
+   for lit in literals:
+      if is_cons(cur2):
+         lit_scope_map[lit] = as_symbol_scopes(cur2.car)
+         cur2 = cur2.cdr
+      else:
+         lit_scope_map[lit] = frozenset()
    rules = []
    cur = rules_list
    while is_cons(cur):
@@ -606,7 +660,8 @@ def parse_syntax_rules(tail, def_env, name):
       cur = cur.cdr
    # Copy def_env so later mutations don't affect this transformer's view.
    return make_syntax_transformer(name, literals, ellipsis_sym, rules,
-                                   dict(def_env) if def_env is not None else {})
+                                  dict(def_env) if def_env is not None else {},
+                                  lit_scope_map)
 
 
 # ── Self-test ──────────────────────────────────────────────────────────────
@@ -627,17 +682,19 @@ if __name__ == '__main__':
          n_fail = n_fail + 1
 
    # Pattern matching: literal symbol.
+   # Both lit_scopes and form scope_sets are frozenset() in test context ->
+   # (frozenset() - {0}) == frozenset() -> match.
    pat = parse_one('(foo bar)')
    form = parse_one('(foo bar)')
    m = _SyntaxMatch()
-   ok = _match_list_pattern(pat.cdr, form.cdr, ['bar'], '...', m)
+   ok = _match_list_pattern(pat.cdr, form.cdr, ['bar'], {}, 0, '...', m)
    check('literal matches',  ok)
 
    # Pattern variable capture.
    pat = parse_one('(foo x)')
    form = parse_one('(foo 42)')
    m = _SyntaxMatch()
-   ok = _match_list_pattern(pat.cdr, form.cdr, [], '...', m)
+   ok = _match_list_pattern(pat.cdr, form.cdr, [], {}, 0, '...', m)
    check('pvar matches',  ok)
    check('pvar bound',    'x' in m.scalars)
 
@@ -645,7 +702,7 @@ if __name__ == '__main__':
    pat = parse_one('(foo x ...)')
    form = parse_one('(foo 1 2 3)')
    m = _SyntaxMatch()
-   ok = _match_list_pattern(pat.cdr, form.cdr, [], '...', m)
+   ok = _match_list_pattern(pat.cdr, form.cdr, [], {}, 0, '...', m)
    check('ellipsis matches', ok)
    check('ellipsis depth 1', m.ell_depth.get('x') == 1)
    check('ellipsis count 3', len(m.ellipsis.get('x', [])) == 3)

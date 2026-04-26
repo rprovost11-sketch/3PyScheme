@@ -79,6 +79,29 @@ _MAX_EXPAND_ITER = 200
 _MAX_EXPAND_DEPTH = 500
 _expand_depth = [0]
 
+# Binding database for free-identifier=? literal matching in syntax-rules.
+# Maps name_str -> list of frozensets of scope IDs.  One entry per variable
+# binding introduced by let / lambda / case-lambda expansion.  Scope IDs are
+# globally unique so entries from different expansions never collide.
+_bound_index = {}
+
+
+def _register_binding(name_str, scope_set):
+   if name_str not in _bound_index:
+      _bound_index[name_str] = []
+   _bound_index[name_str].append(scope_set)
+
+
+def _register_formals(formals):
+   """Walk a (possibly improper) formals list and register each param."""
+   cur = formals
+   while is_cons(cur):
+      if is_symbol(cur.car):
+         _register_binding(as_symbol(cur.car), as_symbol_scopes(cur.car))
+      cur = cur.cdr
+   if is_symbol(cur):
+      _register_binding(as_symbol(cur), as_symbol_scopes(cur))
+
 
 def _lookup_macro(sym):
    """Return the SyntaxTransformer bound to sym in the current runtime env
@@ -157,7 +180,7 @@ def _expand_inner(sexpr):
          tr = _lookup_macro(head)
          if tr is not None:
             from pyscheme.syntax_rules import apply_syntax_transformer
-            sexpr = apply_syntax_transformer(tr, sexpr)
+            sexpr = apply_syntax_transformer(tr, sexpr, _bound_index)
             continue
          # 3. Sugar desugaring.
          handler = _SUGAR_HANDLERS.get(name)
@@ -167,7 +190,7 @@ def _expand_inner(sexpr):
       # macro's hygiene) also triggers expansion.
       if is_syntax_transformer(head):
          from pyscheme.syntax_rules import apply_syntax_transformer
-         sexpr = apply_syntax_transformer(head, sexpr)
+         sexpr = apply_syntax_transformer(head, sexpr, _bound_index)
          continue
       return _expand_list(sexpr)
 
@@ -469,6 +492,13 @@ def _expand_let_family(sexpr, head_name):
    sc = new_scope()
    scoped_bindings = _add_scope_to_form(bindings_form, sc)
    scoped_body     = _add_scope_to_form(body_cons, sc)
+   # Register each let-bound name in the binding database for literal matching.
+   cur3 = scoped_bindings
+   while is_cons(cur3):
+      pair = cur3.car
+      if is_cons(pair) and is_symbol(pair.car):
+         _register_binding(as_symbol(pair.car), as_symbol_scopes(pair.car))
+      cur3 = cur3.cdr
    new_bindings = _expand_let_bindings(scoped_bindings, src)
    if new_bindings is None:
       return _expand_list(sexpr)
@@ -542,6 +572,7 @@ def _expand_lambda(sexpr):
    sc = new_scope()
    scoped_formals = _add_scope_to_form(formals, sc)
    scoped_body    = _add_scope_to_form(body, sc)
+   _register_formals(scoped_formals)
    expanded_body = _expand_body(scoped_body, src)
    lambda_sym = make_symbol('lambda', src)
    return alloc_cons(lambda_sym,
@@ -592,6 +623,7 @@ def _expand_case_lambda(sexpr):
       sc = new_scope()
       scoped_formals = _add_scope_to_form(formals, sc)
       scoped_body    = _add_scope_to_form(body, sc)
+      _register_formals(scoped_formals)
       expanded_body = _expand_body(scoped_body, clause.src)
       expanded_clauses.append(
          alloc_cons(scoped_formals, expanded_body, clause.src))

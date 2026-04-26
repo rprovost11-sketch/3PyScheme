@@ -190,3 +190,90 @@
 
 >>> (let ((vt 1)) (vp-hyg #(10 20)))
 ==> 30
+
+;;; -------- Nested ellipsis (depth >= 2) --------
+
+;;; Pattern ((x ...) ...) matches a list of lists; template ((x ...) ...)
+;;; reproduces it.
+
+>>> (define-syntax ne-id
+...   (syntax-rules ()
+...     ((_ (x ...) ...) (list (list x ...) ...))))
+==> #<void>
+
+>>> (ne-id (1 2 3) (4 5) (6))
+==> ((1 2 3) (4 5) (6))
+
+;;; Empty outer ellipsis.
+>>> (ne-id)
+==> ()
+
+;;; Empty inner lists.
+>>> (ne-id () ())
+==> (() ())
+
+;;; Depth-2 with transformation applied to each element.
+>>> (define-syntax ne-add1
+...   (syntax-rules ()
+...     ((_ (x ...) ...) (list (list (+ x 1) ...) ...))))
+==> #<void>
+
+>>> (ne-add1 (1 2) (3 4))
+==> ((2 3) (4 5))
+
+;;; Depth-2 producing vectors.
+>>> (define-syntax ne-vecs
+...   (syntax-rules ()
+...     ((_ (x ...) ...) (list (vector x ...) ...))))
+==> #<void>
+
+>>> (ne-vecs (1 2 3) (4 5))
+==> (#(1 2 3) #(4 5))
+
+;;; Depth-3 ellipsis.
+>>> (define-syntax ne-d3
+...   (syntax-rules ()
+...     ((_ ((x ...) ...) ...) (list (list (list x ...) ...) ...))))
+==> #<void>
+
+>>> (ne-d3 ((1 2) (3)) ((4 5 6)))
+==> (((1 2) (3)) ((4 5 6)))
+
+;;; -------- Literal binding identity (R7RS free-identifier=?) --------
+
+;;; A literal in a syntax-rules pattern must match identifiers that resolve
+;;; to the SAME BINDING as the literal at macro-definition time, not merely
+;;; identifiers with the same name.  The classic test: when 'else' is
+;;; shadowed by a let binding, the (else ...) pattern must not fire.
+
+>>> (define-syntax lb-cond
+...   (syntax-rules (else)
+...     ((_ (else e ...)) (begin e ...))
+...     ((_ (t e ...) rest ...) (if t (begin e ...) (lb-cond rest ...)))
+...     ((_) (if #f #f))))
+==> #<void>
+
+;;; Normal: unbound 'else' matches the definition-time unbound 'else'.
+>>> (lb-cond (#f 1) (else 42))
+==> 42
+
+;;; Shadowed: let-bound 'else' has a different scope context, so the
+;;; (else ...) pattern does NOT fire; (#t 99) clause is taken instead.
+>>> (let ((else #f)) (lb-cond (#f 1) (else 42) (#t 99)))
+==> 99
+
+;;; Unrelated let binding does not affect 'else' matching.
+>>> (let ((x 1)) (lb-cond (#f 1) (else 42)))
+==> 42
+
+;;; Literal 'then' in a user-defined if macro.
+>>> (define-syntax lb-if
+...   (syntax-rules (then else)
+...     ((_ c then t else e) (if c t e))))
+==> #<void>
+
+>>> (lb-if #t then 10 else 20)
+==> 10
+
+;;; Shadowed 'then': pattern no longer matches; produces no-match error.
+;;; (We just confirm the non-shadowed case matches correctly above.)

@@ -170,12 +170,13 @@ class SyntaxTransformer:
       def_env   - dict: macro definition-time env (for hygiene lookup)
       is a regular-Python dict mapping name -> SyntaxTransformer; non-macro
       references fall through to the runtime env at evaluation."""
-   def __init__(self, name, literals, ellipsis, rules, def_env):
+   def __init__(self, name, literals, ellipsis, rules, def_env, literal_bindings=None):
       self.name = name
       self.literals = literals
       self.ellipsis = ellipsis
       self.rules = rules
       self.def_env = def_env
+      self.literal_bindings = literal_bindings if literal_bindings is not None else {}
 
 
 # --- Singletons --------------------------------------------------------
@@ -266,8 +267,10 @@ def make_error_object(message, irritants):
 def make_continuation(k_snapshot, wind_snapshot, handler_snapshot):
    return Continuation(k_snapshot, wind_snapshot, handler_snapshot)
 
-def make_syntax_transformer(name, literals, ellipsis, rules, def_env):
-   return SyntaxTransformer(name, literals, ellipsis, rules, def_env)
+def make_syntax_transformer(name, literals, ellipsis, rules, def_env,
+                            literal_bindings=None):
+   return SyntaxTransformer(name, literals, ellipsis, rules, def_env,
+                            literal_bindings)
 
 def make_environment(env):
    return (ENVIRONMENT, env)
@@ -329,6 +332,41 @@ def symbol_flip_scope(sym, scope_id):
    if scope_id in scopes:
       return (SYMBOL, sym[1], scopes - frozenset([scope_id]), sym[3])
    return (SYMBOL, sym[1], scopes | frozenset([scope_id]), sym[3])
+
+def symbol_remove_scope(sym, scope_id):
+   """Return sym with scope_id removed from its scope_set (no-op if absent)."""
+   scopes = sym[2]
+   if scope_id not in scopes:
+      return sym
+   return (SYMBOL, sym[1], scopes - frozenset([scope_id]), sym[3])
+
+def strip_scope_from_form(form, scope_id):
+   """Walk form removing scope_id from every symbol atom.  Used to clean
+   sc_use off captured pattern-variable values so that re-expansion of
+   the captured form does not accumulate stale scope ids."""
+   if is_symbol(form):
+      return symbol_remove_scope(form, scope_id)
+   if is_cons(form):
+      new_car = strip_scope_from_form(form.car, scope_id)
+      new_cdr = strip_scope_from_form(form.cdr, scope_id)
+      if new_car is form.car and new_cdr is form.cdr:
+         return form
+      return alloc_cons(new_car, new_cdr, form.src)
+   if is_vector(form):
+      old_items = as_vector_items(form)
+      new_items = []
+      changed = False
+      i = 0
+      while i < len(old_items):
+         new_item = strip_scope_from_form(old_items[i], scope_id)
+         new_items.append(new_item)
+         if new_item is not old_items[i]:
+            changed = True
+         i = i + 1
+      if not changed:
+         return form
+      return make_vector(new_items)
+   return form
 
 def add_scope_to_form(form, scope_id):
    """Walk a form, adding scope_id to every symbol atom.
