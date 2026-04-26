@@ -35,7 +35,10 @@ import io
 import os
 import sys
 
-from pyscheme.Environment import SchemeUnboundError
+from pyscheme.Environment import (
+   SchemeUnboundError, SchemeRuntimeError,
+   SchemeArityError, SchemeTypeError, SchemeRaised,
+)
 from pyscheme.Parser      import SchemeSyntaxError
 from pyscheme.Analyzer    import SchemeAnalysisError
 from pyscheme.Utils       import columnize, retrieveFileList, writeln_multiFile, paren_state
@@ -97,12 +100,15 @@ def _format_error(exc):
    if isinstance(exc, NotImplementedError):
       return 'Not implemented: ' + str(exc)
    if isinstance(exc, (SchemeSyntaxError, SchemeAnalysisError,
-                       SchemeUnboundError, ListenerCommandError)):
+                       SchemeUnboundError, SchemeRuntimeError,
+                       ListenerCommandError)):
       return str(exc)
+   if isinstance(exc, (SchemeArityError, SchemeTypeError, SchemeRaised)):
+      return type(exc).__name__ + ': ' + str(exc)
    msg = str(exc)
    if msg:
-      return type(exc).__name__ + ': ' + msg
-   return type(exc).__name__
+      return 'internal error: ' + msg
+   return 'internal error'
 
 
 def _compute_indent(lines):

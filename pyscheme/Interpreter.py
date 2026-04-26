@@ -27,7 +27,7 @@ from pyscheme.Analyzer      import (
 )
 from pyscheme.Evaluator     import cek_eval
 from pyscheme.primitives    import install_primitives, PRIMITIVE_ARITIES
-from pyscheme.Environment   import Environment
+from pyscheme.Environment   import Environment, SchemeRuntimeError
 from pyscheme.Context       import Context
 from pyscheme.Listener      import InterpreterBase
 from pyscheme.PrettyPrinter import pretty_print
@@ -83,6 +83,8 @@ class Interpreter(InterpreterBase):
             last = cek_eval(expanded, self._env, self._ctx)
             i = i + 1
          return last
+      except RecursionError:
+         raise SchemeRuntimeError('recursion depth exceeded')
       finally:
          self._ctx.outStrm = prev_out
 

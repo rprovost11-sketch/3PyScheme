@@ -70,6 +70,12 @@ class SchemeRaised(_PositionedSchemeError):
       self.continuable = continuable
 
 
+class SchemeRuntimeError(_PositionedSchemeError):
+   """Raised when a Python-level runtime error (e.g. RecursionError) occurs
+   inside the interpreter pipeline.  Carries no source position."""
+   pass
+
+
 class SchemeUserError(SchemeRaised):
    """Raised by the `error` primitive (R7RS 6.11).  Value is an ErrorObject
    carrying the message string and irritants list."""
