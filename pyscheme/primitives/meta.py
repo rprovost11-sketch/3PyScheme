@@ -180,7 +180,7 @@ def _prim_environment(ctx, env, args, app_node):
             'environment: library not found: ' + pretty_print(spec),
             app_node)
       for n in lib_env._bindings:
-         result.bind(n, lib_env._bindings[n])
+         result.bind(n, lib_env.lookup(n))
       i = i + 1
    result.freeze()
    return make_environment(result)

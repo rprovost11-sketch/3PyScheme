@@ -222,7 +222,7 @@ def _collect_closures(global_env):
    """Return a sorted list of the names bound to closure values in env."""
    closures = []
    for name in global_env._bindings:
-      val = global_env._bindings[name]
+      val = global_env.lookup(name)
       if is_closure(val):
          closures.append(name)
    closures.sort()
@@ -491,7 +491,7 @@ def _apropos(ctx, env, pattern):
 def _find_closure_name(global_env, closure):
    """Find the first global name bound to `closure` (by identity)."""
    for name in global_env._bindings:
-      if global_env._bindings[name] is closure:
+      if global_env.lookup(name) is closure:
          return name
    return None
 
@@ -530,7 +530,7 @@ def _prim_help(ctx, env, args, app_node):
       if name not in global_env._bindings:
          ctx.outStrm.write("No binding for '" + name + "'.\n")
          return VOID_VALUE
-      val = global_env._bindings[name]
+      val = global_env.lookup(name)
       if is_primitive(val):
          _show_primitive_entry(ctx, as_primitive_name(val))
       elif is_closure(val):

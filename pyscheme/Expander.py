@@ -96,7 +96,7 @@ def _current_macro_env():
    i = len(chain) - 1
    while i >= 0:
       for k in chain[i]._bindings:
-         merged[k] = chain[i]._bindings[k]
+         merged[k] = chain[i].lookup(k)
       i = i - 1
    return merged
 

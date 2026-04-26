@@ -165,7 +165,7 @@ def resolve_import_set(import_set):
    # Copy every binding from exports_env.
    result = {}
    for n in exports_env._bindings:
-      result[n] = exports_env._bindings[n]
+      result[n] = exports_env.lookup(n)
    return result
 
 
@@ -211,7 +211,7 @@ def _register_filtered(global_env, key, names):
    while i < len(names):
       n = names[i]
       if n in global_env._bindings:
-         exports_env.bind(n, global_env._bindings[n])
+         exports_env.bind(n, global_env.lookup(n))
       i = i + 1
    exports_env.freeze()
    library_register(key, exports_env)

@@ -930,7 +930,7 @@ def _process_define_library(C, ctx):
          raise SchemeSyntaxError(
             'define-library: exported name not defined: ' + internal,
             src_of(C))
-      exports_env.bind(external, lib_env._bindings[internal])
+      exports_env.bind(external, lib_env.lookup(internal))
       i = i + 1
    exports_env.freeze()
    library_register(key, exports_env)
