@@ -15,7 +15,8 @@ from pyscheme.AST import (
    is_closure, is_primitive, is_case_closure, is_promise, is_parameter,
    is_error_object, is_continuation,
    is_record_accessor, is_record_mutator,
-   as_integer, as_real, as_rational_num, as_rational_den, make_boolean,
+   as_integer, as_real, as_rational_num, as_rational_den,
+   as_complex_real, as_complex_imag, make_boolean,
 )
 from pyscheme.Environment import SchemeTypeError
 
@@ -112,6 +113,9 @@ def _prim_finite_p(ctx, env, args, app_node):
    if is_real(v):
       f = as_real(v)
       return make_boolean(_math.isfinite(f))
+   if is_complex(v):
+      return make_boolean(
+         _math.isfinite(as_complex_real(v)) and _math.isfinite(as_complex_imag(v)))
    raise SchemeTypeError('finite?: argument must be a number', app_node)
 
 
@@ -122,6 +126,9 @@ def _prim_infinite_p(ctx, env, args, app_node):
    if is_real(v):
       f = as_real(v)
       return make_boolean(_math.isinf(f))
+   if is_complex(v):
+      return make_boolean(
+         _math.isinf(as_complex_real(v)) or _math.isinf(as_complex_imag(v)))
    raise SchemeTypeError('infinite?: argument must be a number', app_node)
 
 
@@ -132,6 +139,9 @@ def _prim_nan_p(ctx, env, args, app_node):
    if is_real(v):
       f = as_real(v)
       return make_boolean(_math.isnan(f))
+   if is_complex(v):
+      return make_boolean(
+         _math.isnan(as_complex_real(v)) or _math.isnan(as_complex_imag(v)))
    raise SchemeTypeError('nan?: argument must be a number', app_node)
 
 

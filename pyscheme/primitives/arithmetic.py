@@ -11,6 +11,7 @@ without changing the API.
 """
 
 import math
+import cmath
 from fractions import Fraction
 
 from pyscheme.primitives import register_primitive
@@ -29,13 +30,29 @@ CATEGORY = 'arithmetic'
 
 
 def _num(v, name, app_node, i):
-   """Extract the Python numeric value from v (int, Fraction, or float), or raise."""
+   """Extract a Python real-numeric value (int, Fraction, float).
+   Raises for non-numeric or complex (complex not valid for ordering ops)."""
    if is_integer(v):
       return as_integer(v)
    if is_rational(v):
       return Fraction(as_rational_num(v), as_rational_den(v))
    if is_real(v):
       return as_real(v)
+   raise SchemeTypeError(
+      '%s: argument %d is not a number' % (name, i),
+      app_node)
+
+
+def _any_num(v, name, app_node, i):
+   """Extract a Python numeric value (int, Fraction, float, or complex)."""
+   if is_integer(v):
+      return as_integer(v)
+   if is_rational(v):
+      return Fraction(as_rational_num(v), as_rational_den(v))
+   if is_real(v):
+      return as_real(v)
+   if is_complex(v):
+      return complex(as_complex_real(v), as_complex_imag(v))
    raise SchemeTypeError(
       '%s: argument %d is not a number' % (name, i),
       app_node)
@@ -61,6 +78,10 @@ def _wrap(n):
       return make_rational(n.numerator, n.denominator)
    if isinstance(n, float):
       return make_real(n)
+   if isinstance(n, complex):
+      if n.imag == 0.0:
+         return make_real(n.real)
+      return make_complex(n.real, n.imag)
    raise TypeError('internal: arithmetic result has unexpected type ' + str(type(n)))
 
 
@@ -68,18 +89,18 @@ def _prim_add(ctx, env, args, app_node):
    total = 0
    i = 0
    while i < len(args):
-      total = total + _num(args[i], '+', app_node, i + 1)
+      total = total + _any_num(args[i], '+', app_node, i + 1)
       i = i + 1
    return _wrap(total)
 
 
 def _prim_sub(ctx, env, args, app_node):
    if len(args) == 1:
-      return _wrap(-_num(args[0], '-', app_node, 1))
-   result = _num(args[0], '-', app_node, 1)
+      return _wrap(-_any_num(args[0], '-', app_node, 1))
+   result = _any_num(args[0], '-', app_node, 1)
    i = 1
    while i < len(args):
-      result = result - _num(args[i], '-', app_node, i + 1)
+      result = result - _any_num(args[i], '-', app_node, i + 1)
       i = i + 1
    return _wrap(result)
 
@@ -88,16 +109,21 @@ def _prim_mul(ctx, env, args, app_node):
    result = 1
    i = 0
    while i < len(args):
-      result = result * _num(args[i], '*', app_node, i + 1)
+      result = result * _any_num(args[i], '*', app_node, i + 1)
       i = i + 1
    return _wrap(result)
 
 
 def _exact_div(a, b):
    """Divide two numbers.
+   - Complex input: use Python complex division.
    - Both exact (int or Fraction): return exact result (Fraction or int).
-   - Either inexact (float): return float; float zero divisor -> ±inf.
+   - Either inexact (float): return float; float zero divisor -> +-inf.
    """
+   if isinstance(a, complex) or isinstance(b, complex):
+      ca = a if isinstance(a, complex) else complex(float(a))
+      cb = b if isinstance(b, complex) else complex(float(b))
+      return ca / cb
    if isinstance(b, float):
       fb = b
       fa = float(a)
@@ -114,23 +140,29 @@ def _exact_div(a, b):
 
 def _prim_div(ctx, env, args, app_node):
    if len(args) == 1:
-      n = _num(args[0], '/', app_node, 1)
+      n = _any_num(args[0], '/', app_node, 1)
       if isinstance(n, int) and n == 0:
          raise SchemeTypeError('/: division by zero', app_node)
-      return _wrap(_exact_div(1, n))
-   result = _num(args[0], '/', app_node, 1)
+      try:
+         return _wrap(_exact_div(1, n))
+      except ZeroDivisionError:
+         raise SchemeTypeError('/: division by zero', app_node)
+   result = _any_num(args[0], '/', app_node, 1)
    i = 1
    while i < len(args):
-      divisor = _num(args[i], '/', app_node, i + 1)
+      divisor = _any_num(args[i], '/', app_node, i + 1)
       if isinstance(divisor, int) and divisor == 0:
          raise SchemeTypeError('/: division by zero', app_node)
-      result = _exact_div(result, divisor)
+      try:
+         result = _exact_div(result, divisor)
+      except ZeroDivisionError:
+         raise SchemeTypeError('/: division by zero', app_node)
       i = i + 1
    return _wrap(result)
 
 
 def _prim_abs(ctx, env, args, app_node):
-   return _wrap(abs(_num(args[0], 'abs', app_node, 1)))
+   return _wrap(abs(_any_num(args[0], 'abs', app_node, 1)))
 
 
 def _trunc_div(n, d):
@@ -227,8 +259,14 @@ def _prim_lcm(ctx, env, args, app_node):
 
 
 def _prim_expt(ctx, env, args, app_node):
-   base = _num(args[0], 'expt', app_node, 1)
-   exp  = _num(args[1], 'expt', app_node, 2)
+   base = _any_num(args[0], 'expt', app_node, 1)
+   exp  = _any_num(args[1], 'expt', app_node, 2)
+   if isinstance(base, complex) or isinstance(exp, complex):
+      cb = base if isinstance(base, complex) else complex(float(base))
+      if isinstance(exp, int):
+         return _wrap(cb ** exp)
+      ce = exp if isinstance(exp, complex) else complex(float(exp))
+      return _wrap(cb ** ce)
    if isinstance(exp, int) and isinstance(base, (int, Fraction)):
       if exp >= 0:
          return _wrap(Fraction(base) ** exp)
@@ -237,11 +275,18 @@ def _prim_expt(ctx, env, args, app_node):
       if pos == 0:
          raise SchemeTypeError('expt: division by zero', args[1])
       return _wrap(Fraction(1, 1) / pos)
-   return _wrap(float(base) ** float(exp))
+   fb = float(base)
+   fe = float(exp)
+   try:
+      return _wrap(fb ** fe)
+   except ValueError:
+      return _wrap(complex(fb, 0.0) ** complex(fe, 0.0))
 
 
 def _prim_sqrt(ctx, env, args, app_node):
-   v = _num(args[0], 'sqrt', app_node, 1)
+   v = _any_num(args[0], 'sqrt', app_node, 1)
+   if isinstance(v, complex):
+      return _wrap(cmath.sqrt(v))
    if isinstance(v, int) and v >= 0:
       r = math.isqrt(v)
       if r * r == v:
@@ -251,11 +296,14 @@ def _prim_sqrt(ctx, env, args, app_node):
       rd = math.isqrt(v.denominator)
       if rn * rn == v.numerator and rd * rd == v.denominator:
          return _wrap(Fraction(rn, rd))
-   return make_real(math.sqrt(float(v)))
+   fv = float(v)
+   if fv < 0.0:
+      return _wrap(cmath.sqrt(complex(fv, 0.0)))
+   return make_real(math.sqrt(fv))
 
 
 def _prim_square(ctx, env, args, app_node):
-   v = _num(args[0], 'square', app_node, 1)
+   v = _any_num(args[0], 'square', app_node, 1)
    return _wrap(v * v)
 
 
@@ -310,7 +358,8 @@ def _prim_exact_p(ctx, env, args, app_node):
 
 
 def _prim_inexact_p(ctx, env, args, app_node):
-   return make_boolean(is_real(args[0]))
+   v = args[0]
+   return make_boolean(is_real(v) or is_complex(v))
 
 
 def _prim_exact(ctx, env, args, app_node):
@@ -326,13 +375,16 @@ def _prim_exact(ctx, env, args, app_node):
          return make_integer(int(f))
       frac = Fraction(f)
       return make_rational(frac.numerator, frac.denominator)
+   if is_complex(v):
+      raise SchemeTypeError(
+         'exact: no exact representation for complex number', app_node)
    raise SchemeTypeError(
       'exact: argument must be a number', app_node)
 
 
 def _prim_inexact(ctx, env, args, app_node):
    v = args[0]
-   if is_real(v):
+   if is_real(v) or is_complex(v):
       return v
    if is_integer(v):
       return make_real(float(as_integer(v)))
@@ -709,7 +761,9 @@ def _prim_string_to_number(ctx, env, args, app_node):
 
 
 def _prim_exp(ctx, env, args, app_node):
-   v = _num(args[0], 'exp', app_node, 1)
+   v = _any_num(args[0], 'exp', app_node, 1)
+   if isinstance(v, complex):
+      return _wrap(cmath.exp(v))
    try:
       return make_real(math.exp(float(v)))
    except OverflowError:
@@ -717,7 +771,14 @@ def _prim_exp(ctx, env, args, app_node):
 
 
 def _prim_log(ctx, env, args, app_node):
-   v = _num(args[0], 'log', app_node, 1)
+   v = _any_num(args[0], 'log', app_node, 1)
+   if isinstance(v, complex):
+      result = cmath.log(v)
+      if len(args) >= 2:
+         base = _any_num(args[1], 'log', app_node, 2)
+         b = base if isinstance(base, complex) else complex(float(base))
+         result = result / cmath.log(b)
+      return _wrap(result)
    f = float(v)
    if f == 0.0:
       r = float('-inf')
@@ -726,7 +787,7 @@ def _prim_log(ctx, env, args, app_node):
    else:
       r = math.log(f)
    if len(args) >= 2:
-      base = _num(args[1], 'log', app_node, 2)
+      base = _any_num(args[1], 'log', app_node, 2)
       b = float(base)
       if b == 0.0 or b < 0.0:
          r = float('nan')
@@ -736,22 +797,30 @@ def _prim_log(ctx, env, args, app_node):
 
 
 def _prim_sin(ctx, env, args, app_node):
-   v = _num(args[0], 'sin', app_node, 1)
+   v = _any_num(args[0], 'sin', app_node, 1)
+   if isinstance(v, complex):
+      return _wrap(cmath.sin(v))
    return make_real(math.sin(float(v)))
 
 
 def _prim_cos(ctx, env, args, app_node):
-   v = _num(args[0], 'cos', app_node, 1)
+   v = _any_num(args[0], 'cos', app_node, 1)
+   if isinstance(v, complex):
+      return _wrap(cmath.cos(v))
    return make_real(math.cos(float(v)))
 
 
 def _prim_tan(ctx, env, args, app_node):
-   v = _num(args[0], 'tan', app_node, 1)
+   v = _any_num(args[0], 'tan', app_node, 1)
+   if isinstance(v, complex):
+      return _wrap(cmath.tan(v))
    return make_real(math.tan(float(v)))
 
 
 def _prim_asin(ctx, env, args, app_node):
-   v = _num(args[0], 'asin', app_node, 1)
+   v = _any_num(args[0], 'asin', app_node, 1)
+   if isinstance(v, complex):
+      return _wrap(cmath.asin(v))
    f = float(v)
    if f < -1.0 or f > 1.0:
       return make_real(float('nan'))
@@ -759,7 +828,9 @@ def _prim_asin(ctx, env, args, app_node):
 
 
 def _prim_acos(ctx, env, args, app_node):
-   v = _num(args[0], 'acos', app_node, 1)
+   v = _any_num(args[0], 'acos', app_node, 1)
+   if isinstance(v, complex):
+      return _wrap(cmath.acos(v))
    f = float(v)
    if f < -1.0 or f > 1.0:
       return make_real(float('nan'))
@@ -767,9 +838,14 @@ def _prim_acos(ctx, env, args, app_node):
 
 
 def _prim_atan(ctx, env, args, app_node):
-   v = _num(args[0], 'atan', app_node, 1)
+   v = _any_num(args[0], 'atan', app_node, 1)
+   if isinstance(v, complex):
+      if len(args) >= 2:
+         raise SchemeTypeError(
+            'atan: two-argument form requires real numbers', app_node)
+      return _wrap(cmath.atan(v))
    if len(args) >= 2:
-      v2 = _num(args[1], 'atan', app_node, 2)
+      v2 = _any_num(args[1], 'atan', app_node, 2)
       return make_real(math.atan2(float(v), float(v2)))
    return make_real(math.atan(float(v)))
 
@@ -902,7 +978,7 @@ def register():
    register_primitive('sqrt', (1, 1), _prim_sqrt,
       doc=('Return the principal square root of the argument.  Returns an '
            'exact integer when the argument is a perfect square; otherwise '
-           'a real.  R7RS 6.2.6.'),
+           'a real.  Negative real input returns a complex result.  R7RS 6.2.6.'),
       category=CATEGORY)
    register_primitive('square', (1, 1), _prim_square,
       doc='Return (* x x).  R7RS 6.2.6.',
@@ -924,7 +1000,7 @@ def register():
       doc='Return #t if obj is an exact number (an integer in our impl).',
       category=CATEGORY)
    register_primitive('inexact?', (1, 1), _prim_inexact_p,
-      doc='Return #t if obj is an inexact number (a real in our impl).',
+      doc='Return #t if obj is an inexact number (real or complex).',
       category=CATEGORY)
    register_primitive('exact', (1, 1), _prim_exact,
       doc=('Convert a number to its exact form.  R7RS 6.2.6.'),

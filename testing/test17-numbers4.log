@@ -1,0 +1,179 @@
+;;; ============================================================
+;;; test17-numbers4.log
+;;; R7RS §6.2 numeric tower Phase 4:
+;;;   complex arithmetic (+, -, *, /)
+;;;   sqrt of negative real -> complex
+;;;   inexact? / exact? / finite? / infinite? / nan? on complex
+;;;   = on complex
+;;;   abs / square / expt on complex
+;;;   transcendentals (exp, log, sin, cos) on complex
+;;;   inexact / exact applied to complex
+;;; ============================================================
+
+;;; -------- complex arithmetic --------
+
+>>> (+ 3+4i 1-2i)
+==> 4.0+2.0i
+
+;;; Complex terms cancel to real.
+>>> (+ 3+4i -3-4i)
+==> 0.0
+
+>>> (- 3+4i 1+2i)
+==> 2.0+2.0i
+
+>>> (- 0+1i 0+1i)
+==> 0.0
+
+>>> (* 3+4i 1+2i)
+==> -5.0+10.0i
+
+;;; Product with conjugate -> real.
+>>> (* 1+2i 1-2i)
+==> 5.0
+
+;;; Mixed complex * integer.
+>>> (* 3+4i 2)
+==> 6.0+8.0i
+
+;;; Division reduces to real when imaginary part cancels.
+>>> (/ 4+0i 2+0i)
+==> 2.0
+
+>>> (/ 0+2i 0+1i)
+==> 2.0
+
+>>> (/ 1+2i 1+1i)
+==> 1.5+0.5i
+
+;;; -------- sqrt of negative real --------
+
+>>> (sqrt -1)
+==> 0.0+1.0i
+
+>>> (sqrt -4)
+==> 0.0+2.0i
+
+>>> (sqrt -1/4)
+==> 0.0+0.5i
+
+;;; sqrt of complex.
+>>> (sqrt 0+1i)
+==> 0.7071067811865476+0.7071067811865475i
+
+;;; -------- predicates on complex --------
+
+>>> (inexact? 3+4i)
+==> #t
+
+>>> (exact? 3+4i)
+==> #f
+
+;;; -------- finite? / infinite? / nan? on complex --------
+
+>>> (finite? 3+4i)
+==> #t
+
+>>> (finite? +inf.0+0.0i)
+==> #f
+
+>>> (infinite? +inf.0+0.0i)
+==> #t
+
+>>> (infinite? 3+4i)
+==> #f
+
+>>> (nan? +nan.0+0.0i)
+==> #t
+
+>>> (nan? 3+4i)
+==> #f
+
+;;; -------- = on complex --------
+
+>>> (= 3+4i 3+4i)
+==> #t
+
+>>> (= 3+4i 3+5i)
+==> #f
+
+;;; Complex with zero imaginary part equals the real.
+>>> (= 2+0i 2)
+==> #t
+
+;;; -------- abs on complex (magnitude) --------
+
+>>> (abs 3+4i)
+==> 5.0
+
+>>> (abs 0+1i)
+==> 1.0
+
+;;; -------- square on complex --------
+
+>>> (square 3+4i)
+==> -7.0+24.0i
+
+;;; i^2 = -1.
+>>> (square 0+1i)
+==> -1.0
+
+;;; -------- expt on complex --------
+
+;;; Integer exponent on complex base.
+>>> (expt 2+0i 3)
+==> 8.0
+
+;;; i^2 = -1.
+>>> (expt 0+1i 2)
+==> -1.0
+
+;;; i^4 = 1.
+>>> (expt 0+1i 4)
+==> 1.0
+
+;;; -------- transcendentals on complex --------
+
+;;; e^0 = 1.
+>>> (exp 0+0i)
+==> 1.0
+
+;;; Euler's formula: e^(i*1) = cos(1) + i*sin(1).
+>>> (exp 0+1i)
+==> 0.5403023058681398+0.8414709848078965i
+
+;;; log(1+0i) = 0.
+>>> (log 1+0i)
+==> 0.0
+
+;;; log(-1+0i) = i*pi.
+>>> (log -1+0i)
+==> 0.0+3.141592653589793i
+
+;;; sin(0+0i) = 0.
+>>> (sin 0+0i)
+==> 0.0
+
+;;; cos(0+0i) = 1.
+>>> (cos 0+0i)
+==> 1.0
+
+;;; -------- inexact / exact applied to complex --------
+
+;;; Complex is already inexact; inexact is a no-op.
+>>> (inexact 3+4i)
+==> 3.0+4.0i
+
+;;; exact of complex is an error.
+>>> (exact 3+4i)
+%%% SchemeTypeError: line 1, col 1: exact: no exact representation for complex number
+%%% (exact 3+4i)
+%%% ^
+
+;;; -------- number->string on computed complex --------
+
+>>> (number->string (sqrt -1))
+==> "0.0+1.0i"
+
+>>> (number->string (+ 3+4i 0))
+==> "3.0+4.0i"
