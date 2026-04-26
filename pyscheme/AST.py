@@ -330,6 +330,21 @@ def symbol_flip_scope(sym, scope_id):
       return (SYMBOL, sym[1], scopes - frozenset([scope_id]), sym[3])
    return (SYMBOL, sym[1], scopes | frozenset([scope_id]), sym[3])
 
+def add_scope_to_form(form, scope_id):
+   """Walk a form, adding scope_id to every symbol atom.
+   Skips the contents of (quote ...) since those are data, not code."""
+   if is_symbol(form):
+      return symbol_add_scope(form, scope_id)
+   if is_cons(form):
+      if is_symbol(form.car) and as_symbol(form.car) == 'quote':
+         return form
+      new_car = add_scope_to_form(form.car, scope_id)
+      new_cdr = add_scope_to_form(form.cdr, scope_id)
+      if new_car is form.car and new_cdr is form.cdr:
+         return form
+      return alloc_cons(new_car, new_cdr, form.src)
+   return form
+
 
 # --- Predicates --------------------------------------------------------
 
@@ -819,6 +834,18 @@ if __name__ == '__main__':
    sym5 = symbol_flip_scope(sym4, sc1)
    check('flip_scope removes when present', sc1 not in as_symbol_scopes(sym5))
    check('flip_scope name unchanged', as_symbol(sym5) == 'x')
+
+   # add_scope_to_form
+   sc3 = new_scope()
+   fsym = make_symbol('x', None)
+   fstamped = add_scope_to_form(fsym, sc3)
+   check('add_scope_to_form symbol',  sc3 in as_symbol_scopes(fstamped))
+   fnone = alloc_cons(make_symbol('f', None), NIL_VALUE)
+   fnone2 = add_scope_to_form(fnone, sc3)
+   check('add_scope_to_form head',    sc3 in as_symbol_scopes(fnone2.car))
+   qform = alloc_cons(make_symbol('quote', None), alloc_cons(make_symbol('x', None), NIL_VALUE))
+   qstamped = add_scope_to_form(qform, sc3)
+   check('add_scope_to_form skips quote body', qstamped is qform)
 
    # Closure
    cls = make_closure(('x',), NIL_VALUE, None, None, 'doc')

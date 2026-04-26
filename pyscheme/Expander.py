@@ -39,7 +39,7 @@ from pyscheme.AST import (
    as_symbol, as_string, src_of,
    make_symbol, ConsCell, REPL_FILENAME,
    SYMBOL, VOID,
-   new_scope, symbol_add_scope,
+   new_scope, symbol_add_scope, add_scope_to_form,
 )
 from pyscheme.syntax_rules import hygiene_gensym
 
@@ -55,20 +55,7 @@ _runtime_env_ref = [None]
 
 # ---- sets-of-scopes: form walker ------------------------------------------
 
-def _add_scope_to_form(form, scope_id):
-   """Return form with scope_id added to every symbol atom (recursive).
-   Skips the contents of (quote ...) since those are data, not code."""
-   if is_symbol(form):
-      return symbol_add_scope(form, scope_id)
-   if is_cons(form):
-      if is_symbol(form.car) and as_symbol(form.car) == 'quote':
-         return form
-      new_car = _add_scope_to_form(form.car, scope_id)
-      new_cdr = _add_scope_to_form(form.cdr, scope_id)
-      if new_car is form.car and new_cdr is form.cdr:
-         return form
-      return alloc_cons(new_car, new_cdr, form.src)
-   return form
+_add_scope_to_form = add_scope_to_form
 
 
 def set_runtime_env(env):

@@ -23,6 +23,7 @@ from pyscheme.AST import (
    alloc_cons, make_symbol, list_from_items, src_of, eqv_atom,
    make_syntax_transformer, is_syntax_transformer,
    NIL_VALUE, SYMBOL,
+   new_scope, symbol_flip_scope, add_scope_to_form,
 )
 
 
@@ -62,15 +63,17 @@ def hygiene_gensym(base):
 
 class _SyntaxMatch:
    """Bindings from one pattern-match attempt.
-      scalars  - dict: name -> Scheme value (depth 0 pattern vars)
-      ellipsis - dict: name -> Python list of values (depth >= 1 pvars)
-      ell_depth - dict: name -> int, the ellipsis depth
-      renames  - dict: free id name -> gensym name (hygiene)"""
+      scalars     - dict: name -> Scheme value (depth 0 pattern vars)
+      ellipsis    - dict: name -> Python list of values (depth >= 1 pvars)
+      ell_depth   - dict: name -> int, the ellipsis depth
+      renames     - dict: free id name -> gensym name (legacy, unused)
+      intro_scopes - dict: free id name -> scope_id (sets-of-scopes hygiene)"""
    def __init__(self):
       self.scalars = {}
       self.ellipsis = {}
       self.ell_depth = {}
       self.renames = {}
+      self.intro_scopes = {}
 
 
 def _is_ellipsis(form, ellipsis_sym):
@@ -297,12 +300,10 @@ def _instantiate(tmpl, match, ellipsis_sym, use_src):
    user's macro call rather than nowhere."""
    if is_symbol(tmpl):
       s = as_symbol(tmpl)
-      # Pattern-variable substitution.
       if s in match.scalars:
          return match.scalars[s]
-      # Hygiene rename.
-      if s in match.renames:
-         return make_symbol(match.renames[s], use_src)
+      if s in match.intro_scopes:
+         return symbol_flip_scope(tmpl, match.intro_scopes[s])
       return tmpl
    if is_cons(tmpl):
       return _instantiate_list(tmpl, match, ellipsis_sym, use_src)
@@ -324,11 +325,12 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src):
             i = 0
             while i < n:
                sub = _SyntaxMatch()
-               # Copy scalars from parent; they're still accessible inside.
                for k in match.scalars:
                   sub.scalars[k] = match.scalars[k]
                for k in match.renames:
                   sub.renames[k] = match.renames[k]
+               for k in match.intro_scopes:
+                  sub.intro_scopes[k] = match.intro_scopes[k]
                # Copy ellipsis bindings, peeling one layer for ell_syms.
                for k in match.ellipsis:
                   sub.ellipsis[k] = match.ellipsis[k]
@@ -362,8 +364,8 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src):
       s = as_symbol(cur)
       if s in match.scalars:
          tail = match.scalars[s]
-      elif s in match.renames:
-         tail = make_symbol(match.renames[s], use_src)
+      elif s in match.intro_scopes:
+         tail = symbol_flip_scope(cur, match.intro_scopes[s])
       else:
          tail = cur
    else:
@@ -379,52 +381,45 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src):
 # ── Transformer application ─────────────────────────────────────────────────
 
 def apply_syntax_transformer(t, form):
-   """Try each rule in order; on match, build hygiene renames / value
-   substitutions and instantiate the template.  Raises SchemeSyntaxError
-   if no pattern matches.  Synthesized cons cells inherit form's src so
-   downstream errors point at the macro use site."""
+   """Try each rule in order; on match, instantiate the template with
+   sets-of-scopes hygiene.  Raises SchemeSyntaxError if no pattern matches."""
    from pyscheme.Parser import SchemeSyntaxError
-   # First element of each pattern is the keyword; skip it when matching
-   # against the call form (both sides strip the head).
    literals = t.literals
    ellipsis_sym = t.ellipsis
-   use_src = src_of(form)
+   use_src  = src_of(form)
+   sc_use   = new_scope()
+   sc_intro = new_scope()
+   scoped_form = add_scope_to_form(form, sc_use)
    i = 0
    while i < len(t.rules):
       pattern = t.rules[i][0]
       template = t.rules[i][1]
       if is_cons(pattern):
          match = _SyntaxMatch()
-         if _match_list_pattern(pattern.cdr, form.cdr if is_cons(form) else NIL_VALUE,
+         form_tail = scoped_form.cdr if is_cons(scoped_form) else NIL_VALUE
+         if _match_list_pattern(pattern.cdr, form_tail,
                                 literals, ellipsis_sym, match):
-            _apply_hygiene(t, pattern, template, match, literals, ellipsis_sym)
+            _apply_hygiene(t, pattern, template, match, literals, ellipsis_sym, sc_intro)
             return _instantiate(template, match, ellipsis_sym, use_src)
       i = i + 1
    raise SchemeSyntaxError(
       "syntax-rules: no matching pattern for '" + t.name + "'", use_src)
 
 
-def _apply_hygiene(t, pattern, template, match, literals, ellipsis_sym):
-   """Populate match.renames for free ids in the template: if the id is
-   bound at the macro's def site (def_env), substitute that value directly;
-   otherwise generate a gensym rename to prevent capture at the use site.
-   Falls back to the Expander's current macro env too, so recursive macros
-   (letrec-syntax, or a macro defined after the current one) can refer to
-   themselves and each other by name."""
-   from pyscheme.Expander import _current_macro_env
+def _apply_hygiene(t, pattern, template, match, literals, ellipsis_sym, sc_intro):
+   """Populate match bindings for free ids in the template.
+   Ids bound at the macro's def site get their value substituted directly.
+   All other free ids get sc_intro flipped into their scope_set so they
+   are distinguishable from same-named use-site identifiers."""
    pvars = set()
    collect_pvars(pattern, literals, ellipsis_sym, pvars)
    free_ids = set()
    collect_free_ids(template, pvars, literals, ellipsis_sym, free_ids)
-   live_env = _current_macro_env()
    for fid in free_ids:
       if fid in t.def_env:
          match.scalars[fid] = t.def_env[fid]
          continue
-      if fid in live_env:
-         match.scalars[fid] = live_env[fid]
-         continue
-      match.renames[fid] = hygiene_gensym(fid)
+      match.intro_scopes[fid] = sc_intro
 
 
 # ── Parse (syntax-rules [ellipsis] (literals) rules...) ─────────────────────
