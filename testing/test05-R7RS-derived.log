@@ -1348,7 +1348,7 @@ Primitive  |  args: pre-evaluated
 
 ;;; include-library-declarations: read declarations from a file and
 ;;; splice them into the library body.
->>> (define-library (ild1) (include-library-declarations "testing/lib3-decls.sld")) (import (ild1)) (greet)
+>>> (define-library (ild1) (include-library-declarations "lib3-decls.sld")) (import (ild1)) (greet)
 ==> hi-from-include
 
 ;;; -------- define-syntax / syntax-rules (R7RS 4.3) --------
