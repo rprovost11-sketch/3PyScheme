@@ -71,6 +71,14 @@ def get_runtime_env():
 # () ((_) (f))))`).
 _MAX_EXPAND_ITER = 200
 
+# Guard against mutually-recursive macro expansion that recurses across expand()
+# call boundaries (e.g., letrec-syntax with my-even?/my-odd? on a runtime
+# argument).  _expand_list calls expand() recursively for each sub-form, so
+# depth grows with the form tree plus any macro recursion.  500 is generous for
+# normal code but catches runaway cross-call recursion before Python's own limit.
+_MAX_EXPAND_DEPTH = 150
+_expand_depth = [0]
+
 
 def _lookup_macro(sym):
    """Return the SyntaxTransformer bound to sym in the current runtime env
@@ -110,6 +118,20 @@ def _current_macro_env():
 
 def expand(sexpr):
    """Expand sugar and macros.  Returns an S-expression."""
+   from pyscheme.Parser import SchemeSyntaxError
+   _expand_depth[0] = _expand_depth[0] + 1
+   if _expand_depth[0] > _MAX_EXPAND_DEPTH:
+      raise SchemeSyntaxError(
+         'macro expansion depth exceeded - possible mutually-recursive macro loop',
+         src_of(sexpr))
+   try:
+      return _expand_inner(sexpr)
+   finally:
+      _expand_depth[0] = _expand_depth[0] - 1
+
+
+def _expand_inner(sexpr):
+   """Inner expand loop; called only from expand()."""
    iterations = 0
    while True:
       iterations = iterations + 1
