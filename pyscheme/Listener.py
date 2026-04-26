@@ -42,6 +42,7 @@ from pyscheme.Environment import (
 from pyscheme.Parser      import SchemeSyntaxError
 from pyscheme.Analyzer    import SchemeAnalysisError
 from pyscheme.Utils       import columnize, retrieveFileList, writeln_multiFile, paren_state
+import pyscheme.Expander as _expander_mod
 
 
 _DEFAULT_TEST_DIR = 'testing'
@@ -561,6 +562,8 @@ class Listener:
       entries = _parse_log(text)
       n_pass  = 0
       n_fail  = 0
+      saved_fallback = _expander_mod._include_fallback_dir
+      _expander_mod._include_fallback_dir = os.path.dirname(os.path.abspath(filename))
 
       print()
       print(BOLD + 'Test file:' + RESET + ' ' + filename)
@@ -619,6 +622,7 @@ class Listener:
                print('         actual error:    [' + actual_error + ']')
          k = k + 1
 
+      _expander_mod._include_fallback_dir = saved_fallback
       total = n_pass + n_fail
       print()
       if n_fail == 0:

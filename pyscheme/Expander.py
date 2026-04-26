@@ -858,17 +858,22 @@ def _read_and_expand_file(filename, src, fold):
    return expanded
 
 
+# Set by sessionLog_test to the log file's directory so that
+# include/include-library-declarations in test expressions resolve relative
+# to the test file rather than the process CWD.
+_include_fallback_dir = ''
+
+
 def _include_base_dir(src):
    """Return the directory to resolve a relative include path against.
    When the including form was parsed from a real file, use that file's
-   parent.  REPL input has filename = REPL_FILENAME, which has no
-   associated directory - fall back to the empty string so open()
-   resolves against the process CWD."""
+   parent.  REPL input (REPL_FILENAME) falls back to _include_fallback_dir,
+   which sessionLog_test sets to the test log's directory."""
    if src is None:
-      return ''
+      return _include_fallback_dir
    fname = src.filename
    if not fname or fname == REPL_FILENAME:
-      return ''
+      return _include_fallback_dir
    return os.path.dirname(fname)
 
 
