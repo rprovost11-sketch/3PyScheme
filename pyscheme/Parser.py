@@ -60,6 +60,7 @@ Public API:
 """
 import re
 import math as _math
+from fractions import Fraction as _Fraction
 
 from pyscheme.AST import (
    alloc_cons, NIL_VALUE, SourceInfo, ConsCell, is_cons, is_nil,
@@ -365,9 +366,8 @@ def _try_parse_prefixed_number(text, src):
                   "#e applied to non-finite real %r" % rest, src)
             if f.is_integer():
                return Token(TOK_INT, int(f), src)
-            raise SchemeSyntaxError(
-               "#e applied to non-integer real %r; "
-               "rational support not yet implemented" % rest, src)
+            frac = _Fraction(f)
+            return Token(TOK_RATIONAL, (frac.numerator, frac.denominator), src)
          return Token(TOK_REAL, f, src)
       except ValueError:
          pass

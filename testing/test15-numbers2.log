@@ -82,11 +82,9 @@
 %%% #e#e42
 %%% ^
 
-;;; #e applied to a non-integer real is an error in Phase 2.
+;;; #e applied to a non-integer real produces an exact rational.
 >>> #e1.5
-%%% line 1, col 1: #e applied to non-integer real '1.5'; rational support not yet implemented
-%%% #e1.5
-%%% ^
+==> 3/2
 
 ;;; #e cannot be applied to infinity.
 >>> #e+inf.0

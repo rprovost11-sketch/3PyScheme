@@ -215,7 +215,22 @@ def make_integer(n, src=None):
 def make_real(x, src=None):
    return (REAL, x, src)
 
+def _gcd(a, b):
+   while b:
+      a, b = b, a % b
+   return a
+
+
 def make_rational(num, den, src=None):
+   """Create a normalized rational.  Returns INTEGER when den divides num evenly."""
+   if den < 0:
+      num = -num
+      den = -den
+   g = _gcd(abs(num), den)
+   num = num // g
+   den = den // g
+   if den == 1:
+      return (INTEGER, num, src)
    return (RATIONAL, num, den, src)
 
 def make_complex(re, im, src=None):

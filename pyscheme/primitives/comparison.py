@@ -6,8 +6,14 @@ strictly decreasing, non-decreasing, or non-increasing.  With a single
 argument, all are vacuously #t.
 """
 
+from fractions import Fraction
+
 from pyscheme.primitives import register_primitive
-from pyscheme.AST import is_integer, is_real, as_integer, as_real, make_boolean
+from pyscheme.AST import (
+   is_integer, is_real, is_rational,
+   as_integer, as_real, as_rational_num, as_rational_den,
+   make_boolean,
+)
 from pyscheme.Environment import SchemeTypeError
 
 
@@ -17,6 +23,8 @@ CATEGORY = 'comparison'
 def _num(v, name, app_node, i):
    if is_integer(v):
       return as_integer(v)
+   if is_rational(v):
+      return Fraction(as_rational_num(v), as_rational_den(v))
    if is_real(v):
       return as_real(v)
    raise SchemeTypeError(

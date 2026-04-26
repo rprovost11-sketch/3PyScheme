@@ -6,6 +6,7 @@ the small-integer numeric predicates (zero?, positive?, ...).
 """
 
 import math as _math
+from fractions import Fraction
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
@@ -14,7 +15,7 @@ from pyscheme.AST import (
    is_closure, is_primitive, is_case_closure, is_promise, is_parameter,
    is_error_object, is_continuation,
    is_record_accessor, is_record_mutator,
-   as_integer, as_real, make_boolean,
+   as_integer, as_real, as_rational_num, as_rational_den, make_boolean,
 )
 from pyscheme.Environment import SchemeTypeError
 
@@ -42,7 +43,11 @@ def _prim_real_p(ctx, env, args, app_node):
 
 def _prim_rational_p(ctx, env, args, app_node):
    v = args[0]
-   return make_boolean(is_integer(v) or is_rational(v))
+   if is_integer(v) or is_rational(v):
+      return make_boolean(True)
+   if is_real(v):
+      return make_boolean(_math.isfinite(as_real(v)))
+   return make_boolean(False)
 
 
 def _prim_integer_p(ctx, env, args, app_node):
@@ -59,6 +64,8 @@ def _prim_integer_p(ctx, env, args, app_node):
 def _num_or_error(v, name, app_node):
    if is_integer(v):
       return as_integer(v)
+   if is_rational(v):
+      return Fraction(as_rational_num(v), as_rational_den(v))
    if is_real(v):
       return as_real(v)
    raise SchemeTypeError(

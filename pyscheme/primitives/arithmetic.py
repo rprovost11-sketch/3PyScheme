@@ -11,14 +11,16 @@ without changing the API.
 """
 
 import math
+from fractions import Fraction
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
    is_integer, is_real, is_rational, is_complex,
    is_string,
-   as_integer, as_real, as_complex_real, as_complex_imag, as_string,
-   make_integer, make_real, make_complex, make_boolean, make_string,
-   make_multi_values,
+   as_integer, as_real, as_rational_num, as_rational_den,
+   as_complex_real, as_complex_imag, as_string,
+   make_integer, make_real, make_rational, make_complex,
+   make_boolean, make_string, make_multi_values,
 )
 from pyscheme.Environment import SchemeTypeError
 
@@ -27,9 +29,11 @@ CATEGORY = 'arithmetic'
 
 
 def _num(v, name, app_node, i):
-   """Extract the Python numeric value from v, or raise."""
+   """Extract the Python numeric value from v (int, Fraction, or float), or raise."""
    if is_integer(v):
       return as_integer(v)
+   if is_rational(v):
+      return Fraction(as_rational_num(v), as_rational_den(v))
    if is_real(v):
       return as_real(v)
    raise SchemeTypeError(
@@ -48,11 +52,13 @@ def _check_int(v, name, app_node, i):
 def _wrap(n):
    """Wrap a Python number back into a tagged value."""
    if isinstance(n, bool):
-      # bool is a subclass of int in Python; coerce explicitly so
-      # arithmetic-on-boolean doesn't accidentally yield an INTEGER.
       n = int(n)
    if isinstance(n, int):
       return make_integer(n)
+   if isinstance(n, Fraction):
+      if n.denominator == 1:
+         return make_integer(n.numerator)
+      return make_rational(n.numerator, n.denominator)
    if isinstance(n, float):
       return make_real(n)
    raise TypeError('internal: arithmetic result has unexpected type ' + str(type(n)))
@@ -88,17 +94,22 @@ def _prim_mul(ctx, env, args, app_node):
 
 
 def _exact_div(a, b):
-   """Divide two numbers.  Exact integer / exact integer -> int when evenly
-   divisible, otherwise float.  Float zero divisor -> ±inf per R7RS."""
-   if isinstance(a, int) and isinstance(b, int) and a % b == 0:
-      return a // b
-   fa = float(a)
-   fb = float(b)
-   if fb == 0.0:
-      if math.isnan(fa) or fa == 0.0:
-         return float('nan')
-      return math.copysign(float('inf'), fa)
-   return fa / fb
+   """Divide two numbers.
+   - Both exact (int or Fraction): return exact result (Fraction or int).
+   - Either inexact (float): return float; float zero divisor -> ±inf.
+   """
+   if isinstance(b, float):
+      fb = b
+      fa = float(a)
+      if fb == 0.0:
+         if math.isnan(fa) or fa == 0.0:
+            return float('nan')
+         return math.copysign(float('inf'), fa)
+      return fa / fb
+   if isinstance(a, float):
+      return a / float(b)
+   # Both exact: use Fraction for exact rational arithmetic.
+   return Fraction(a) / Fraction(b)
 
 
 def _prim_div(ctx, env, args, app_node):
@@ -218,8 +229,14 @@ def _prim_lcm(ctx, env, args, app_node):
 def _prim_expt(ctx, env, args, app_node):
    base = _num(args[0], 'expt', app_node, 1)
    exp  = _num(args[1], 'expt', app_node, 2)
-   if isinstance(base, int) and isinstance(exp, int) and exp >= 0:
-      return make_integer(base ** exp)
+   if isinstance(exp, int) and isinstance(base, (int, Fraction)):
+      if exp >= 0:
+         return _wrap(Fraction(base) ** exp)
+      # Negative exact exponent: 1 / base^(-exp)
+      pos = Fraction(base) ** (-exp)
+      if pos == 0:
+         raise SchemeTypeError('expt: division by zero', args[1])
+      return _wrap(Fraction(1, 1) / pos)
    return _wrap(float(base) ** float(exp))
 
 
@@ -229,6 +246,11 @@ def _prim_sqrt(ctx, env, args, app_node):
       r = math.isqrt(v)
       if r * r == v:
          return make_integer(r)
+   if isinstance(v, Fraction) and v >= 0:
+      rn = math.isqrt(v.numerator)
+      rd = math.isqrt(v.denominator)
+      if rn * rn == v.numerator and rd * rd == v.denominator:
+         return _wrap(Fraction(rn, rd))
    return make_real(math.sqrt(float(v)))
 
 
@@ -241,6 +263,8 @@ def _prim_floor(ctx, env, args, app_node):
    v = _num(args[0], 'floor', app_node, 1)
    if isinstance(v, int):
       return make_integer(v)
+   if isinstance(v, Fraction):
+      return make_integer(math.floor(v))
    if not math.isfinite(v):
       return make_real(v)
    return make_real(float(math.floor(v)))
@@ -250,6 +274,8 @@ def _prim_ceiling(ctx, env, args, app_node):
    v = _num(args[0], 'ceiling', app_node, 1)
    if isinstance(v, int):
       return make_integer(v)
+   if isinstance(v, Fraction):
+      return make_integer(math.ceil(v))
    if not math.isfinite(v):
       return make_real(v)
    return make_real(float(math.ceil(v)))
@@ -259,6 +285,8 @@ def _prim_truncate(ctx, env, args, app_node):
    v = _num(args[0], 'truncate', app_node, 1)
    if isinstance(v, int):
       return make_integer(v)
+   if isinstance(v, Fraction):
+      return make_integer(math.trunc(v))
    if not math.isfinite(v):
       return make_real(v)
    return make_real(float(math.trunc(v)))
@@ -268,6 +296,8 @@ def _prim_round(ctx, env, args, app_node):
    v = _num(args[0], 'round', app_node, 1)
    if isinstance(v, int):
       return make_integer(v)
+   if isinstance(v, Fraction):
+      return make_integer(round(v))
    if not math.isfinite(v):
       return make_real(v)
    # R7RS specifies banker's rounding (round half to even); Python's round() does this.
@@ -275,7 +305,8 @@ def _prim_round(ctx, env, args, app_node):
 
 
 def _prim_exact_p(ctx, env, args, app_node):
-   return make_boolean(is_integer(args[0]))
+   v = args[0]
+   return make_boolean(is_integer(v) or is_rational(v))
 
 
 def _prim_inexact_p(ctx, env, args, app_node):
@@ -284,14 +315,17 @@ def _prim_inexact_p(ctx, env, args, app_node):
 
 def _prim_exact(ctx, env, args, app_node):
    v = args[0]
-   if is_integer(v):
+   if is_integer(v) or is_rational(v):
       return v
    if is_real(v):
       f = as_real(v)
+      if not math.isfinite(f):
+         raise SchemeTypeError(
+            'exact: no exact representation for non-finite real', app_node)
       if f.is_integer():
          return make_integer(int(f))
-      raise SchemeTypeError(
-         'exact: cannot convert non-integer real to exact', app_node)
+      frac = Fraction(f)
+      return make_rational(frac.numerator, frac.denominator)
    raise SchemeTypeError(
       'exact: argument must be a number', app_node)
 
@@ -302,6 +336,8 @@ def _prim_inexact(ctx, env, args, app_node):
       return v
    if is_integer(v):
       return make_real(float(as_integer(v)))
+   if is_rational(v):
+      return make_real(float(Fraction(as_rational_num(v), as_rational_den(v))))
    raise SchemeTypeError(
       'inexact: argument must be a number', app_node)
 
@@ -314,12 +350,14 @@ def _prim_numerator(ctx, env, args, app_node):
    v = args[0]
    if is_integer(v):
       return v
+   if is_rational(v):
+      return make_integer(as_rational_num(v))
    if is_real(v):
       f = as_real(v)
-      if f.is_integer():
+      if math.isfinite(f) and f.is_integer():
          return make_real(f)
    raise SchemeTypeError(
-      'numerator: argument must be an integer or integer-valued real',
+      'numerator: argument must be an integer, rational, or integer-valued real',
       app_node)
 
 
@@ -327,12 +365,14 @@ def _prim_denominator(ctx, env, args, app_node):
    v = args[0]
    if is_integer(v):
       return make_integer(1)
+   if is_rational(v):
+      return make_integer(as_rational_den(v))
    if is_real(v):
       f = as_real(v)
-      if f.is_integer():
+      if math.isfinite(f) and f.is_integer():
          return make_real(1.0)
    raise SchemeTypeError(
-      'denominator: argument must be an integer or integer-valued real',
+      'denominator: argument must be an integer, rational, or integer-valued real',
       app_node)
 
 
@@ -439,6 +479,14 @@ def _prim_number_to_string(ctx, env, args, app_node):
       if '.' not in s and 'e' not in s:
          s = s + '.0'
       return make_string(s)
+   if is_rational(v):
+      n = as_rational_num(v)
+      d = as_rational_den(v)
+      if radix == 10:
+         return make_string(str(n) + '/' + str(d))
+      raise SchemeTypeError(
+         'number->string: only radix 10 supported for rational numbers',
+         app_node)
    if is_complex(v):
       if radix != 10:
          raise SchemeTypeError(
@@ -615,6 +663,23 @@ def _prim_string_to_number(ctx, env, args, app_node):
       return make_integer(n)
    except (ValueError, TypeError):
       pass
+   # Try rational n/d.
+   if '/' in s:
+      slash = s.index('/')
+      num_str = s[:slash]
+      den_str = s[slash + 1:]
+      try:
+         num = int(num_str, radix)
+         den = int(den_str, radix)
+         if den != 0:
+            frac = Fraction(num, den)
+            if exact == 0:
+               return make_real(float(frac))
+            if frac.denominator == 1:
+               return make_integer(frac.numerator)
+            return make_rational(frac.numerator, frac.denominator)
+      except (ValueError, TypeError):
+         pass
    # Try real (radix 10 only).
    if radix == 10:
       if s == '+inf.0':
@@ -707,6 +772,73 @@ def _prim_atan(ctx, env, args, app_node):
       v2 = _num(args[1], 'atan', app_node, 2)
       return make_real(math.atan2(float(v), float(v2)))
    return make_real(math.atan(float(v)))
+
+
+def _as_real_val(v, name, app_node, idx):
+   """Extract v as a Python float for complex construction."""
+   if is_integer(v):
+      return float(as_integer(v))
+   if is_rational(v):
+      return float(Fraction(as_rational_num(v), as_rational_den(v)))
+   if is_real(v):
+      return as_real(v)
+   raise SchemeTypeError(
+      '%s: argument %d is not a real number' % (name, idx), app_node)
+
+
+def _prim_make_rectangular(ctx, env, args, app_node):
+   re = _as_real_val(args[0], 'make-rectangular', app_node, 1)
+   im = _as_real_val(args[1], 'make-rectangular', app_node, 2)
+   return make_complex(re, im)
+
+
+def _prim_make_polar(ctx, env, args, app_node):
+   r     = _as_real_val(args[0], 'make-polar', app_node, 1)
+   theta = _as_real_val(args[1], 'make-polar', app_node, 2)
+   return make_complex(r * math.cos(theta), r * math.sin(theta))
+
+
+def _prim_real_part(ctx, env, args, app_node):
+   v = args[0]
+   if is_complex(v):
+      return make_real(as_complex_real(v))
+   if is_integer(v) or is_rational(v):
+      return v
+   if is_real(v):
+      return v
+   raise SchemeTypeError('real-part: argument must be a number', app_node)
+
+
+def _prim_imag_part(ctx, env, args, app_node):
+   v = args[0]
+   if is_complex(v):
+      return make_real(as_complex_imag(v))
+   if is_integer(v) or is_rational(v):
+      return make_integer(0)
+   if is_real(v):
+      return make_real(0.0)
+   raise SchemeTypeError('imag-part: argument must be a number', app_node)
+
+
+def _prim_magnitude(ctx, env, args, app_node):
+   v = args[0]
+   if is_complex(v):
+      re = as_complex_real(v)
+      im = as_complex_imag(v)
+      return make_real(math.hypot(re, im))
+   return _prim_abs(ctx, env, args, app_node)
+
+
+def _prim_angle(ctx, env, args, app_node):
+   v = args[0]
+   if is_complex(v):
+      return make_real(math.atan2(as_complex_imag(v), as_complex_real(v)))
+   n = _num(v, 'angle', app_node, 1)
+   if n > 0:
+      return make_real(0.0)
+   if n < 0:
+      return make_real(math.pi)
+   raise SchemeTypeError('angle: undefined for zero', app_node)
 
 
 def register():
@@ -873,4 +1005,22 @@ def register():
    register_primitive('atan', (1, 2), _prim_atan,
       doc=('(atan z) returns the arctangent.  (atan y x) returns atan2(y,x).\n'
            'R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('make-rectangular', (2, 2), _prim_make_rectangular,
+      doc='(make-rectangular x y) constructs a complex number x+yi.  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('make-polar', (2, 2), _prim_make_polar,
+      doc='(make-polar r theta) constructs a complex from polar form r*e^(i*theta).',
+      category=CATEGORY)
+   register_primitive('real-part', (1, 1), _prim_real_part,
+      doc='Return the real part of z.  For real z, returns z itself.',
+      category=CATEGORY)
+   register_primitive('imag-part', (1, 1), _prim_imag_part,
+      doc='Return the imaginary part of z.  For real z, returns 0 (exact) or 0.0.',
+      category=CATEGORY)
+   register_primitive('magnitude', (1, 1), _prim_magnitude,
+      doc='Return the magnitude (absolute value) of z.  R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('angle', (1, 1), _prim_angle,
+      doc='Return the angle of z in radians.  For positive real: 0.0; negative: pi.',
       category=CATEGORY)
