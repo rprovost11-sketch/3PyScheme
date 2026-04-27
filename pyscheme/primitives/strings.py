@@ -119,10 +119,22 @@ def _prim_string_append(ctx, env, args, app_node):
 
 
 def _prim_string_to_list(ctx, env, args, app_node):
-   s = _check_string(args[0], 'string->list', app_node)
+   s     = _check_string(args[0], 'string->list', app_node)
+   start = 0
+   end   = len(s)
+   if len(args) >= 2:
+      if not is_integer(args[1]):
+         raise SchemeTypeError('string->list: start must be an integer', src_of(app_node))
+      start = as_integer(args[1])
+   if len(args) >= 3:
+      if not is_integer(args[2]):
+         raise SchemeTypeError('string->list: end must be an integer', src_of(app_node))
+      end = as_integer(args[2])
+   if start < 0 or end > len(s) or start > end:
+      raise SchemeTypeError('string->list: start/end out of range', src_of(app_node))
    result = NIL_VALUE
-   i = len(s) - 1
-   while i >= 0:
+   i = end - 1
+   while i >= start:
       result = alloc_cons(make_character(s[i]), result, None)
       i = i - 1
    return result
@@ -355,8 +367,8 @@ def register():
    register_primitive('string-append', (0, None), _prim_string_append,
       doc='Concatenate string arguments into a new string.  R7RS 6.7.',
       category=CATEGORY)
-   register_primitive('string->list', (1, 1), _prim_string_to_list,
-      doc='Return a list of the characters in the string.  R7RS 6.7.',
+   register_primitive('string->list', (1, 3), _prim_string_to_list,
+      doc='(string->list string [start [end]]) returns a list of the characters in string[start:end].  R7RS 6.7.',
       category=CATEGORY)
    register_primitive('list->string', (1, 1), _prim_list_to_string,
       doc='Return a string built from the characters in the list.  R7RS 6.7.',

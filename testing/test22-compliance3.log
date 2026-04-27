@@ -1,0 +1,109 @@
+;;; ============================================================
+;;; test22-compliance3.log
+;;; R7RS-small compliance corrections (round 3):
+;;;   \x<hex>; string hex escape;
+;;;   \| string pipe escape;
+;;;   #\x<hex> character hex literal;
+;;;   |...| vertical-bar symbol notation (read and write);
+;;;   string->list optional start/end arguments.
+;;; ============================================================
+
+;;; -------- \x<hex>; string hex escape --------
+
+>>> (string-length "\x41;")
+==> 1
+
+>>> (string-ref "\x41;" 0)
+==> #\A
+
+>>> (char->integer (string-ref "\x3BB;" 0))
+==> 955
+
+;;; -------- \| string pipe escape --------
+
+>>> (string-length "\|")
+==> 1
+
+>>> (string=? "\|" "|")
+==> #t
+
+>>> (string=? "a\|b" "a|b")
+==> #t
+
+;;; -------- #\x<hex> character hex literal --------
+
+>>> (char->integer #\x41)
+==> 65
+
+>>> (char->integer #\x0)
+==> 0
+
+>>> (char->integer #\x3BB)
+==> 955
+
+>>> (char=? #\x41 #\A)
+==> #t
+
+>>> (char=? #\x0 #\null)
+==> #t
+
+;;; -------- |...| vertical-bar symbol (read) --------
+
+>>> (symbol? '|foo|)
+==> #t
+
+>>> (string=? (symbol->string '|foo|) "foo")
+==> #t
+
+>>> (eq? '|foo| 'foo)
+==> #t
+
+>>> (symbol? '|hello world|)
+==> #t
+
+>>> (string=? (symbol->string '|hello world|) "hello world")
+==> #t
+
+>>> (string=? (symbol->string '|a\|b|) "a|b")
+==> #t
+
+;;; -------- |...| vertical-bar symbol (write) --------
+
+>>> (let ((p (open-output-string))) (write (string->symbol "hello world") p) (get-output-string p))
+==> "|hello world|"
+
+>>> (let ((p (open-output-string))) (write 'foo p) (get-output-string p))
+==> "foo"
+
+>>> (let ((p (open-output-string))) (write (string->symbol "a|b") p) (get-output-string p))
+==> "|a\\|b|"
+
+;;; -------- string->list optional start/end --------
+
+>>> (string->list "hello")
+==> (#\h #\e #\l #\l #\o)
+
+>>> (string->list "hello" 1)
+==> (#\e #\l #\l #\o)
+
+>>> (string->list "hello" 1 3)
+==> (#\e #\l)
+
+>>> (string->list "hello" 0 0)
+==> ()
+
+>>> (string->list "hello" 5)
+==> ()
+
+>>> (string->list "hello" 2 2)
+==> ()
+
+>>> (string->list "hello" 3 1)
+%%% SchemeTypeError: line 1, col 1: string->list: start/end out of range
+%%% (string->list "hello" 3 1)
+%%% ^
+
+>>> (string->list "hello" 6)
+%%% SchemeTypeError: line 1, col 1: string->list: start/end out of range
+%%% (string->list "hello" 6)
+%%% ^

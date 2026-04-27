@@ -183,7 +183,10 @@ def pretty_print(val):
       return ('#<error-object "' + _escape_string(msg) + '" (' +
               ' '.join(parts) + ')>')
    if is_symbol(val):
-      return as_symbol(val)
+      name = as_symbol(val)
+      if _needs_vertical_bars(name):
+         return '|' + _escape_symbol_name(name) + '|'
+      return name
    return repr(val)
 
 
@@ -292,6 +295,43 @@ def pretty_print_shared(val):
          next_label[0] = next_label[0] + 1
    seen = set()
    return _shared_render(val, labels, next_label, seen)
+
+
+def _is_safe_symbol_initial(c):
+   return (('a' <= c <= 'z') or ('A' <= c <= 'Z') or
+           c in '!$%&*/:<=>?^_~')
+
+
+def _is_safe_symbol_subsequent(c):
+   return _is_safe_symbol_initial(c) or ('0' <= c <= '9') or c in '+-@.'
+
+
+def _needs_vertical_bars(name):
+   if not name:
+      return True
+   if not _is_safe_symbol_initial(name[0]) and name[0] not in '+-@.':
+      return True
+   i = 0
+   while i < len(name):
+      if not _is_safe_symbol_subsequent(name[i]):
+         return True
+      i = i + 1
+   return False
+
+
+def _escape_symbol_name(name):
+   result = []
+   i = 0
+   while i < len(name):
+      c = name[i]
+      if c == '|':
+         result.append('\\|')
+      elif c == '\\':
+         result.append('\\\\')
+      else:
+         result.append(c)
+      i = i + 1
+   return ''.join(result)
 
 
 def _escape_string(s):

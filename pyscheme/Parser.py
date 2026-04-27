@@ -133,9 +133,9 @@ _TOKEN_RE = re.compile(r'''
     | (?P<UNQUOTE>,)
     | (?P<QUOTE>')
     | (?P<DOT>\.(?=[\s()'"`,;]|$))                                         # lone . is the dotted-pair marker
-    | (?P<STRING>"(?:[^"\\]|\\.)*")
+    | (?P<STRING>"(?:[^"\\]|\\[\s\S])*")
     | (?P<VECTOR_LPAREN>\#\()
-    | (?P<CHAR>\#\\(?:[a-zA-Z]+|.))
+    | (?P<CHAR>\#\\(?:x[0-9a-fA-F]+|[a-zA-Z]+|.))
     | (?P<TRUE>\#t(?:rue)?)
     | (?P<FALSE>\#f(?:alse)?)
     | (?P<RATIONAL>[+-]?\d+/\d+(?=[\s()'"`,;]|$))
@@ -154,10 +154,13 @@ _STRING_ESCAPES = {
    'r':  '\r',
    '\\': '\\',
    '"':  '"',
+   '|':  '|',
    'a':  '\a',
    'b':  '\b',
    '0':  '\0',
 }
+
+_HEX_DIGITS = '0123456789abcdefABCDEF'
 
 _CHAR_NAMES = {
    'space':     ' ',
@@ -250,6 +253,53 @@ def tokenize(source, filename=None):
             col = col + (j - pos + 1)
             pos = j + 1
             continue
+      # Vertical-bar symbol: |...| with escape sequences.  R7RS §2.1.
+      if pos < n and source[pos] == '|':
+         src = _make_src(line, col, source_lines, filename)
+         pos = pos + 1
+         col = col + 1
+         raw_chars = []
+         while pos < n and source[pos] != '|':
+            c = source[pos]
+            if c == '\\':
+               raw_chars.append(c)
+               pos = pos + 1
+               col = col + 1
+               if pos < n:
+                  ec = source[pos]
+                  raw_chars.append(ec)
+                  if ec == '\n':
+                     line = line + 1
+                     col  = 1
+                  else:
+                     col = col + 1
+                  pos = pos + 1
+                  if ec == 'x':
+                     while pos < n and source[pos] in _HEX_DIGITS:
+                        raw_chars.append(source[pos])
+                        col = col + 1
+                        pos = pos + 1
+                     if pos < n and source[pos] == ';':
+                        raw_chars.append(';')
+                        col = col + 1
+                        pos = pos + 1
+            else:
+               if c == '\n':
+                  line = line + 1
+                  col  = 1
+               else:
+                  col = col + 1
+               raw_chars.append(c)
+               pos = pos + 1
+         if pos >= n:
+            raise SchemeSyntaxError(
+               'unterminated |...| symbol',
+               _make_src(line, col, source_lines, filename))
+         pos = pos + 1
+         col = col + 1
+         name = _decode_string_escapes(''.join(raw_chars), src)
+         tokens.append(Token(TOK_IDENT, name, src))
+         continue
       match = _TOKEN_RE.match(source, pos)
       if not match:
          raise SchemeSyntaxError(
@@ -553,9 +603,31 @@ def _decode_string_escapes(raw, src):
          esc = raw[i + 1]
          if esc in _STRING_ESCAPES:
             result.append(_STRING_ESCAPES[esc])
+            i = i + 2
+         elif esc == 'x':
+            j = i + 2
+            while j < n and raw[j] in _HEX_DIGITS:
+               j = j + 1
+            if j == i + 2:
+               raise SchemeSyntaxError("malformed \\x escape: no hex digits", src)
+            if j >= n or raw[j] != ';':
+               raise SchemeSyntaxError("malformed \\x escape: missing semicolon", src)
+            result.append(chr(int(raw[i + 2 : j], 16)))
+            i = j + 1
          else:
-            raise SchemeSyntaxError("unknown string escape \\%s" % esc, src)
-         i = i + 2
+            j = i + 1
+            while j < n and raw[j] in ' \t':
+               j = j + 1
+            if j < n and raw[j] in '\r\n':
+               if raw[j] == '\r':
+                  j = j + 1
+               if j < n and raw[j] == '\n':
+                  j = j + 1
+               while j < n and raw[j] in ' \t':
+                  j = j + 1
+               i = j
+            else:
+               raise SchemeSyntaxError("unknown string escape \\%s" % esc, src)
       else:
          result.append(c)
          i = i + 1
@@ -566,6 +638,17 @@ def _decode_char_literal(text, src):
    rest = _substring(text, 2, len(text))
    if len(rest) == 1:
       return rest
+   if len(rest) >= 2 and rest[0] == 'x':
+      hex_str = _substring(rest, 1, len(rest))
+      all_hex = len(hex_str) > 0
+      i = 0
+      while i < len(hex_str):
+         if hex_str[i] not in _HEX_DIGITS:
+            all_hex = False
+            break
+         i = i + 1
+      if all_hex:
+         return chr(int(hex_str, 16))
    name = rest.lower()
    if name in _CHAR_NAMES:
       return _CHAR_NAMES[name]
