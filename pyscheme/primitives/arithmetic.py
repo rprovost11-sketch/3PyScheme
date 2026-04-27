@@ -753,7 +753,8 @@ def _prim_string_to_number(ctx, env, args, app_node):
                return make_boolean(False)
             if f.is_integer():
                return make_integer(int(f))
-            return make_boolean(False)   # non-integer real: Phase 3 rational
+            frac = Fraction(f)
+            return make_rational(frac.numerator, frac.denominator)
          return make_real(f)
       except (ValueError, TypeError):
          pass
@@ -783,7 +784,12 @@ def _prim_log(ctx, env, args, app_node):
    if f == 0.0:
       r = float('-inf')
    elif f < 0.0:
-      r = float('nan')
+      result = cmath.log(complex(f, 0.0))
+      if len(args) >= 2:
+         base = _any_num(args[1], 'log', app_node, 2)
+         b = base if isinstance(base, complex) else complex(float(base))
+         result = result / cmath.log(b)
+      return _wrap(result)
    else:
       r = math.log(f)
    if len(args) >= 2:
@@ -823,7 +829,7 @@ def _prim_asin(ctx, env, args, app_node):
       return _wrap(cmath.asin(v))
    f = float(v)
    if f < -1.0 or f > 1.0:
-      return make_real(float('nan'))
+      return _wrap(cmath.asin(complex(f, 0.0)))
    return make_real(math.asin(f))
 
 
@@ -833,7 +839,7 @@ def _prim_acos(ctx, env, args, app_node):
       return _wrap(cmath.acos(v))
    f = float(v)
    if f < -1.0 or f > 1.0:
-      return make_real(float('nan'))
+      return _wrap(cmath.acos(complex(f, 0.0)))
    return make_real(math.acos(f))
 
 
@@ -915,6 +921,46 @@ def _prim_angle(ctx, env, args, app_node):
    if n < 0:
       return make_real(math.pi)
    raise SchemeTypeError('angle: undefined for zero', app_node)
+
+
+def _simplest_rational(lo, hi):
+   """Return simplest rational in [lo, hi] (lo, hi Fractions, 0 < lo <= hi)."""
+   if lo == hi:
+      return lo
+   n = math.ceil(lo)
+   if Fraction(n) <= hi:
+      return Fraction(n)
+   return Fraction(1) / _simplest_rational(Fraction(1) / hi, Fraction(1) / lo)
+
+
+def _rationalize_exact(x, delta):
+   """Return simplest rational y s.t. |x - y| <= delta (Fractions)."""
+   lo = x - delta
+   hi = x + delta
+   if lo <= 0 and hi >= 0:
+      return Fraction(0)
+   if lo > 0:
+      return _simplest_rational(lo, hi)
+   return -_simplest_rational(-hi, -lo)
+
+
+def _prim_rationalize(ctx, env, args, app_node):
+   x     = _num(args[0], 'rationalize', app_node, 1)
+   delta = _num(args[1], 'rationalize', app_node, 2)
+   inexact = isinstance(x, float) or isinstance(delta, float)
+   if isinstance(delta, float):
+      if math.isinf(delta):
+         return make_real(0.0) if inexact else make_integer(0)
+      if math.isnan(delta):
+         return make_real(float('nan'))
+   if isinstance(x, float) and not math.isfinite(x):
+      return make_real(x)
+   fx = Fraction(x)
+   fd = abs(Fraction(delta))
+   r = _rationalize_exact(fx, fd)
+   if inexact:
+      return _wrap(float(r))
+   return _wrap(r)
 
 
 def register():
@@ -1099,4 +1145,8 @@ def register():
       category=CATEGORY)
    register_primitive('angle', (1, 1), _prim_angle,
       doc='Return the angle of z in radians.  For positive real: 0.0; negative: pi.',
+      category=CATEGORY)
+   register_primitive('rationalize', (2, 2), _prim_rationalize,
+      doc=('(rationalize x delta) returns the simplest rational y such that '
+           '|x - y| <= delta.  R7RS 6.2.6.'),
       category=CATEGORY)

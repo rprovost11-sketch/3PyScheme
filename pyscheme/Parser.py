@@ -268,6 +268,10 @@ def _build_token(kind, text, src):
          tok = _try_parse_complex_literal(text, src)
          if tok is not None:
             return tok
+      if '@' in text:
+         tok = _try_parse_polar_literal(text, src)
+         if tok is not None:
+            return tok
       if _starts_like_number(text):
          raise SchemeSyntaxError(
             "malformed number or identifier: %r" % text, src)
@@ -432,6 +436,22 @@ def _try_parse_complex_literal(text, src):
       if im_val is None:
          return None
 
+   return Token(TOK_COMPLEX, (float(re_val), float(im_val)), src)
+
+
+def _try_parse_polar_literal(text, src):
+   """Parse r@theta polar complex literal."""
+   at = text.index('@')
+   r_str     = text[:at]
+   theta_str = text[at + 1:]
+   if not r_str or not theta_str:
+      return None
+   r     = _parse_number_for_complex(r_str)
+   theta = _parse_number_for_complex(theta_str)
+   if r is None or theta is None:
+      return None
+   re_val = r * _math.cos(theta)
+   im_val = r * _math.sin(theta)
    return Token(TOK_COMPLEX, (float(re_val), float(im_val)), src)
 
 

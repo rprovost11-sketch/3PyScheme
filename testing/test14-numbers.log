@@ -179,7 +179,7 @@
 ==> -inf.0
 
 >>> (log -1)
-==> +nan.0
+==> 0.0+3.141592653589793i
 
 ;;; two-argument log: log base w of z.
 >>> (log 100 10)
@@ -215,12 +215,12 @@
 >>> (atan 1 1)
 ==> 0.7853981633974483
 
-;;; domain error: asin/acos outside [-1, 1] -> +nan.0.
+;;; asin/acos outside [-1, 1] promote to complex.
 >>> (asin 2)
-==> +nan.0
+==> 1.5707963267948966+1.3169578969248166i
 
 >>> (acos 2)
-==> +nan.0
+==> 0.0-1.3169578969248166i
 
 ;;; -------- pi via atan --------
 

@@ -1,0 +1,108 @@
+;;; ============================================================
+;;; test18-numbers5.log
+;;; R7RS §6.2 numeric tower Phase 5:
+;;;   rationalize
+;;;   polar complex literal a@b
+;;;   string->number #e on non-integer real
+;;;   transcendental auto-promotion to complex (log, asin, acos)
+;;; ============================================================
+
+;;; -------- rationalize (exact) --------
+
+;;; Simplest rational in [7/30, 13/30].
+>>> (rationalize 1/3 1/10)
+==> 1/3
+
+;;; Interval [1/5, 2/5] still simplest = 1/3.
+>>> (rationalize 3/10 1/10)
+==> 1/3
+
+;;; Negative: simplest rational in [-13/30, -7/30].
+>>> (rationalize -1/3 1/10)
+==> -1/3
+
+;;; Interval straddles zero -> 0.
+>>> (rationalize 1/4 1/4)
+==> 0
+
+;;; Zero delta: return exact x.
+>>> (rationalize 1/3 0)
+==> 1/3
+
+;;; Zero x, zero delta.
+>>> (rationalize 0 0)
+==> 0
+
+;;; -------- rationalize (inexact) --------
+
+;;; Inexact input -> inexact result.
+>>> (rationalize 0.3 0.1)
+==> 0.3333333333333333
+
+;;; Interval [0.0, 0.2] straddles zero -> inexact 0.
+>>> (rationalize 0.0 0.1)
+==> 0.0
+
+;;; Infinite delta -> 0.0 (inexact).
+>>> (rationalize 1 +inf.0)
+==> 0.0
+
+;;; Infinite x -> return x unchanged.
+>>> (rationalize +inf.0 1)
+==> +inf.0
+
+;;; -------- polar complex literal a@b --------
+
+;;; r=1, theta=0: pure real.
+>>> 1@0
+==> 1.0+0.0i
+
+;;; r=2, theta=0.
+>>> 2@0
+==> 2.0+0.0i
+
+;;; Polar literal equals make-polar with same arguments.
+>>> (= 1@0 (make-polar 1 0))
+==> #t
+
+;;; Polar and rectangular agree for r=5, theta=0.
+>>> (= 5@0 5+0i)
+==> #t
+
+;;; -------- string->number with #e on non-integer reals --------
+
+;;; #e1.5 -> exact rational 3/2.
+>>> (string->number "#e1.5")
+==> 3/2
+
+;;; #e0.5 -> 1/2.
+>>> (string->number "#e0.5")
+==> 1/2
+
+;;; #e2.0 -> integer 2 (2.0 is_integer).
+>>> (string->number "#e2.0")
+==> 2
+
+;;; #e0.0 -> integer 0.
+>>> (string->number "#e0.0")
+==> 0
+
+;;; -------- transcendental auto-promotion to complex --------
+
+;;; log of negative real -> complex (principal value).
+>>> (log -1)
+==> 0.0+3.141592653589793i
+
+>>> (log -2)
+==> 0.6931471805599453+3.141592653589793i
+
+;;; asin outside [-1, 1] -> complex.
+>>> (asin 2)
+==> 1.5707963267948966+1.3169578969248166i
+
+>>> (asin -2)
+==> -1.5707963267948966+1.3169578969248166i
+
+;;; acos outside [-1, 1] -> complex.
+>>> (acos 2)
+==> 0.0-1.3169578969248166i
