@@ -700,6 +700,20 @@ def _prim_string_to_number(ctx, env, args, app_node):
          return make_boolean(False)
    if not s:
       return make_boolean(False)
+   # Try polar literal (radix 10 only, contains '@').
+   if radix == 10 and '@' in s:
+      at = s.index('@')
+      r_str     = s[:at]
+      theta_str = s[at + 1:]
+      if r_str and theta_str:
+         r_val     = _parse_number_for_stn(r_str)
+         theta_val = _parse_number_for_stn(theta_str)
+         if r_val is not None and theta_val is not None:
+            if exact == 1:
+               return make_boolean(False)
+            re_val = r_val * math.cos(theta_val)
+            im_val = r_val * math.sin(theta_val)
+            return make_complex(float(re_val), float(im_val))
    # Try complex literal (radix 10 only, ends in 'i').
    if radix == 10 and s.endswith('i') and len(s) >= 2:
       tup = _parse_complex_for_stn(s)
@@ -1149,4 +1163,10 @@ def register():
    register_primitive('rationalize', (2, 2), _prim_rationalize,
       doc=('(rationalize x delta) returns the simplest rational y such that '
            '|x - y| <= delta.  R7RS 6.2.6.'),
+      category=CATEGORY)
+   register_primitive('exact->inexact', (1, 1), _prim_inexact,
+      doc='Alias for inexact.  R6RS / R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('inexact->exact', (1, 1), _prim_exact,
+      doc='Alias for exact.  R6RS / R7RS 6.2.6.',
       category=CATEGORY)

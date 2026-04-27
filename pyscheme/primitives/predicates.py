@@ -39,7 +39,11 @@ def _prim_complex_p(ctx, env, args, app_node):
 
 def _prim_real_p(ctx, env, args, app_node):
    v = args[0]
-   return make_boolean(is_integer(v) or is_real(v) or is_rational(v))
+   if is_integer(v) or is_real(v) or is_rational(v):
+      return make_boolean(True)
+   if is_complex(v):
+      return make_boolean(as_complex_imag(v) == 0.0)
+   return make_boolean(False)
 
 
 def _prim_rational_p(ctx, env, args, app_node):
@@ -48,6 +52,8 @@ def _prim_rational_p(ctx, env, args, app_node):
       return make_boolean(True)
    if is_real(v):
       return make_boolean(_math.isfinite(as_real(v)))
+   if is_complex(v):
+      return make_boolean(as_complex_imag(v) == 0.0 and _math.isfinite(as_complex_real(v)))
    return make_boolean(False)
 
 
@@ -59,6 +65,10 @@ def _prim_integer_p(ctx, env, args, app_node):
       r = as_real(v)
       if isinstance(r, float) and r.is_integer():
          return make_boolean(True)
+   if is_complex(v):
+      im = as_complex_imag(v)
+      re = as_complex_real(v)
+      return make_boolean(im == 0.0 and re == _math.floor(re))
    return make_boolean(False)
 
 
