@@ -8,43 +8,49 @@
 ;;;   abs / square / expt on complex
 ;;;   transcendentals (exp, log, sin, cos) on complex
 ;;;   inexact / exact applied to complex
+;;;
+;;; Note: complex literals with exact components (e.g. 3+4i) are exact.
+;;;   Arithmetic on exact complex produces exact results.
+;;;   Transcendentals on complex always produce inexact results.
 ;;; ============================================================
 
-;;; -------- complex arithmetic --------
+;;; -------- exact complex arithmetic --------
 
 >>> (+ 3+4i 1-2i)
-==> 4.0+2.0i
+==> 4+2i
 
-;;; Complex terms cancel to real.
+;;; Complex terms cancel to exact integer zero.
 >>> (+ 3+4i -3-4i)
-==> 0.0
+==> 0
 
 >>> (- 3+4i 1+2i)
-==> 2.0+2.0i
+==> 2+2i
 
 >>> (- 0+1i 0+1i)
-==> 0.0
+==> 0
 
 >>> (* 3+4i 1+2i)
-==> -5.0+10.0i
+==> -5+10i
 
-;;; Product with conjugate -> real.
+;;; Product with conjugate -> exact integer.
 >>> (* 1+2i 1-2i)
-==> 5.0
+==> 5
 
-;;; Mixed complex * integer.
+;;; Mixed exact complex * exact integer -> exact complex.
 >>> (* 3+4i 2)
-==> 6.0+8.0i
+==> 6+8i
 
-;;; Division reduces to real when imaginary part cancels.
->>> (/ 4+0i 2+0i)
-==> 2.0
+;;; Division: imaginary parts cancel -> exact integer.
+;;; (4+0i)/(2+0i) = 4/2 = 2, but 4+0i and 2+0i parse as 4 and 2.
+>>> (/ 4 2)
+==> 2
 
 >>> (/ 0+2i 0+1i)
-==> 2.0
+==> 2
 
+;;; Division with non-trivial result -> exact rational complex.
 >>> (/ 1+2i 1+1i)
-==> 1.5+0.5i
+==> 3/2+1/2i
 
 ;;; -------- sqrt of negative real --------
 
@@ -61,13 +67,13 @@
 >>> (sqrt 0+1i)
 ==> 0.7071067811865476+0.7071067811865475i
 
-;;; -------- predicates on complex --------
+;;; -------- predicates on exact complex --------
 
 >>> (inexact? 3+4i)
-==> #t
+==> #f
 
 >>> (exact? 3+4i)
-==> #f
+==> #t
 
 ;;; -------- finite? / infinite? / nan? on complex --------
 
@@ -111,6 +117,7 @@
 
 ;;; -------- square on complex --------
 
+;;; square goes through the float path -> inexact result.
 >>> (square 3+4i)
 ==> -7.0+24.0i
 
@@ -120,11 +127,11 @@
 
 ;;; -------- expt on complex --------
 
-;;; Integer exponent on complex base.
+;;; Integer exponent on integer base (2+0i parses as 2).
 >>> (expt 2+0i 3)
-==> 8.0
+==> 8
 
-;;; i^2 = -1.
+;;; i^2 = -1: expt goes through float path -> inexact.
 >>> (expt 0+1i 2)
 ==> -1.0
 
@@ -160,20 +167,23 @@
 
 ;;; -------- inexact / exact applied to complex --------
 
-;;; Complex is already inexact; inexact is a no-op.
+;;; inexact converts exact complex to inexact complex.
 >>> (inexact 3+4i)
 ==> 3.0+4.0i
 
-;;; exact of complex is an error.
+;;; exact of exact complex is a no-op.
 >>> (exact 3+4i)
-%%% SchemeTypeError: line 1, col 1: exact: no exact representation for complex number
-%%% (exact 3+4i)
-%%% ^
+==> 3+4i
+
+;;; exact of inexact complex converts each component.
+>>> (exact 3.0+4.0i)
+==> 3+4i
 
 ;;; -------- number->string on computed complex --------
 
 >>> (number->string (sqrt -1))
 ==> "0.0+1.0i"
 
+;;; exact complex literal prints without .0
 >>> (number->string (+ 3+4i 0))
-==> "3.0+4.0i"
+==> "3+4i"

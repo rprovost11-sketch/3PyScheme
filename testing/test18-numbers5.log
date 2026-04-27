@@ -154,3 +154,91 @@
 
 >>> (truncate-remainder -13 4.0)
 ==> -1.0
+
+;;; -------- exact complex numbers --------
+
+;;; Exact complex literals are exact.
+>>> (exact? 3+4i)
+==> #t
+
+>>> (exact? 1/3+1/2i)
+==> #t
+
+>>> (inexact? 3+4i)
+==> #f
+
+;;; inexact converts to inexact complex.
+>>> (inexact 3+4i)
+==> 3.0+4.0i
+
+;;; exact of inexact complex converts each component.
+>>> (exact 3.0+4.0i)
+==> 3+4i
+
+;;; Arithmetic on exact complex produces exact results.
+>>> (+ 1+2i 3+4i)
+==> 4+6i
+
+>>> (- 5+3i 2+1i)
+==> 3+2i
+
+;;; Product with conjugate -> exact integer.
+>>> (* 1+1i 1-1i)
+==> 2
+
+;;; Division -> exact rational complex.
+>>> (/ 1+2i 3+4i)
+==> 11/25+2/25i
+
+;;; Components return exact values.
+>>> (real-part 3+4i)
+==> 3
+
+>>> (imag-part 1/3+1/2i)
+==> 1/2
+
+;;; make-rectangular with exact args -> exact complex.
+>>> (make-rectangular 1/3 1/2)
+==> 1/3+1/2i
+
+;;; magnitude always inexact.
+>>> (magnitude 3+4i)
+==> 5.0
+
+;;; Type predicates.
+>>> (number? 3+4i)
+==> #t
+
+>>> (complex? 3+4i)
+==> #t
+
+>>> (real? 3+4i)
+==> #f
+
+>>> (rational? 3+4i)
+==> #f
+
+>>> (integer? 3+4i)
+==> #f
+
+>>> (finite? 3+4i)
+==> #t
+
+;;; Numerical equality across exact/inexact.
+>>> (= 3+4i 3.0+4.0i)
+==> #t
+
+;;; eqv? and equal? on exact complex.
+>>> (eqv? 3+4i 3+4i)
+==> #t
+
+>>> (equal? 1/3+1/2i 1/3+1/2i)
+==> #t
+
+;;; number->string for exact complex.
+>>> (number->string 1/3+1/2i)
+==> "1/3+1/2i"
+
+;;; string->number with #e prefix produces exact complex.
+>>> (string->number "#e3.0+4.0i")
+==> 3+4i

@@ -68,7 +68,8 @@ from pyscheme.AST import (
    is_boolean, is_symbol,
    as_integer, as_real, as_string, as_character, as_boolean, as_symbol,
    as_rational_num, as_rational_den,
-   make_integer, make_real, make_rational, make_complex, make_string, make_character,
+   make_integer, make_real, make_rational, make_complex, make_exact_complex,
+   make_string, make_character,
    make_boolean, make_symbol, make_vector,
    REAL, RATIONAL, INTEGER, CHARACTER, BOOLEAN, STRING, SYMBOL, NIL,
 )
@@ -89,6 +90,7 @@ TOK_INT               = 'INT'
 TOK_REAL              = 'REAL'
 TOK_RATIONAL          = 'RATIONAL'
 TOK_COMPLEX           = 'COMPLEX'
+TOK_EXACT_COMPLEX     = 'EXACT_COMPLEX'
 TOK_STRING            = 'STRING'
 TOK_CHAR              = 'CHAR'
 TOK_BOOL              = 'BOOL'
@@ -379,7 +381,8 @@ def _try_parse_prefixed_number(text, src):
 
 
 def _parse_number_for_complex(s):
-   """Parse a real-number string as a Python float for use as a complex component."""
+   """Parse a complex component string.  Returns int, Fraction, or float.
+   Returns None if the string is not a valid number."""
    if s == '+inf.0':
       return float('inf')
    if s == '-inf.0':
@@ -387,15 +390,43 @@ def _parse_number_for_complex(s):
    if s == '+nan.0':
       return float('nan')
    try:
+      return int(s)
+   except ValueError:
+      pass
+   if '/' in s:
+      slash = s.index('/')
+      try:
+         num = int(s[:slash])
+         den = int(s[slash + 1:])
+         if den != 0:
+            return _Fraction(num, den)
+      except ValueError:
+         pass
+   try:
       return float(s)
    except ValueError:
       pass
    return None
 
 
+def _is_exact_component(v):
+   """True if v (returned by _parse_number_for_complex) is exact (int or Fraction)."""
+   return isinstance(v, int) or isinstance(v, _Fraction)
+
+
+def _component_to_scheme(v, src):
+   """Wrap an exact complex component (int or Fraction) into a Scheme value."""
+   if isinstance(v, int):
+      return make_integer(v, src)
+   if v.denominator == 1:
+      return make_integer(v.numerator, src)
+   return make_rational(v.numerator, v.denominator, src)
+
+
 def _try_parse_complex_literal(text, src):
    """Parse a+bi / a-bi / +bi / -bi / +i / -i complex literals.
-   text ends in 'i' and has length >= 2."""
+   text ends in 'i' and has length >= 2.
+   Produces an exact complex token when both components are exact."""
    body = text[:-1]   # strip trailing 'i'
    if not body:
       return None   # bare 'i' is an identifier
@@ -421,21 +452,25 @@ def _try_parse_complex_literal(text, src):
    sign_imag = body[split:]   # sign + magnitude, e.g. "+4" / "-3.5" / "+" / "-"
 
    if real_str == '':
-      re_val = 0.0
+      re_val = 0
    else:
       re_val = _parse_number_for_complex(real_str)
       if re_val is None:
          return None
 
    if sign_imag == '+':
-      im_val = 1.0
+      im_val = 1
    elif sign_imag == '-':
-      im_val = -1.0
+      im_val = -1
    else:
       im_val = _parse_number_for_complex(sign_imag)
       if im_val is None:
          return None
 
+   if _is_exact_component(re_val) and _is_exact_component(im_val):
+      re_scheme = _component_to_scheme(re_val, src)
+      im_scheme = _component_to_scheme(im_val, src)
+      return Token(TOK_EXACT_COMPLEX, (re_scheme, im_scheme), src)
    return Token(TOK_COMPLEX, (float(re_val), float(im_val)), src)
 
 
@@ -523,6 +558,12 @@ class Parser:
       if kind == TOK_COMPLEX:
          self._advance()
          return make_complex(tok.value[0], tok.value[1], tok.src)
+      if kind == TOK_EXACT_COMPLEX:
+         self._advance()
+         re_s, im_s = tok.value
+         if is_integer(im_s) and as_integer(im_s) == 0:
+            return re_s
+         return make_exact_complex(re_s, im_s, tok.src)
       if kind == TOK_STRING:
          self._advance()
          return make_string(tok.value, tok.src)

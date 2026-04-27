@@ -13,11 +13,12 @@ from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
    is_cons, is_nil, is_void,
    is_symbol, is_boolean, is_string, is_character,
-   is_integer, is_real, is_rational, is_complex,
+   is_integer, is_real, is_rational, is_complex, is_exact_complex,
    as_symbol, as_boolean, as_string, as_character,
    as_integer, as_real,
    as_rational_num, as_rational_den,
    as_complex_real, as_complex_imag,
+   as_exact_complex_real, as_exact_complex_imag,
    make_boolean, eqv_atom,
 )
 
@@ -70,6 +71,9 @@ def _value_equal(a, b):
    if is_complex(a) and is_complex(b):
       return (as_complex_real(a) == as_complex_real(b)
               and as_complex_imag(a) == as_complex_imag(b))
+   if is_exact_complex(a) and is_exact_complex(b):
+      return (_value_equal(as_exact_complex_real(a), as_exact_complex_real(b))
+              and _value_equal(as_exact_complex_imag(a), as_exact_complex_imag(b)))
    if is_boolean(a) and is_boolean(b):
       return as_boolean(a) is as_boolean(b)
    if is_string(a) and is_string(b):

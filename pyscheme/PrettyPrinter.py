@@ -22,13 +22,15 @@ import math as _math
 
 from pyscheme.AST import (
    is_cons, is_nil, is_void, is_boolean, is_integer, is_real, is_rational,
-   is_complex, is_character, is_string, is_symbol, is_closure, is_primitive,
-   is_case_closure, is_promise, is_multi_values, is_record, is_parameter,
-   is_error_object, is_continuation, is_syntax_transformer, is_environment,
+   is_complex, is_exact_complex, is_character, is_string, is_symbol,
+   is_closure, is_primitive, is_case_closure, is_promise, is_multi_values,
+   is_record, is_parameter, is_error_object, is_continuation,
+   is_syntax_transformer, is_environment,
    is_record_accessor, is_record_mutator, is_vector, is_bytevector,
    is_port, is_eof,
    as_boolean, as_integer, as_real, as_character, as_string, as_symbol,
    as_rational_num, as_rational_den, as_complex_real, as_complex_imag,
+   as_exact_complex_real, as_exact_complex_imag,
    as_primitive_name, as_promise_is_done, as_multi_values_list,
    as_record_type, as_record_fields, as_record_type_name,
    as_error_object_message, as_error_object_irritants,
@@ -84,6 +86,14 @@ def pretty_print(val):
       re_s = _format_float(re)
       im_s = _format_float(im)
       if _math.isnan(im) or im >= 0:
+         return re_s + '+' + im_s + 'i'
+      return re_s + im_s + 'i'
+   if is_exact_complex(val):
+      re_s = pretty_print(as_exact_complex_real(val))
+      im_v = as_exact_complex_imag(val)
+      im_s = pretty_print(im_v)
+      im_py = as_integer(im_v) if is_integer(im_v) else as_rational_num(im_v)
+      if im_py >= 0:
          return re_s + '+' + im_s + 'i'
       return re_s + im_s + 'i'
    if is_boolean(val):

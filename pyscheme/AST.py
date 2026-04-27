@@ -50,6 +50,7 @@ VECTOR             = 22
 BYTEVECTOR         = 23
 PORT               = 24
 EOF                = 25
+EXACT_COMPLEX      = 26
 SYMBOL             = 100
 
 
@@ -235,6 +236,11 @@ def make_rational(num, den, src=None):
 
 def make_complex(re, im, src=None):
    return (COMPLEX, re, im, src)
+
+def make_exact_complex(re, im, src=None):
+   """Build an exact complex value.  re and im must be INTEGER or RATIONAL
+   Scheme values; caller ensures im is not zero."""
+   return (EXACT_COMPLEX, re, im, src)
 
 def make_character(c, src=None):
    return (CHARACTER, c, src)
@@ -443,6 +449,9 @@ def is_rational(val):
 def is_complex(val):
    return isinstance(val, tuple) and len(val) >= 3 and val[0] == COMPLEX
 
+def is_exact_complex(val):
+   return isinstance(val, tuple) and len(val) >= 3 and val[0] == EXACT_COMPLEX
+
 def is_character(val):
    return isinstance(val, tuple) and len(val) >= 2 and val[0] == CHARACTER
 
@@ -547,6 +556,8 @@ def src_of(val):
       return val[3]
    if tag == COMPLEX:
       return val[3]
+   if tag == EXACT_COMPLEX:
+      return val[3]
    if tag == CHARACTER:
       return val[2]
    if tag == STRING:
@@ -582,6 +593,14 @@ def as_complex_real(val):
    return val[1]
 
 def as_complex_imag(val):
+   return val[2]
+
+def as_exact_complex_real(val):
+   """Return the real component of an exact complex as a Scheme value (INTEGER or RATIONAL)."""
+   return val[1]
+
+def as_exact_complex_imag(val):
+   """Return the imaginary component of an exact complex as a Scheme value (INTEGER or RATIONAL)."""
    return val[2]
 
 def as_character(val):
@@ -748,6 +767,9 @@ def eqv_atom(a, b):
       if as_complex_real(a) != as_complex_real(b):
          return False
       return as_complex_imag(a) == as_complex_imag(b)
+   if is_exact_complex(a) and is_exact_complex(b):
+      return (eqv_atom(as_exact_complex_real(a), as_exact_complex_real(b)) and
+              eqv_atom(as_exact_complex_imag(a), as_exact_complex_imag(b)))
    if is_character(a) and is_character(b):
       return as_character(a) == as_character(b)
    return False

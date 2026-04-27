@@ -10,9 +10,10 @@ from fractions import Fraction
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
-   is_integer, is_real, is_rational, is_complex,
+   is_integer, is_real, is_rational, is_complex, is_exact_complex,
    as_integer, as_real, as_rational_num, as_rational_den,
    as_complex_real, as_complex_imag,
+   as_exact_complex_real, as_exact_complex_imag,
    make_boolean,
 )
 from pyscheme.Environment import SchemeTypeError
@@ -35,7 +36,9 @@ def _num(v, name, app_node, i):
 
 
 def _num_eq(v, name, app_node, i):
-   """Extract any Python number including complex (for = only)."""
+   """Extract any Python number including complex (for = only).
+   Exact complex is converted to Python complex for comparison so that
+   (= 3+4i 3.0+4.0i) works correctly."""
    if is_integer(v):
       return as_integer(v)
    if is_rational(v):
@@ -44,6 +47,12 @@ def _num_eq(v, name, app_node, i):
       return as_real(v)
    if is_complex(v):
       return complex(as_complex_real(v), as_complex_imag(v))
+   if is_exact_complex(v):
+      re = as_exact_complex_real(v)
+      im = as_exact_complex_imag(v)
+      re_py = as_integer(re) if is_integer(re) else Fraction(as_rational_num(re), as_rational_den(re))
+      im_py = as_integer(im) if is_integer(im) else Fraction(as_rational_num(im), as_rational_den(im))
+      return complex(float(re_py), float(im_py))
    raise SchemeTypeError(
       '%s: argument %d is not a number' % (name, i),
       app_node)

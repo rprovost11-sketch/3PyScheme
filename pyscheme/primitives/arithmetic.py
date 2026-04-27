@@ -16,11 +16,13 @@ from fractions import Fraction
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
-   is_integer, is_real, is_rational, is_complex,
+   is_integer, is_real, is_rational, is_complex, is_exact_complex,
    is_string,
    as_integer, as_real, as_rational_num, as_rational_den,
-   as_complex_real, as_complex_imag, as_string,
-   make_integer, make_real, make_rational, make_complex,
+   as_complex_real, as_complex_imag,
+   as_exact_complex_real, as_exact_complex_imag,
+   as_string,
+   make_integer, make_real, make_rational, make_complex, make_exact_complex,
    make_boolean, make_string, make_multi_values,
 )
 from pyscheme.Environment import SchemeTypeError
@@ -44,7 +46,9 @@ def _num(v, name, app_node, i):
 
 
 def _any_num(v, name, app_node, i):
-   """Extract a Python numeric value (int, Fraction, float, or complex)."""
+   """Extract a Python numeric value (int, Fraction, float, or complex).
+   Exact complex falls back to a Python complex approximation so that
+   transcendentals (exp, sin, sqrt, etc.) still work."""
    if is_integer(v):
       return as_integer(v)
    if is_rational(v):
@@ -53,9 +57,60 @@ def _any_num(v, name, app_node, i):
       return as_real(v)
    if is_complex(v):
       return complex(as_complex_real(v), as_complex_imag(v))
+   if is_exact_complex(v):
+      return complex(float(_as_exact_component(as_exact_complex_real(v))),
+                     float(_as_exact_component(as_exact_complex_imag(v))))
    raise SchemeTypeError(
       '%s: argument %d is not a number' % (name, i),
       app_node)
+
+
+def _as_exact_component(scheme_val):
+   """Extract an exact complex component (INTEGER or RATIONAL) as Python int or Fraction."""
+   if is_integer(scheme_val):
+      return as_integer(scheme_val)
+   return Fraction(as_rational_num(scheme_val), as_rational_den(scheme_val))
+
+
+def _wrap_component(py_val):
+   """Wrap a Python int or Fraction back to a Scheme INTEGER or RATIONAL."""
+   if isinstance(py_val, int):
+      return make_integer(py_val)
+   if py_val.denominator == 1:
+      return make_integer(py_val.numerator)
+   return make_rational(py_val.numerator, py_val.denominator)
+
+
+def _extract_complex(v):
+   """Decompose any Scheme number into (re, im, is_exact).
+   re and im are Python int/Fraction for exact, float for inexact.
+   Non-complex numbers get im = 0 (exact) or 0.0 (inexact)."""
+   if is_exact_complex(v):
+      return (_as_exact_component(as_exact_complex_real(v)),
+              _as_exact_component(as_exact_complex_imag(v)),
+              True)
+   if is_complex(v):
+      return as_complex_real(v), as_complex_imag(v), False
+   if is_integer(v):
+      return as_integer(v), 0, True
+   if is_rational(v):
+      return Fraction(as_rational_num(v), as_rational_den(v)), 0, True
+   if is_real(v):
+      return as_real(v), 0.0, False
+   return None, None, None
+
+
+def _wrap_complex_result(re, im, exact):
+   """Build a Scheme value from (re, im, exact) components.
+   Collapses to a real/integer when imaginary part is zero."""
+   if exact:
+      if im == 0:
+         return _wrap(re)
+      return make_exact_complex(_wrap_component(re), _wrap_component(im))
+   else:
+      if im == 0.0:
+         return make_real(float(re))
+      return make_complex(float(re), float(im))
 
 
 def _check_int(v, name, app_node, i):
@@ -99,7 +154,29 @@ def _wrap(n):
    raise TypeError('internal: arithmetic result has unexpected type ' + str(type(n)))
 
 
+def _has_any_complex(args):
+   i = 0
+   while i < len(args):
+      if is_complex(args[i]) or is_exact_complex(args[i]):
+         return True
+      i = i + 1
+   return False
+
+
 def _prim_add(ctx, env, args, app_node):
+   if _has_any_complex(args):
+      re, im, exact = 0, 0, True
+      i = 0
+      while i < len(args):
+         are, aim, aex = _extract_complex(args[i])
+         if are is None:
+            raise SchemeTypeError('+: argument %d is not a number' % (i + 1), app_node)
+         if not aex:
+            exact = False
+         re = re + are
+         im = im + aim
+         i = i + 1
+      return _wrap_complex_result(re, im, exact)
    total = 0
    i = 0
    while i < len(args):
@@ -109,6 +186,23 @@ def _prim_add(ctx, env, args, app_node):
 
 
 def _prim_sub(ctx, env, args, app_node):
+   if _has_any_complex(args):
+      re, im, exact = _extract_complex(args[0])
+      if re is None:
+         raise SchemeTypeError('-: argument 1 is not a number', app_node)
+      if len(args) == 1:
+         return _wrap_complex_result(-re, -im, exact)
+      i = 1
+      while i < len(args):
+         are, aim, aex = _extract_complex(args[i])
+         if are is None:
+            raise SchemeTypeError('-: argument %d is not a number' % (i + 1), app_node)
+         if not aex:
+            exact = False
+         re = re - are
+         im = im - aim
+         i = i + 1
+      return _wrap_complex_result(re, im, exact)
    if len(args) == 1:
       return _wrap(-_any_num(args[0], '-', app_node, 1))
    result = _any_num(args[0], '-', app_node, 1)
@@ -120,6 +214,21 @@ def _prim_sub(ctx, env, args, app_node):
 
 
 def _prim_mul(ctx, env, args, app_node):
+   if _has_any_complex(args):
+      re, im, exact = 1, 0, True
+      i = 0
+      while i < len(args):
+         are, aim, aex = _extract_complex(args[i])
+         if are is None:
+            raise SchemeTypeError('*: argument %d is not a number' % (i + 1), app_node)
+         if not aex:
+            exact = False
+         new_re = re * are - im * aim
+         new_im = re * aim + im * are
+         re = new_re
+         im = new_im
+         i = i + 1
+      return _wrap_complex_result(re, im, exact)
    result = 1
    i = 0
    while i < len(args):
@@ -152,7 +261,47 @@ def _exact_div(a, b):
    return Fraction(a) / Fraction(b)
 
 
+def _complex_div(are, aim, aex, bre, bim, bex):
+   """Exact-aware complex division: (are+aim*i) / (bre+bim*i)."""
+   exact = aex and bex
+   if exact:
+      are = Fraction(are)
+      aim = Fraction(aim)
+      bre = Fraction(bre)
+      bim = Fraction(bim)
+   denom = bre * bre + bim * bim
+   if denom == 0:
+      return None, None, None   # division by zero signal
+   re = (are * bre + aim * bim) / denom
+   im = (aim * bre - are * bim) / denom
+   return re, im, exact
+
+
 def _prim_div(ctx, env, args, app_node):
+   if _has_any_complex(args):
+      re, im, exact = _extract_complex(args[0])
+      if re is None:
+         raise SchemeTypeError('/: argument 1 is not a number', app_node)
+      if len(args) == 1:
+         # Reciprocal: 1 / (re+im*i)
+         bre, bim, bex = re, im, exact
+         re, im, exact = _complex_div(1, 0, True, bre, bim, bex)
+         if re is None:
+            raise SchemeTypeError('/: division by zero', app_node)
+         return _wrap_complex_result(re, im, exact)
+      i = 1
+      while i < len(args):
+         bre, bim, bex = _extract_complex(args[i])
+         if bre is None:
+            raise SchemeTypeError('/: argument %d is not a number' % (i + 1), app_node)
+         if not bex:
+            exact = False
+         nr, ni, nex = _complex_div(re, im, exact, bre, bim, bex)
+         if nr is None:
+            raise SchemeTypeError('/: division by zero', app_node)
+         re, im, exact = nr, ni, nex
+         i = i + 1
+      return _wrap_complex_result(re, im, exact)
    if len(args) == 1:
       n = _any_num(args[0], '/', app_node, 1)
       if isinstance(n, int) and n == 0:
@@ -394,7 +543,7 @@ def _prim_round(ctx, env, args, app_node):
 
 def _prim_exact_p(ctx, env, args, app_node):
    v = args[0]
-   return make_boolean(is_integer(v) or is_rational(v))
+   return make_boolean(is_integer(v) or is_rational(v) or is_exact_complex(v))
 
 
 def _prim_inexact_p(ctx, env, args, app_node):
@@ -402,22 +551,30 @@ def _prim_inexact_p(ctx, env, args, app_node):
    return make_boolean(is_real(v) or is_complex(v))
 
 
+def _float_to_exact(f, name, app_node):
+   """Convert a Python float to an exact Scheme integer or rational."""
+   if not math.isfinite(f):
+      raise SchemeTypeError(
+         '%s: no exact representation for non-finite real' % name, app_node)
+   if f.is_integer():
+      return make_integer(int(f))
+   frac = Fraction(f)
+   return make_rational(frac.numerator, frac.denominator)
+
+
 def _prim_exact(ctx, env, args, app_node):
    v = args[0]
-   if is_integer(v) or is_rational(v):
+   if is_integer(v) or is_rational(v) or is_exact_complex(v):
       return v
    if is_real(v):
-      f = as_real(v)
-      if not math.isfinite(f):
-         raise SchemeTypeError(
-            'exact: no exact representation for non-finite real', app_node)
-      if f.is_integer():
-         return make_integer(int(f))
-      frac = Fraction(f)
-      return make_rational(frac.numerator, frac.denominator)
+      return _float_to_exact(as_real(v), 'exact', app_node)
    if is_complex(v):
-      raise SchemeTypeError(
-         'exact: no exact representation for complex number', app_node)
+      re = _float_to_exact(as_complex_real(v), 'exact', app_node)
+      im_f = as_complex_imag(v)
+      if im_f == 0.0:
+         return re
+      im = _float_to_exact(im_f, 'exact', app_node)
+      return make_exact_complex(re, im)
    raise SchemeTypeError(
       'exact: argument must be a number', app_node)
 
@@ -430,6 +587,10 @@ def _prim_inexact(ctx, env, args, app_node):
       return make_real(float(as_integer(v)))
    if is_rational(v):
       return make_real(float(Fraction(as_rational_num(v), as_rational_den(v))))
+   if is_exact_complex(v):
+      re = float(_as_exact_component(as_exact_complex_real(v)))
+      im = float(_as_exact_component(as_exact_complex_imag(v)))
+      return make_complex(re, im)
    raise SchemeTypeError(
       'inexact: argument must be a number', app_node)
 
@@ -482,6 +643,13 @@ def _format_num_str(f):
    if '.' not in s and 'e' not in s:
       s = s + '.0'
    return s
+
+
+def _exact_component_str(scheme_val):
+   """Format an exact complex component (INTEGER or RATIONAL) as a string."""
+   if is_integer(scheme_val):
+      return str(as_integer(scheme_val))
+   return str(as_rational_num(scheme_val)) + '/' + str(as_rational_den(scheme_val))
 
 
 def _parse_number_for_stn(s):
@@ -591,6 +759,19 @@ def _prim_number_to_string(ctx, env, args, app_node):
       re_s = _format_num_str(re)
       im_s = _format_num_str(im)
       if math.isnan(im) or im >= 0:
+         return make_string(re_s + '+' + im_s + 'i')
+      return make_string(re_s + im_s + 'i')
+   if is_exact_complex(v):
+      if radix != 10:
+         raise SchemeTypeError(
+            'number->string: only radix 10 supported for complex numbers',
+            app_node)
+      re_v = as_exact_complex_real(v)
+      im_v = as_exact_complex_imag(v)
+      re_s = _exact_component_str(re_v)
+      im_s = _exact_component_str(im_v)
+      im_py = _as_exact_component(im_v)
+      if im_py >= 0:
          return make_string(re_s + '+' + im_s + 'i')
       return make_string(re_s + im_s + 'i')
    raise SchemeTypeError(
@@ -770,9 +951,14 @@ def _prim_string_to_number(ctx, env, args, app_node):
    if radix == 10 and s.endswith('i') and len(s) >= 2:
       tup = _parse_complex_for_stn(s)
       if tup is not None:
+         re_f, im_f = tup[0], tup[1]
          if exact == 1:
-            return make_boolean(False)   # exact complex not yet supported
-         return make_complex(tup[0], tup[1])
+            re_v = _float_to_exact(re_f, 'string->number', None)
+            im_v = _float_to_exact(im_f, 'string->number', None)
+            if im_v == make_integer(0) or (is_integer(im_v) and as_integer(im_v) == 0):
+               return re_v
+            return make_exact_complex(re_v, im_v)
+         return make_complex(re_f, im_f)
    # Try integer.
    try:
       n = int(s, radix)
@@ -934,10 +1120,21 @@ def _as_real_val(v, name, app_node, idx):
       '%s: argument %d is not a real number' % (name, idx), app_node)
 
 
+def _is_exact_real(v):
+   return is_integer(v) or is_rational(v)
+
+
 def _prim_make_rectangular(ctx, env, args, app_node):
-   re = _as_real_val(args[0], 'make-rectangular', app_node, 1)
-   im = _as_real_val(args[1], 'make-rectangular', app_node, 2)
-   return make_complex(re, im)
+   re = args[0]
+   im = args[1]
+   if _is_exact_real(re) and _is_exact_real(im):
+      im_py = _as_exact_component(im)
+      if im_py == 0:
+         return re
+      return make_exact_complex(re, im)
+   re_f = _as_real_val(re, 'make-rectangular', app_node, 1)
+   im_f = _as_real_val(im, 'make-rectangular', app_node, 2)
+   return make_complex(re_f, im_f)
 
 
 def _prim_make_polar(ctx, env, args, app_node):
@@ -948,17 +1145,19 @@ def _prim_make_polar(ctx, env, args, app_node):
 
 def _prim_real_part(ctx, env, args, app_node):
    v = args[0]
+   if is_exact_complex(v):
+      return as_exact_complex_real(v)
    if is_complex(v):
       return make_real(as_complex_real(v))
-   if is_integer(v) or is_rational(v):
-      return v
-   if is_real(v):
+   if is_integer(v) or is_rational(v) or is_real(v):
       return v
    raise SchemeTypeError('real-part: argument must be a number', app_node)
 
 
 def _prim_imag_part(ctx, env, args, app_node):
    v = args[0]
+   if is_exact_complex(v):
+      return as_exact_complex_imag(v)
    if is_complex(v):
       return make_real(as_complex_imag(v))
    if is_integer(v) or is_rational(v):
@@ -970,15 +1169,21 @@ def _prim_imag_part(ctx, env, args, app_node):
 
 def _prim_magnitude(ctx, env, args, app_node):
    v = args[0]
-   if is_complex(v):
-      re = as_complex_real(v)
-      im = as_complex_imag(v)
+   if is_exact_complex(v):
+      re = float(_as_exact_component(as_exact_complex_real(v)))
+      im = float(_as_exact_component(as_exact_complex_imag(v)))
       return make_real(math.hypot(re, im))
+   if is_complex(v):
+      return make_real(math.hypot(as_complex_real(v), as_complex_imag(v)))
    return _prim_abs(ctx, env, args, app_node)
 
 
 def _prim_angle(ctx, env, args, app_node):
    v = args[0]
+   if is_exact_complex(v):
+      re = float(_as_exact_component(as_exact_complex_real(v)))
+      im = float(_as_exact_component(as_exact_complex_imag(v)))
+      return make_real(math.atan2(im, re))
    if is_complex(v):
       return make_real(math.atan2(as_complex_imag(v), as_complex_real(v)))
    n = _num(v, 'angle', app_node, 1)

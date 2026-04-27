@@ -10,13 +10,15 @@ from fractions import Fraction
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
-   is_integer, is_real, is_rational, is_complex,
+   is_integer, is_real, is_rational, is_complex, is_exact_complex,
    is_boolean, is_symbol, is_string, is_character,
    is_closure, is_primitive, is_case_closure, is_promise, is_parameter,
    is_error_object, is_continuation,
    is_record_accessor, is_record_mutator,
    as_integer, as_real, as_rational_num, as_rational_den,
-   as_complex_real, as_complex_imag, make_boolean,
+   as_complex_real, as_complex_imag,
+   as_exact_complex_real, as_exact_complex_imag,
+   make_boolean,
 )
 from pyscheme.Environment import SchemeTypeError
 
@@ -25,7 +27,7 @@ CATEGORY = 'predicates'
 
 
 def _is_number(v):
-   return is_integer(v) or is_real(v) or is_rational(v) or is_complex(v)
+   return is_integer(v) or is_real(v) or is_rational(v) or is_complex(v) or is_exact_complex(v)
 
 
 def _prim_number_p(ctx, env, args, app_node):
@@ -43,6 +45,9 @@ def _prim_real_p(ctx, env, args, app_node):
       return make_boolean(True)
    if is_complex(v):
       return make_boolean(as_complex_imag(v) == 0.0)
+   if is_exact_complex(v):
+      im = as_exact_complex_imag(v)
+      return make_boolean(is_integer(im) and as_integer(im) == 0)
    return make_boolean(False)
 
 
@@ -54,6 +59,9 @@ def _prim_rational_p(ctx, env, args, app_node):
       return make_boolean(_math.isfinite(as_real(v)))
    if is_complex(v):
       return make_boolean(as_complex_imag(v) == 0.0 and _math.isfinite(as_complex_real(v)))
+   if is_exact_complex(v):
+      im = as_exact_complex_imag(v)
+      return make_boolean(is_integer(im) and as_integer(im) == 0)
    return make_boolean(False)
 
 
@@ -69,6 +77,11 @@ def _prim_integer_p(ctx, env, args, app_node):
       im = as_complex_imag(v)
       re = as_complex_real(v)
       return make_boolean(im == 0.0 and re == _math.floor(re))
+   if is_exact_complex(v):
+      im = as_exact_complex_imag(v)
+      if not (is_integer(im) and as_integer(im) == 0):
+         return make_boolean(False)
+      return make_boolean(is_integer(as_exact_complex_real(v)))
    return make_boolean(False)
 
 
@@ -81,6 +94,13 @@ def _num_or_error(v, name, app_node):
       return as_real(v)
    if is_complex(v) and as_complex_imag(v) == 0.0:
       return as_complex_real(v)
+   if is_exact_complex(v):
+      im = as_exact_complex_imag(v)
+      if is_integer(im) and as_integer(im) == 0:
+         re = as_exact_complex_real(v)
+         if is_integer(re):
+            return as_integer(re)
+         return Fraction(as_rational_num(re), as_rational_den(re))
    raise SchemeTypeError(
       '%s: argument is not a real number' % name,
       app_node)
@@ -120,11 +140,10 @@ def _prim_odd_p(ctx, env, args, app_node):
 
 def _prim_finite_p(ctx, env, args, app_node):
    v = args[0]
-   if is_integer(v) or is_rational(v):
+   if is_integer(v) or is_rational(v) or is_exact_complex(v):
       return make_boolean(True)
    if is_real(v):
-      f = as_real(v)
-      return make_boolean(_math.isfinite(f))
+      return make_boolean(_math.isfinite(as_real(v)))
    if is_complex(v):
       return make_boolean(
          _math.isfinite(as_complex_real(v)) and _math.isfinite(as_complex_imag(v)))
@@ -133,11 +152,10 @@ def _prim_finite_p(ctx, env, args, app_node):
 
 def _prim_infinite_p(ctx, env, args, app_node):
    v = args[0]
-   if is_integer(v) or is_rational(v):
+   if is_integer(v) or is_rational(v) or is_exact_complex(v):
       return make_boolean(False)
    if is_real(v):
-      f = as_real(v)
-      return make_boolean(_math.isinf(f))
+      return make_boolean(_math.isinf(as_real(v)))
    if is_complex(v):
       return make_boolean(
          _math.isinf(as_complex_real(v)) or _math.isinf(as_complex_imag(v)))
@@ -146,11 +164,10 @@ def _prim_infinite_p(ctx, env, args, app_node):
 
 def _prim_nan_p(ctx, env, args, app_node):
    v = args[0]
-   if is_integer(v) or is_rational(v):
+   if is_integer(v) or is_rational(v) or is_exact_complex(v):
       return make_boolean(False)
    if is_real(v):
-      f = as_real(v)
-      return make_boolean(_math.isnan(f))
+      return make_boolean(_math.isnan(as_real(v)))
    if is_complex(v):
       return make_boolean(
          _math.isnan(as_complex_real(v)) or _math.isnan(as_complex_imag(v)))

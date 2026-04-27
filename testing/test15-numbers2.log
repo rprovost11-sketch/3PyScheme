@@ -95,24 +95,24 @@
 ;;; -------- complex literals --------
 
 >>> 3+4i
-==> 3.0+4.0i
+==> 3+4i
 
 >>> 3-4i
-==> 3.0-4.0i
+==> 3-4i
 
 ;;; Pure imaginary.
 >>> +2i
-==> 0.0+2.0i
+==> 0+2i
 
 >>> -2i
-==> 0.0-2.0i
+==> 0-2i
 
 ;;; Unit imaginary.
 >>> +i
-==> 0.0+1.0i
+==> 0+1i
 
 >>> -i
-==> 0.0-1.0i
+==> 0-1i
 
 ;;; Real-valued float components.
 >>> 1.5+2.5i
@@ -166,7 +166,7 @@
 ;;; -------- number->string for complex --------
 
 >>> (number->string 3+4i)
-==> "3.0+4.0i"
+==> "3+4i"
 
 >>> (number->string 0.0+1.0i)
 ==> "0.0+1.0i"
