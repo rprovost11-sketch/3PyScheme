@@ -221,6 +221,45 @@ def _prim_string_downcase(ctx, env, args, app_node):
    return make_string(s.lower())
 
 
+def _prim_string_foldcase(ctx, env, args, app_node):
+   s = _check_string(args[0], 'string-foldcase', app_node)
+   return make_string(s.casefold())
+
+
+def _string_compare_ci(name, args, app_node, op):
+   if len(args) < 2:
+      return make_boolean(True)
+   prev = _check_string(args[0], name, app_node, 1).casefold()
+   i = 1
+   while i < len(args):
+      cur = _check_string(args[i], name, app_node, i + 1).casefold()
+      if not op(prev, cur):
+         return make_boolean(False)
+      prev = cur
+      i = i + 1
+   return make_boolean(True)
+
+
+def _prim_string_ci_eq(ctx, env, args, app_node):
+   return _string_compare_ci('string-ci=?', args, app_node, lambda a, b: a == b)
+
+
+def _prim_string_ci_lt(ctx, env, args, app_node):
+   return _string_compare_ci('string-ci<?', args, app_node, lambda a, b: a < b)
+
+
+def _prim_string_ci_le(ctx, env, args, app_node):
+   return _string_compare_ci('string-ci<=?', args, app_node, lambda a, b: a <= b)
+
+
+def _prim_string_ci_gt(ctx, env, args, app_node):
+   return _string_compare_ci('string-ci>?', args, app_node, lambda a, b: a > b)
+
+
+def _prim_string_ci_ge(ctx, env, args, app_node):
+   return _string_compare_ci('string-ci>=?', args, app_node, lambda a, b: a >= b)
+
+
 def _prim_string_map(ctx, env, args, app_node):
    from pyscheme.primitives.meta import _apply_scheme_proc
    from pyscheme.AST              import is_character, as_character
@@ -344,6 +383,24 @@ def register():
       category=CATEGORY)
    register_primitive('string-downcase', (1, 1), _prim_string_downcase,
       doc='Return the string with each character downcased.  R7RS 6.7.',
+      category=CATEGORY)
+   register_primitive('string-foldcase', (1, 1), _prim_string_foldcase,
+      doc='Return the string with Unicode full case folding applied.  R7RS 6.7.',
+      category=CATEGORY)
+   register_primitive('string-ci=?', (2, None), _prim_string_ci_eq,
+      doc='Case-insensitive string=?.  R7RS 6.7.',
+      category=CATEGORY)
+   register_primitive('string-ci<?', (2, None), _prim_string_ci_lt,
+      doc='Case-insensitive string<?.  R7RS 6.7.',
+      category=CATEGORY)
+   register_primitive('string-ci<=?', (2, None), _prim_string_ci_le,
+      doc='Case-insensitive string<=?.  R7RS 6.7.',
+      category=CATEGORY)
+   register_primitive('string-ci>?', (2, None), _prim_string_ci_gt,
+      doc='Case-insensitive string>?.  R7RS 6.7.',
+      category=CATEGORY)
+   register_primitive('string-ci>=?', (2, None), _prim_string_ci_ge,
+      doc='Case-insensitive string>=?.  R7RS 6.7.',
       category=CATEGORY)
    register_primitive('string-map', (2, None), _prim_string_map,
       doc=('(string-map proc str1 str2 ...) returns a string built by '

@@ -100,6 +100,43 @@ def _prim_char_downcase(ctx, env, args, app_node):
    return make_character(c.lower())
 
 
+def _prim_char_foldcase(ctx, env, args, app_node):
+   c = _check_char(args[0], 'char-foldcase', app_node)
+   return make_character(c.casefold())
+
+
+def _char_compare_ci(name, args, app_node, op):
+   prev = _check_char(args[0], name, app_node, 1).casefold()
+   i = 1
+   while i < len(args):
+      cur = _check_char(args[i], name, app_node, i + 1).casefold()
+      if not op(prev, cur):
+         return make_boolean(False)
+      prev = cur
+      i = i + 1
+   return make_boolean(True)
+
+
+def _prim_char_ci_eq(ctx, env, args, app_node):
+   return _char_compare_ci('char-ci=?', args, app_node, lambda a, b: a == b)
+
+
+def _prim_char_ci_lt(ctx, env, args, app_node):
+   return _char_compare_ci('char-ci<?', args, app_node, lambda a, b: a < b)
+
+
+def _prim_char_ci_le(ctx, env, args, app_node):
+   return _char_compare_ci('char-ci<=?', args, app_node, lambda a, b: a <= b)
+
+
+def _prim_char_ci_gt(ctx, env, args, app_node):
+   return _char_compare_ci('char-ci>?', args, app_node, lambda a, b: a > b)
+
+
+def _prim_char_ci_ge(ctx, env, args, app_node):
+   return _char_compare_ci('char-ci>=?', args, app_node, lambda a, b: a >= b)
+
+
 def _prim_char_to_integer(ctx, env, args, app_node):
    c = _check_char(args[0], 'char->integer', app_node)
    return make_integer(ord(c))
@@ -163,6 +200,24 @@ def register():
       category=CATEGORY)
    register_primitive('char-downcase', (1, 1), _prim_char_downcase,
       doc='Return char\'s lower-case equivalent.  R7RS 6.6.',
+      category=CATEGORY)
+   register_primitive('char-foldcase', (1, 1), _prim_char_foldcase,
+      doc='Return char\'s case-folded equivalent (Unicode full case folding).  R7RS 6.6.',
+      category=CATEGORY)
+   register_primitive('char-ci=?', (2, None), _prim_char_ci_eq,
+      doc='Case-insensitive char=?.  R7RS 6.6.',
+      category=CATEGORY)
+   register_primitive('char-ci<?', (2, None), _prim_char_ci_lt,
+      doc='Case-insensitive char<?.  R7RS 6.6.',
+      category=CATEGORY)
+   register_primitive('char-ci<=?', (2, None), _prim_char_ci_le,
+      doc='Case-insensitive char<=?.  R7RS 6.6.',
+      category=CATEGORY)
+   register_primitive('char-ci>?', (2, None), _prim_char_ci_gt,
+      doc='Case-insensitive char>?.  R7RS 6.6.',
+      category=CATEGORY)
+   register_primitive('char-ci>=?', (2, None), _prim_char_ci_ge,
+      doc='Case-insensitive char>=?.  R7RS 6.6.',
       category=CATEGORY)
    register_primitive('char->integer', (1, 1), _prim_char_to_integer,
       doc='Return char\'s Unicode code point as an integer.  R7RS 6.6.',

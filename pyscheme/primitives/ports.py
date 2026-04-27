@@ -476,10 +476,8 @@ def _prim_read_string(ctx, env, args, app_node):
 # ── Binary port read primitives ───────────────────────────────────────────
 
 def _prim_read_u8(ctx, env, args, app_node):
-   if len(args) == 0:
-      raise SchemeTypeError(
-         'read-u8: a binary input port is required', src_of(app_node))
-   p = _check_binary_input(args[0], 'read-u8', app_node)
+   port_val = args[0] if len(args) >= 1 else _get_current_input(ctx)
+   p = _check_binary_input(port_val, 'read-u8', app_node)
    if p.pos >= len(p.buf):
       return make_eof()
    b = p.buf[p.pos]
@@ -488,21 +486,18 @@ def _prim_read_u8(ctx, env, args, app_node):
 
 
 def _prim_peek_u8(ctx, env, args, app_node):
-   if len(args) == 0:
-      raise SchemeTypeError(
-         'peek-u8: a binary input port is required', src_of(app_node))
-   p = _check_binary_input(args[0], 'peek-u8', app_node)
+   port_val = args[0] if len(args) >= 1 else _get_current_input(ctx)
+   p = _check_binary_input(port_val, 'peek-u8', app_node)
    if p.pos >= len(p.buf):
       return make_eof()
    return make_integer(p.buf[p.pos])
 
 
 def _prim_u8_ready_p(ctx, env, args, app_node):
-   # Same rationale as char-ready?: our binary input ports are buffered.
-   if len(args) == 0:
-      raise SchemeTypeError(
-         'u8-ready?: a binary input port is required', src_of(app_node))
-   _check_binary_input(args[0], 'u8-ready?', app_node)
+   # Our binary ports are always buffered, so u8 is always ready.  R7RS
+   # permits always returning #t when the impl never blocks.
+   port_val = args[0] if len(args) >= 1 else _get_current_input(ctx)
+   _check_binary_input(port_val, 'u8-ready?', app_node)
    return make_boolean(True)
 
 
@@ -759,6 +754,128 @@ def _prim_call_with_port(ctx, env, args, app_node):
    return result
 
 
+def _prim_write_shared(ctx, env, args, app_node):
+   # In pyScheme there are no cyclic structures, so write-shared == write.
+   return _prim_write(ctx, env, args, app_node)
+
+
+def _prim_write_simple(ctx, env, args, app_node):
+   # write-simple explicitly skips datum-label encoding; same as write here.
+   return _prim_write(ctx, env, args, app_node)
+
+
+# ── File I/O wrappers ─────────────────────────────────────────────────────
+
+def _prim_file_exists_p(ctx, env, args, app_node):
+   import os as _os
+   if not is_string(args[0]):
+      raise SchemeTypeError(
+         'file-exists?: argument must be a string', src_of(app_node))
+   return make_boolean(_os.path.exists(as_string(args[0])))
+
+
+def _prim_delete_file(ctx, env, args, app_node):
+   import os as _os
+   if not is_string(args[0]):
+      raise SchemeTypeError(
+         'delete-file: argument must be a string', src_of(app_node))
+   path = as_string(args[0])
+   try:
+      _os.remove(path)
+   except OSError as e:
+      raise SchemeTypeError('delete-file: ' + str(e), src_of(app_node))
+   return VOID_VALUE
+
+
+def _prim_rename_file(ctx, env, args, app_node):
+   import os as _os
+   if not is_string(args[0]):
+      raise SchemeTypeError(
+         'rename-file: first argument must be a string', src_of(app_node))
+   if not is_string(args[1]):
+      raise SchemeTypeError(
+         'rename-file: second argument must be a string', src_of(app_node))
+   try:
+      _os.rename(as_string(args[0]), as_string(args[1]))
+   except OSError as e:
+      raise SchemeTypeError('rename-file: ' + str(e), src_of(app_node))
+   return VOID_VALUE
+
+
+def _prim_call_with_input_file(ctx, env, args, app_node):
+   from pyscheme.primitives.meta import _apply_scheme_proc
+   if not is_string(args[0]):
+      raise SchemeTypeError(
+         'call-with-input-file: filename must be a string', src_of(app_node))
+   port_val = _prim_open_input_file(ctx, env, [args[0]], app_node)
+   p = as_port(port_val)
+   try:
+      result = _apply_scheme_proc(args[1], [port_val], ctx, None, app_node)
+   finally:
+      if p.is_open and p.file_h is not None:
+         try:
+            p.file_h.close()
+         except OSError:
+            pass
+      p.is_open = False
+   return result
+
+
+def _prim_call_with_output_file(ctx, env, args, app_node):
+   from pyscheme.primitives.meta import _apply_scheme_proc
+   if not is_string(args[0]):
+      raise SchemeTypeError(
+         'call-with-output-file: filename must be a string', src_of(app_node))
+   port_val = _prim_open_output_file(ctx, env, [args[0]], app_node)
+   p = as_port(port_val)
+   try:
+      result = _apply_scheme_proc(args[1], [port_val], ctx, None, app_node)
+   finally:
+      if p.is_open and p.file_h is not None:
+         try:
+            p.file_h.close()
+         except OSError:
+            pass
+      p.is_open = False
+   return result
+
+
+def _prim_with_input_from_file(ctx, env, args, app_node):
+   from pyscheme.primitives.meta import _apply_scheme_proc
+   from pyscheme.AST import as_parameter_value, set_parameter_value
+   if not is_string(args[0]):
+      raise SchemeTypeError(
+         'with-input-from-file: filename must be a string', src_of(app_node))
+   port_val = _prim_open_input_file(ctx, env, [args[0]], app_node)
+   _get_current_input(ctx)
+   old_val = as_parameter_value(_current_input_param[0])
+   set_parameter_value(_current_input_param[0], port_val)
+   try:
+      result = _apply_scheme_proc(args[1], [], ctx, None, app_node)
+   finally:
+      set_parameter_value(_current_input_param[0], old_val)
+      _prim_close_port(ctx, env, [port_val], app_node)
+   return result
+
+
+def _prim_with_output_to_file(ctx, env, args, app_node):
+   from pyscheme.primitives.meta import _apply_scheme_proc
+   from pyscheme.AST import as_parameter_value, set_parameter_value
+   if not is_string(args[0]):
+      raise SchemeTypeError(
+         'with-output-to-file: filename must be a string', src_of(app_node))
+   port_val = _prim_open_output_file(ctx, env, [args[0]], app_node)
+   _get_current_output(ctx)
+   old_val = as_parameter_value(_current_output_param[0])
+   set_parameter_value(_current_output_param[0], port_val)
+   try:
+      result = _apply_scheme_proc(args[1], [], ctx, None, app_node)
+   finally:
+      set_parameter_value(_current_output_param[0], old_val)
+      _prim_close_port(ctx, env, [port_val], app_node)
+   return result
+
+
 def register():
    # Predicates
    register_primitive('port?', (1, 1), _prim_port_p,
@@ -865,16 +982,16 @@ def register():
       doc=('(char-ready? [port]) returns #t when read-char would not block.  '
            'Our buffered ports always return #t.  R7RS 6.13.'),
       category=CATEGORY)
-   register_primitive('read-u8', (1, 1), _prim_read_u8,
-      doc=('(read-u8 port) reads one byte from a binary input port.  '
+   register_primitive('read-u8', (0, 1), _prim_read_u8,
+      doc=('(read-u8 [port]) reads one byte from a binary input port.  '
            'Returns the eof object at end of port.  R7RS 6.13.'),
       category=CATEGORY)
-   register_primitive('peek-u8', (1, 1), _prim_peek_u8,
-      doc=('(peek-u8 port) returns the next byte without consuming it.  '
+   register_primitive('peek-u8', (0, 1), _prim_peek_u8,
+      doc=('(peek-u8 [port]) returns the next byte without consuming it.  '
            'R7RS 6.13.'),
       category=CATEGORY)
-   register_primitive('u8-ready?', (1, 1), _prim_u8_ready_p,
-      doc=('(u8-ready? port) returns #t when read-u8 would not block.  '
+   register_primitive('u8-ready?', (0, 1), _prim_u8_ready_p,
+      doc=('(u8-ready? [port]) returns #t when read-u8 would not block.  '
            'Our buffered ports always return #t.  R7RS 6.13.'),
       category=CATEGORY)
    register_primitive('read-bytevector', (2, 2), _prim_read_bytevector,
@@ -911,6 +1028,14 @@ def register():
       doc=('(write obj [port]) writes a machine-readable representation '
            'of obj to the output port.  R7RS 6.13.'),
       category=CATEGORY)
+   register_primitive('write-shared', (1, 2), _prim_write_shared,
+      doc=('(write-shared obj [port]) like write, but detects shared structure.  '
+           'pyScheme has no cyclic data, so this is identical to write.  R7RS 6.13.'),
+      category=CATEGORY)
+   register_primitive('write-simple', (1, 2), _prim_write_simple,
+      doc=('(write-simple obj [port]) like write, but never emits datum labels.  '
+           'R7RS 6.13.'),
+      category=CATEGORY)
    register_primitive('flush-output-port', (0, 1), _prim_flush_output_port,
       doc='(flush-output-port [port]) flushes any buffered output.  R7RS 6.13.',
       category=CATEGORY)
@@ -927,4 +1052,29 @@ def register():
    register_primitive('call-with-port', (2, 2), _prim_call_with_port,
       doc=('(call-with-port port proc) calls (proc port), closes port '
            'before returning, and returns proc\'s result.  R7RS 6.13.'),
+      category=CATEGORY)
+   register_primitive('call-with-input-file', (2, 2), _prim_call_with_input_file,
+      doc=('(call-with-input-file path proc) opens path for reading, calls '
+           '(proc port), closes port, returns result.  R7RS 6.13.'),
+      category=CATEGORY)
+   register_primitive('call-with-output-file', (2, 2), _prim_call_with_output_file,
+      doc=('(call-with-output-file path proc) opens path for writing, calls '
+           '(proc port), closes port, returns result.  R7RS 6.13.'),
+      category=CATEGORY)
+   register_primitive('with-input-from-file', (2, 2), _prim_with_input_from_file,
+      doc=('(with-input-from-file path thunk) opens path, temporarily makes it '
+           'the current input port, calls (thunk), restores the port.  R7RS 6.13.'),
+      category=CATEGORY)
+   register_primitive('with-output-to-file', (2, 2), _prim_with_output_to_file,
+      doc=('(with-output-to-file path thunk) opens path for writing, temporarily '
+           'makes it the current output port, calls (thunk), restores.  R7RS 6.13.'),
+      category=CATEGORY)
+   register_primitive('file-exists?', (1, 1), _prim_file_exists_p,
+      doc='(file-exists? path) returns #t if path names an existing file.  R7RS 6.14.',
+      category=CATEGORY)
+   register_primitive('delete-file', (1, 1), _prim_delete_file,
+      doc='(delete-file path) deletes the named file.  R7RS 6.14.',
+      category=CATEGORY)
+   register_primitive('rename-file', (2, 2), _prim_rename_file,
+      doc='(rename-file old new) renames old to new.  R7RS 6.14.',
       category=CATEGORY)

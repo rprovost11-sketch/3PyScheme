@@ -36,7 +36,7 @@ from pyscheme.AST import (
    alloc_cons, make_symbol, make_promise_done, make_multi_values,
    make_record_type, make_record, make_parameter, make_string,
    make_environment, make_record_accessor, make_record_mutator,
-   list_from_items,
+   make_boolean, list_from_items, src_of,
    VOID_VALUE,
 )
 from pyscheme.Environment import SchemeTypeError, SchemeUserError, SchemeRaised
@@ -397,6 +397,114 @@ def _prim_call_with_values_unreached(ctx, env, args, app_node):
       'in this implementation', app_node)
 
 
+def _prim_null_environment(ctx, env, args, app_node):
+   from pyscheme.Environment import Environment
+   e = Environment(parent=None)
+   e.freeze()
+   return make_environment(e)
+
+
+def _prim_scheme_report_environment(ctx, env, args, app_node):
+   return make_environment(env.getGlobalEnv())
+
+
+def _prim_load(ctx, env, args, app_node):
+   import os as _os
+   from pyscheme.AST import VOID_VALUE
+   if not is_string(args[0]):
+      raise SchemeTypeError('load: filename must be a string', src_of(app_node))
+   path = as_string(args[0])
+   abs_path = _os.path.abspath(path)
+   try:
+      f = open(abs_path, 'r', encoding='utf-8')
+      source = f.read()
+      f.close()
+   except OSError as e:
+      raise SchemeTypeError('load: ' + str(e), src_of(app_node))
+   from pyscheme.Parser   import parse
+   from pyscheme.Expander import expand
+   from pyscheme.Analyzer import analyze, extend_static_env_with_define
+   from pyscheme.Evaluator import cek_eval
+   forms = parse(source, abs_path)
+   static_env = {}
+   i = 0
+   while i < len(forms):
+      form     = forms[i]
+      expanded = expand(form)
+      analyze(expanded, static_env)
+      extend_static_env_with_define(static_env, expanded)
+      cek_eval(expanded, env, ctx)
+      i = i + 1
+   return VOID_VALUE
+
+
+def _prim_command_line(ctx, env, args, app_node):
+   import sys as _sys
+   from pyscheme.AST import alloc_cons, NIL_VALUE
+   result = NIL_VALUE
+   i = len(_sys.argv) - 1
+   while i >= 0:
+      result = alloc_cons(make_string(_sys.argv[i]), result)
+      i = i - 1
+   return result
+
+
+def _prim_exit(ctx, env, args, app_node):
+   import sys as _sys
+   from pyscheme.AST import is_boolean, as_boolean, is_integer, as_integer
+   if len(args) == 0:
+      _sys.exit(0)
+   obj = args[0]
+   if is_boolean(obj):
+      _sys.exit(0 if as_boolean(obj) is True else 1)
+   if is_integer(obj):
+      _sys.exit(as_integer(obj))
+   _sys.exit(1)
+
+
+def _prim_get_environment_variable(ctx, env, args, app_node):
+   import os as _os
+   if not is_string(args[0]):
+      raise SchemeTypeError(
+         'get-environment-variable: argument must be a string',
+         src_of(app_node))
+   val = _os.environ.get(as_string(args[0]))
+   if val is None:
+      return make_boolean(False)
+   return make_string(val)
+
+
+def _prim_get_environment_variables(ctx, env, args, app_node):
+   import os as _os
+   from pyscheme.AST import alloc_cons, NIL_VALUE
+   items = list(_os.environ.items())
+   result = NIL_VALUE
+   i = len(items) - 1
+   while i >= 0:
+      k, v = items[i]
+      pair = alloc_cons(make_string(k), make_string(v))
+      result = alloc_cons(pair, result)
+      i = i - 1
+   return result
+
+
+def _prim_current_second(ctx, env, args, app_node):
+   import time as _time
+   from pyscheme.AST import make_real
+   return make_real(_time.time())
+
+
+def _prim_current_jiffy(ctx, env, args, app_node):
+   import time as _time
+   from pyscheme.AST import make_integer
+   return make_integer(int(_time.monotonic() * 1000))
+
+
+def _prim_jiffies_per_second(ctx, env, args, app_node):
+   from pyscheme.AST import make_integer
+   return make_integer(1000)
+
+
 def register():
    register_primitive('error', (1, None), _prim_error_unreached,
       doc=(
@@ -604,4 +712,61 @@ def register():
          "or control leaves via a continuation invocation or an exception.\n"
          "If the dynamic extent is later re-entered via a continuation,\n"
          "<before> runs again.  R7RS 6.10."),
+      category=CATEGORY)
+
+   register_primitive('null-environment', (1, 1), _prim_null_environment,
+      doc=('(null-environment version) returns a minimal frozen environment '
+           'with no variable bindings.  R7RS §6.12 / (scheme r5rs).'),
+      category=CATEGORY)
+
+   register_primitive('scheme-report-environment', (1, 1),
+      _prim_scheme_report_environment,
+      doc=('(scheme-report-environment version) returns an environment '
+           'containing the standard procedures.  pyScheme returns the '
+           'interaction environment.  R7RS §6.12 / (scheme r5rs).'),
+      category=CATEGORY)
+
+   register_primitive('load', (1, 1), _prim_load,
+      doc=('(load filename) reads and evaluates all forms in filename in '
+           'the current environment.  R7RS §6.14 / (scheme load).'),
+      category=CATEGORY)
+
+   register_primitive('command-line', (0, 0), _prim_command_line,
+      doc=('(command-line) returns the command-line arguments as a list '
+           'of strings.  R7RS §6.14 / (scheme process-context).'),
+      category=CATEGORY)
+
+   register_primitive('exit', (0, 1), _prim_exit,
+      doc=('(exit [obj]) exits the process.  #t or no arg exits 0; #f exits 1; '
+           'exact integer uses that code.  R7RS §6.14 / (scheme process-context).'),
+      category=CATEGORY)
+
+   register_primitive('get-environment-variable', (1, 1),
+      _prim_get_environment_variable,
+      doc=('(get-environment-variable name) returns the value of the named '
+           'OS environment variable as a string, or #f if unset.  '
+           'R7RS §6.14 / (scheme process-context).'),
+      category=CATEGORY)
+
+   register_primitive('get-environment-variables', (0, 0),
+      _prim_get_environment_variables,
+      doc=('(get-environment-variables) returns an alist of (name . value) '
+           'strings for all OS environment variables.  '
+           'R7RS §6.14 / (scheme process-context).'),
+      category=CATEGORY)
+
+   register_primitive('current-second', (0, 0), _prim_current_second,
+      doc=('(current-second) returns the current UTC time as an inexact '
+           'real (seconds since 1970-01-01T00:00:00Z).  '
+           'R7RS §6.14 / (scheme time).'),
+      category=CATEGORY)
+
+   register_primitive('current-jiffy', (0, 0), _prim_current_jiffy,
+      doc=('(current-jiffy) returns a monotonic count of jiffies (ms here) '
+           'since an unspecified epoch.  R7RS §6.14 / (scheme time).'),
+      category=CATEGORY)
+
+   register_primitive('jiffies-per-second', (0, 0), _prim_jiffies_per_second,
+      doc=('(jiffies-per-second) returns 1000: pyScheme jiffies are milliseconds.  '
+           'R7RS §6.14 / (scheme time).'),
       category=CATEGORY)

@@ -159,12 +159,23 @@ def _prim_list_copy(ctx, env, args, app_node):
 
 def _make_member_search(name, equality_predicate):
    def search(ctx, env, args, app_node):
+      from pyscheme.Evaluator import isFalse
       target = args[0]
       cur    = args[1]
-      while is_cons(cur):
-         if equality_predicate(target, cur.car):
-            return cur
-         cur = cur.cdr
+      if len(args) >= 3:
+         from pyscheme.primitives.meta import _apply_scheme_proc
+         compare_proc = args[2]
+         while is_cons(cur):
+            result = _apply_scheme_proc(compare_proc, [target, cur.car],
+                                        ctx, None, app_node)
+            if not isFalse(result):
+               return cur
+            cur = cur.cdr
+      else:
+         while is_cons(cur):
+            if equality_predicate(target, cur.car):
+               return cur
+            cur = cur.cdr
       if not is_nil(cur):
          raise SchemeTypeError(
             name + ': second argument must be a proper list',
@@ -176,16 +187,31 @@ def _make_member_search(name, equality_predicate):
 
 def _make_assoc_search(name, equality_predicate):
    def search(ctx, env, args, app_node):
+      from pyscheme.Evaluator import isFalse
       target = args[0]
       cur    = args[1]
-      while is_cons(cur):
-         pair = cur.car
-         if not is_cons(pair):
-            raise SchemeTypeError(
-               name + ': alist entries must be pairs', src_of(app_node))
-         if equality_predicate(target, pair.car):
-            return pair
-         cur = cur.cdr
+      if len(args) >= 3:
+         from pyscheme.primitives.meta import _apply_scheme_proc
+         compare_proc = args[2]
+         while is_cons(cur):
+            pair = cur.car
+            if not is_cons(pair):
+               raise SchemeTypeError(
+                  name + ': alist entries must be pairs', src_of(app_node))
+            result = _apply_scheme_proc(compare_proc, [target, pair.car],
+                                        ctx, None, app_node)
+            if not isFalse(result):
+               return pair
+            cur = cur.cdr
+      else:
+         while is_cons(cur):
+            pair = cur.car
+            if not is_cons(pair):
+               raise SchemeTypeError(
+                  name + ': alist entries must be pairs', src_of(app_node))
+            if equality_predicate(target, pair.car):
+               return pair
+            cur = cur.cdr
       if not is_nil(cur):
          raise SchemeTypeError(
             name + ': second argument must be a proper list',
@@ -446,8 +472,8 @@ def register():
       doc=('Return a newly allocated copy of the spine of the list, '
            'sharing element values.  R7RS 6.4.'),
       category=CATEGORY)
-   register_primitive('member', (2, 2), _make_member_search('member', _equal),
-      doc=('(member obj list) returns the first sublist of list whose car '
+   register_primitive('member', (2, 3), _make_member_search('member', _equal),
+      doc=('(member obj list [compare]) returns the first sublist of list whose car '
            'is equal? to obj, or #f if no such sublist exists.  R7RS 6.4.'),
       category=CATEGORY)
    register_primitive('memv', (2, 2), _make_member_search('memv', _eqv),
@@ -456,8 +482,8 @@ def register():
    register_primitive('memq', (2, 2), _make_member_search('memq', _eq),
       doc=('Like member but uses eq? for comparison.  R7RS 6.4.'),
       category=CATEGORY)
-   register_primitive('assoc', (2, 2), _make_assoc_search('assoc', _equal),
-      doc=('(assoc obj alist) returns the first pair in alist whose car is '
+   register_primitive('assoc', (2, 3), _make_assoc_search('assoc', _equal),
+      doc=('(assoc obj alist [compare]) returns the first pair in alist whose car is '
            'equal? to obj, or #f if no such pair exists.  R7RS 6.4.'),
       category=CATEGORY)
    register_primitive('assv', (2, 2), _make_assoc_search('assv', _eqv),
