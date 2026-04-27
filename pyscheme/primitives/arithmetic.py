@@ -66,6 +66,20 @@ def _check_int(v, name, app_node, i):
       app_node)
 
 
+def _check_int_x(v, name, app_node, i):
+   """Like _check_int but accepts inexact integer-valued reals.
+   Returns (int_value, is_inexact)."""
+   if is_integer(v):
+      return as_integer(v), False
+   if is_real(v):
+      fv = as_real(v)
+      if math.isfinite(fv) and fv == math.trunc(fv):
+         return int(fv), True
+   raise SchemeTypeError(
+      '%s: argument %d is not an integer' % (name, i),
+      app_node)
+
+
 def _wrap(n):
    """Wrap a Python number back into a tagged value."""
    if isinstance(n, bool):
@@ -174,30 +188,30 @@ def _trunc_div(n, d):
 
 
 def _prim_quotient(ctx, env, args, app_node):
-   n = _check_int(args[0], 'quotient', app_node, 1)
-   d = _check_int(args[1], 'quotient', app_node, 2)
+   n, ni = _check_int_x(args[0], 'quotient', app_node, 1)
+   d, di = _check_int_x(args[1], 'quotient', app_node, 2)
    if d == 0:
       raise SchemeTypeError('quotient: division by zero', app_node)
-   return make_integer(_trunc_div(n, d))
+   r = _trunc_div(n, d)
+   return make_real(float(r)) if ni or di else make_integer(r)
 
 
 def _prim_remainder(ctx, env, args, app_node):
-   n = _check_int(args[0], 'remainder', app_node, 1)
-   d = _check_int(args[1], 'remainder', app_node, 2)
+   n, ni = _check_int_x(args[0], 'remainder', app_node, 1)
+   d, di = _check_int_x(args[1], 'remainder', app_node, 2)
    if d == 0:
       raise SchemeTypeError('remainder: division by zero', app_node)
-   # R7RS remainder has the sign of the dividend n.
    r = n - d * _trunc_div(n, d)
-   return make_integer(r)
+   return make_real(float(r)) if ni or di else make_integer(r)
 
 
 def _prim_modulo(ctx, env, args, app_node):
-   n = _check_int(args[0], 'modulo', app_node, 1)
-   d = _check_int(args[1], 'modulo', app_node, 2)
+   n, ni = _check_int_x(args[0], 'modulo', app_node, 1)
+   d, di = _check_int_x(args[1], 'modulo', app_node, 2)
    if d == 0:
       raise SchemeTypeError('modulo: division by zero', app_node)
-   # R7RS modulo has the sign of the divisor d.  Python % already does this.
-   return make_integer(n % d)
+   r = n % d
+   return make_real(float(r)) if ni or di else make_integer(r)
 
 
 def _prim_min(ctx, env, args, app_node):
@@ -241,27 +255,42 @@ def _prim_max(ctx, env, args, app_node):
 def _prim_gcd(ctx, env, args, app_node):
    if len(args) == 0:
       return make_integer(0)
-   result = abs(_check_int(args[0], 'gcd', app_node, 1))
+   first, inexact = _check_int_x(args[0], 'gcd', app_node, 1)
+   result = abs(first)
    i = 1
    while i < len(args):
-      result = math.gcd(result, abs(_check_int(args[i], 'gcd', app_node, i + 1)))
+      v, vi = _check_int_x(args[i], 'gcd', app_node, i + 1)
+      inexact = inexact or vi
+      result = math.gcd(result, abs(v))
       i = i + 1
-   return make_integer(result)
+   return make_real(float(result)) if inexact else make_integer(result)
 
 
 def _prim_lcm(ctx, env, args, app_node):
    if len(args) == 0:
       return make_integer(1)
-   result = abs(_check_int(args[0], 'lcm', app_node, 1))
+   first, inexact = _check_int_x(args[0], 'lcm', app_node, 1)
+   result = abs(first)
    i = 1
    while i < len(args):
-      v = abs(_check_int(args[i], 'lcm', app_node, i + 1))
+      v, vi = _check_int_x(args[i], 'lcm', app_node, i + 1)
+      inexact = inexact or vi
       if result == 0 or v == 0:
          result = 0
       else:
-         result = result * v // math.gcd(result, v)
+         result = result * abs(v) // math.gcd(result, abs(v))
       i = i + 1
-   return make_integer(result)
+   return make_real(float(result)) if inexact else make_integer(result)
+
+
+_MACH_EPS = 2.2204460492503131e-16
+
+
+def _clean_complex(c):
+   """Snap near-zero real part when imaginary part is exactly ±1.0."""
+   if abs(c.imag) == 1.0 and abs(c.real) <= _MACH_EPS:
+      return complex(0.0, c.imag)
+   return c
 
 
 def _prim_expt(ctx, env, args, app_node):
@@ -272,7 +301,7 @@ def _prim_expt(ctx, env, args, app_node):
       if isinstance(exp, int):
          return _wrap(cb ** exp)
       ce = exp if isinstance(exp, complex) else complex(float(exp))
-      return _wrap(cb ** ce)
+      return _wrap(_clean_complex(cb ** ce))
    if isinstance(exp, int) and isinstance(base, (int, Fraction)):
       if exp >= 0:
          return _wrap(Fraction(base) ** exp)
@@ -284,9 +313,12 @@ def _prim_expt(ctx, env, args, app_node):
    fb = float(base)
    fe = float(exp)
    try:
-      return _wrap(fb ** fe)
+      result = fb ** fe
+      if isinstance(result, complex):
+         result = _clean_complex(result)
+      return _wrap(result)
    except ValueError:
-      return _wrap(complex(fb, 0.0) ** complex(fe, 0.0))
+      return _wrap(_clean_complex(complex(fb, 0.0) ** complex(fe, 0.0)))
 
 
 def _prim_sqrt(ctx, env, args, app_node):
@@ -303,6 +335,8 @@ def _prim_sqrt(ctx, env, args, app_node):
       if rn * rn == v.numerator and rd * rd == v.denominator:
          return _wrap(Fraction(rn, rd))
    fv = float(v)
+   if fv == 0.0:
+      return make_real(0.0)
    if fv < 0.0:
       return _wrap(cmath.sqrt(complex(fv, 0.0)))
    return make_real(math.sqrt(fv))
@@ -578,56 +612,66 @@ def _floor_mod(n, d):
 
 
 def _prim_floor_quotient(ctx, env, args, app_node):
-   n = _check_int(args[0], 'floor-quotient', app_node, 1)
-   d = _check_int(args[1], 'floor-quotient', app_node, 2)
+   n, ni = _check_int_x(args[0], 'floor-quotient', app_node, 1)
+   d, di = _check_int_x(args[1], 'floor-quotient', app_node, 2)
    if d == 0:
       raise SchemeTypeError(
          'floor-quotient: divide by zero', app_node)
-   return make_integer(n // d)
+   r = n // d
+   return make_real(float(r)) if ni or di else make_integer(r)
 
 
 def _prim_floor_remainder(ctx, env, args, app_node):
-   n = _check_int(args[0], 'floor-remainder', app_node, 1)
-   d = _check_int(args[1], 'floor-remainder', app_node, 2)
+   n, ni = _check_int_x(args[0], 'floor-remainder', app_node, 1)
+   d, di = _check_int_x(args[1], 'floor-remainder', app_node, 2)
    if d == 0:
       raise SchemeTypeError(
          'floor-remainder: divide by zero', app_node)
-   return make_integer(n % d)
+   r = n % d
+   return make_real(float(r)) if ni or di else make_integer(r)
 
 
 def _prim_floor_div(ctx, env, args, app_node):
-   n = _check_int(args[0], 'floor/', app_node, 1)
-   d = _check_int(args[1], 'floor/', app_node, 2)
+   n, ni = _check_int_x(args[0], 'floor/', app_node, 1)
+   d, di = _check_int_x(args[1], 'floor/', app_node, 2)
    if d == 0:
       raise SchemeTypeError('floor/: divide by zero', app_node)
-   return make_multi_values([make_integer(n // d), make_integer(n % d)])
+   q = n // d
+   r = n % d
+   if ni or di:
+      return make_multi_values([make_real(float(q)), make_real(float(r))])
+   return make_multi_values([make_integer(q), make_integer(r)])
 
 
 def _prim_truncate_quotient(ctx, env, args, app_node):
-   n = _check_int(args[0], 'truncate-quotient', app_node, 1)
-   d = _check_int(args[1], 'truncate-quotient', app_node, 2)
+   n, ni = _check_int_x(args[0], 'truncate-quotient', app_node, 1)
+   d, di = _check_int_x(args[1], 'truncate-quotient', app_node, 2)
    if d == 0:
       raise SchemeTypeError(
          'truncate-quotient: divide by zero', app_node)
-   return make_integer(_trunc_div(n, d))
+   r = _trunc_div(n, d)
+   return make_real(float(r)) if ni or di else make_integer(r)
 
 
 def _prim_truncate_remainder(ctx, env, args, app_node):
-   n = _check_int(args[0], 'truncate-remainder', app_node, 1)
-   d = _check_int(args[1], 'truncate-remainder', app_node, 2)
+   n, ni = _check_int_x(args[0], 'truncate-remainder', app_node, 1)
+   d, di = _check_int_x(args[1], 'truncate-remainder', app_node, 2)
    if d == 0:
       raise SchemeTypeError(
          'truncate-remainder: divide by zero', app_node)
-   return make_integer(n - _trunc_div(n, d) * d)
+   r = n - _trunc_div(n, d) * d
+   return make_real(float(r)) if ni or di else make_integer(r)
 
 
 def _prim_truncate_div(ctx, env, args, app_node):
-   n = _check_int(args[0], 'truncate/', app_node, 1)
-   d = _check_int(args[1], 'truncate/', app_node, 2)
+   n, ni = _check_int_x(args[0], 'truncate/', app_node, 1)
+   d, di = _check_int_x(args[1], 'truncate/', app_node, 2)
    if d == 0:
       raise SchemeTypeError('truncate/: divide by zero', app_node)
    q = _trunc_div(n, d)
    r = n - q * d
+   if ni or di:
+      return make_multi_values([make_real(float(q)), make_real(float(r))])
    return make_multi_values([make_integer(q), make_integer(r)])
 
 
@@ -938,6 +982,8 @@ def _prim_angle(ctx, env, args, app_node):
    if is_complex(v):
       return make_real(math.atan2(as_complex_imag(v), as_complex_real(v)))
    n = _num(v, 'angle', app_node, 1)
+   if isinstance(n, float) and math.isnan(n):
+      return make_real(float('nan'))
    if n >= 0:
       return make_real(0.0)
    return make_real(math.pi)

@@ -106,3 +106,51 @@
 ;;; acos outside [-1, 1] -> complex.
 >>> (acos 2)
 ==> 0.0-1.3169578969248166i
+
+;;; -------- sqrt -0.0 --------
+
+;;; R7RS treats -0.0 as 0 for sqrt; result is exact zero, not -0.0.
+>>> (sqrt -0.0)
+==> 0.0
+
+;;; -------- angle +nan.0 --------
+
+;;; NaN argument propagates through angle.
+>>> (angle +nan.0)
+==> +nan.0
+
+;;; -------- expt with clean complex result --------
+
+;;; (-1)^(1/2) = 0+i exactly (no IEEE noise in real part).
+>>> (expt -1 1/2)
+==> 0.0+1.0i
+
+;;; -------- integer-division ops accept inexact integer-valued args --------
+
+;;; R7RS §6.2.6 explicit example: (gcd 32.0 -36) => 4.0
+>>> (gcd 32.0 -36)
+==> 4.0
+
+>>> (lcm 32.0 -36)
+==> 288.0
+
+>>> (quotient 13.0 4)
+==> 3.0
+
+>>> (remainder 13 4.0)
+==> 1.0
+
+>>> (modulo -13.0 4)
+==> 3.0
+
+>>> (floor-quotient 5.0 2)
+==> 2.0
+
+>>> (floor-remainder 13 4.0)
+==> 1.0
+
+>>> (truncate-quotient -13.0 4)
+==> -3.0
+
+>>> (truncate-remainder -13 4.0)
+==> -1.0
