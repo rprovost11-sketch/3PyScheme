@@ -1219,13 +1219,13 @@ def _prim_rationalize(ctx, env, args, app_node):
    x     = _num(args[0], 'rationalize', app_node, 1)
    delta = _num(args[1], 'rationalize', app_node, 2)
    inexact = isinstance(x, float) or isinstance(delta, float)
+   if isinstance(x, float) and not math.isfinite(x):
+      return make_real(x)
    if isinstance(delta, float):
       if math.isinf(delta):
          return make_real(0.0) if inexact else make_integer(0)
       if math.isnan(delta):
          return make_real(float('nan'))
-   if isinstance(x, float) and not math.isfinite(x):
-      return make_real(x)
    fx = Fraction(x)
    fd = abs(Fraction(delta))
    r = _rationalize_exact(fx, fd)

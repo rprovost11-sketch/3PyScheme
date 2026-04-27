@@ -107,7 +107,16 @@ def _num_or_error(v, name, app_node):
 
 
 def _prim_zero_p(ctx, env, args, app_node):
-   return make_boolean(_num_or_error(args[0], 'zero?', app_node) == 0)
+   v = args[0]
+   if is_complex(v):
+      return make_boolean(as_complex_real(v) == 0.0 and as_complex_imag(v) == 0.0)
+   if is_exact_complex(v):
+      re = as_exact_complex_real(v)
+      im = as_exact_complex_imag(v)
+      re_zero = is_integer(re) and as_integer(re) == 0
+      im_zero = is_integer(im) and as_integer(im) == 0
+      return make_boolean(re_zero and im_zero)
+   return make_boolean(_num_or_error(v, 'zero?', app_node) == 0)
 
 
 def _prim_positive_p(ctx, env, args, app_node):
