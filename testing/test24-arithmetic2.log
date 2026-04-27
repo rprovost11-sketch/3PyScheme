@@ -1,0 +1,1046 @@
+;;; ============================================================
+;;; test24-arithmetic2.log
+;;; Gap tests derived from cppScheme test01-arithmetic.log
+;;; ============================================================
+
+>>> (+ 1)
+==> 1
+
+>>> (+ 1 2)
+==> 3
+
+>>> (+ 1.0 2)
+==> 3.0
+
+>>> (+ -3 3)
+... ; --- - ---
+==> 0
+
+>>> (- 5)
+==> -5
+
+>>> (- -5)
+==> 5
+
+>>> (- 10 3)
+==> 7
+
+>>> (- 10 3 2)
+==> 5
+
+>>> (- 1.5 0.5)
+... ; arity error
+==> 1.0
+
+>>> (-)
+%%% SchemeArityError: line 1, col 1: -: 0 arguments provided; at least 1 expected
+%%% (-)
+%%% ^
+
+>>> (* 5)
+==> 5
+
+>>> (* 2 3)
+==> 6
+
+>>> (* -1 -1)
+==> 1
+
+>>> (* 2.0 3)
+... ; --- / ---
+==> 6.0
+
+>>> (/ 10 2)
+==> 5
+
+>>> (/ 7 2)
+==> 7/2
+
+>>> (/ 6 3)
+==> 2
+
+>>> (/ 1 4)
+==> 1/4
+
+>>> (/ 10 2 5)
+... ; arity error
+==> 1
+
+>>> (/)
+%%% SchemeArityError: line 1, col 1: /: 0 arguments provided; at least 1 expected
+%%% (/)
+%%% ^
+
+>>> (/ 0 5)
+... ; ===========================================
+... ; 2. Integer division: quotient, remainder, modulo
+... ; ===========================================
+... ; --- quotient (exact) ---
+==> 0
+
+>>> (quotient 10 3)
+==> 3
+
+>>> (quotient -10 3)
+==> -3
+
+>>> (quotient 10 -3)
+==> -3
+
+>>> (quotient -10 -3)
+==> 3
+
+>>> (quotient 6 3)
+==> 2
+
+>>> (quotient 0 5)
+==> 0
+
+>>> (quotient 1 0)
+%%% SchemeTypeError: line 1, col 1: quotient: division by zero
+%%% (quotient 1 0)
+%%% ^
+
+>>> (quotient 1 2 3)
+%%% SchemeArityError: line 1, col 1: quotient: 3 arguments provided; 2 expected
+%%% (quotient 1 2 3)
+%%% ^
+
+>>> (quotient -13.0 4)
+==> -3.0
+
+>>> (inexact? (quotient 13.0 4))
+==> #t
+
+>>> (exact? (quotient 13 4))
+... ; --- remainder (exact) ---
+==> #t
+
+>>> (remainder 10 3)
+==> 1
+
+>>> (remainder -10 3)
+==> -1
+
+>>> (remainder 10 -3)
+==> 1
+
+>>> (remainder -10 -3)
+==> -1
+
+>>> (remainder 0 5)
+==> 0
+
+>>> (remainder 1 0)
+%%% SchemeTypeError: line 1, col 1: remainder: division by zero
+%%% (remainder 1 0)
+%%% ^
+
+>>> (remainder 13.0 4)
+==> 1.0
+
+>>> (remainder -13.0 4)
+==> -1.0
+
+>>> (inexact? (remainder 13.0 4))
+... ; --- modulo (exact) ---
+==> #t
+
+>>> (modulo 10 3)
+==> 1
+
+>>> (modulo -10 3)
+==> 2
+
+>>> (modulo 10 -3)
+==> -2
+
+>>> (modulo -10 -3)
+==> -1
+
+>>> (modulo 0 5)
+==> 0
+
+>>> (modulo 13 -4)
+==> -3
+
+>>> (modulo 1 0)
+%%% SchemeTypeError: line 1, col 1: modulo: division by zero
+%%% (modulo 1 0)
+%%% ^
+
+>>> (modulo 13.0 4)
+==> 1.0
+
+>>> (modulo -13.0 4)
+... ; ===========================================
+... ; 3. Floor and truncate division
+... ; ===========================================
+... ; --- floor/ ---
+==> 3.0
+
+>>> (call-with-values (lambda () (floor/ 13 4))
+...   (lambda (q r) (list q r)))
+==> (3 1)
+
+>>> (call-with-values (lambda () (floor/ -13 4))
+...   (lambda (q r) (list q r)))
+==> (-4 3)
+
+>>> (call-with-values (lambda () (floor/ 13 -4))
+...   (lambda (q r) (list q r)))
+==> (-4 -3)
+
+>>> (call-with-values (lambda () (floor/ -13 -4))
+...   (lambda (q r) (list q r)))
+==> (3 -1)
+
+>>> (floor/)
+%%% SchemeArityError: line 1, col 1: floor/: 0 arguments provided; 2 expected
+%%% (floor/)
+%%% ^
+
+>>> (floor-quotient 13 4)
+==> 3
+
+>>> (floor-quotient -13 4)
+==> -4
+
+>>> (floor-quotient 13 -4)
+==> -4
+
+>>> (floor-quotient -13 -4)
+==> 3
+
+>>> (floor-quotient 10 0)
+%%% SchemeTypeError: line 1, col 1: floor-quotient: divide by zero
+%%% (floor-quotient 10 0)
+%%% ^
+
+>>> (floor-quotient)
+%%% SchemeArityError: line 1, col 1: floor-quotient: 0 arguments provided; 2 expected
+%%% (floor-quotient)
+%%% ^
+
+>>> (floor-remainder 13 4)
+==> 1
+
+>>> (floor-remainder -13 4)
+==> 3
+
+>>> (floor-remainder 13 -4)
+==> -3
+
+>>> (floor-remainder -13 -4)
+==> -1
+
+>>> (floor-remainder)
+%%% SchemeArityError: line 1, col 1: floor-remainder: 0 arguments provided; 2 expected
+%%% (floor-remainder)
+%%% ^
+
+>>> (call-with-values (lambda () (truncate/ 13 4))
+...   (lambda (q r) (list q r)))
+==> (3 1)
+
+>>> (call-with-values (lambda () (truncate/ -13 4))
+...   (lambda (q r) (list q r)))
+==> (-3 -1)
+
+>>> (truncate/)
+%%% SchemeArityError: line 1, col 1: truncate/: 0 arguments provided; 2 expected
+%%% (truncate/)
+%%% ^
+
+>>> (truncate-quotient 13 4)
+==> 3
+
+>>> (truncate-quotient -7 2)
+==> -3
+
+>>> (truncate-quotient 10 0)
+%%% SchemeTypeError: line 1, col 1: truncate-quotient: divide by zero
+%%% (truncate-quotient 10 0)
+%%% ^
+
+>>> (truncate-quotient)
+%%% SchemeArityError: line 1, col 1: truncate-quotient: 0 arguments provided; 2 expected
+%%% (truncate-quotient)
+%%% ^
+
+>>> (truncate-remainder 13 4)
+==> 1
+
+>>> (truncate-remainder -7 2)
+==> -1
+
+>>> (truncate-remainder)
+%%% SchemeArityError: line 1, col 1: truncate-remainder: 0 arguments provided; 2 expected
+%%% (truncate-remainder)
+%%% ^
+
+>>> (abs 5)
+==> 5
+
+>>> (abs -5)
+==> 5
+
+>>> (abs 0)
+==> 0
+
+>>> (abs -3.14)
+==> 3.14
+
+>>> (abs 2.5)
+... ; abs of rationals
+==> 2.5
+
+>>> (abs 3/4)
+==> 3/4
+
+>>> (abs)
+%%% SchemeArityError: line 1, col 1: abs: 0 arguments provided; 1 expected
+%%% (abs)
+%%% ^
+
+>>> (expt 2 0)
+==> 1
+
+>>> (expt 2 1)
+==> 2
+
+>>> (expt 2 10)
+==> 1024
+
+>>> (expt 3 3)
+==> 27
+
+>>> (expt 4 0.5)
+==> 2.0
+
+>>> (expt 0 0)
+==> 1
+
+>>> (expt 0 3)
+... ; negative exponents produce rationals
+==> 0
+
+>>> (expt 2 -1)
+==> 1/2
+
+>>> (expt -2 -1)
+... ; rational base
+==> -1/2
+
+>>> (expt 2/3 3)
+==> 8/27
+
+>>> (expt 3/2 -2)
+... ; large exponent falls through to flonum
+==> 4/9
+
+>>> (inexact? (expt 2 100))
+... ; ===========================================
+... ; 6. Square root: sqrt
+... ; ===========================================
+... ; exact results for perfect squares
+==> #f
+
+>>> (sqrt 0)
+==> 0
+
+>>> (sqrt 1)
+==> 1
+
+>>> (sqrt 4)
+==> 2
+
+>>> (sqrt 9)
+==> 3
+
+>>> (sqrt 25)
+==> 5
+
+>>> (sqrt 100)
+==> 10
+
+>>> (exact? (sqrt 4))
+... ; inexact for non-perfect squares
+==> #t
+
+>>> (sqrt 2)
+==> 1.4142135623730951
+
+>>> (inexact? (sqrt 2))
+... ; exact results for perfect rational squares
+==> #t
+
+>>> (sqrt 1/4)
+==> 1/2
+
+>>> (sqrt 9/25)
+==> 3/5
+
+>>> (sqrt 4/1)
+==> 2
+
+>>> (exact? (sqrt 4/9))
+... ; inexact for non-perfect rational squares
+==> #t
+
+>>> (exact? (sqrt 2/3))
+==> #f
+
+>>> (inexact? (sqrt 2/3))
+... ; ===========================================
+... ; 7. exact-integer-sqrt
+... ; ===========================================
+==> #t
+
+>>> (call-with-values (lambda () (exact-integer-sqrt 14))
+...   (lambda (s r) (list s r)))
+==> (3 5)
+
+>>> (call-with-values (lambda () (exact-integer-sqrt 9))
+...   (lambda (s r) (list s r)))
+==> (3 0)
+
+>>> (call-with-values (lambda () (exact-integer-sqrt 0))
+...   (lambda (s r) (list s r)))
+==> (0 0)
+
+>>> (call-with-values (lambda () (exact-integer-sqrt 1))
+...   (lambda (s r) (list s r)))
+==> (1 0)
+
+>>> (call-with-values (lambda () (exact-integer-sqrt 100))
+...   (lambda (s r) (list s r)))
+==> (10 0)
+
+>>> (exact-integer-sqrt)
+%%% SchemeArityError: line 1, col 1: exact-integer-sqrt: 0 arguments provided; 1 expected
+%%% (exact-integer-sqrt)
+%%% ^
+
+>>> (floor 3.7)
+==> 3.0
+
+>>> (floor 3.0)
+==> 3.0
+
+>>> (floor -3.2)
+==> -4.0
+
+>>> (floor 3.5)
+... ; exact integer input passes through exact
+==> 3.0
+
+>>> (floor 5)
+==> 5
+
+>>> (floor -3)
+==> -3
+
+>>> (exact? (floor 5))
+==> #t
+
+>>> (inexact? (floor 3.5))
+... ; rational input produces exact integer
+==> #t
+
+>>> (floor -7/2)
+... ; --- ceiling ---
+... ; flonum input
+==> -4
+
+>>> (ceiling 3.2)
+==> 4.0
+
+>>> (ceiling 3.0)
+==> 3.0
+
+>>> (ceiling -3.7)
+==> -3.0
+
+>>> (ceiling 3.5)
+... ; exact integer input passes through exact
+==> 4.0
+
+>>> (ceiling 3)
+==> 3
+
+>>> (ceiling -3)
+==> -3
+
+>>> (exact? (ceiling 3))
+... ; rational input
+==> #t
+
+>>> (ceiling -7/2)
+... ; --- round (banker's rounding: half-to-even) ---
+... ; halfway cases: tie goes to nearest even
+==> -3
+
+>>> (round 0.5)
+==> 0.0
+
+>>> (round 1.5)
+==> 2.0
+
+>>> (round 2.5)
+==> 2.0
+
+>>> (round 3.5)
+==> 4.0
+
+>>> (round 4.5)
+==> 4.0
+
+>>> (round -0.5)
+==> 0.0
+
+>>> (round -1.5)
+==> -2.0
+
+>>> (round -2.5)
+... ; non-halfway cases
+==> -2.0
+
+>>> (round 3.2)
+==> 3.0
+
+>>> (round 3.7)
+==> 4.0
+
+>>> (round 1.4)
+==> 1.0
+
+>>> (round 1.6)
+==> 2.0
+
+>>> (round -1.4)
+==> -1.0
+
+>>> (round -1.6)
+... ; exact integer pass-through
+==> -2.0
+
+>>> (round 3)
+==> 3
+
+>>> (round 4)
+==> 4
+
+>>> (exact? (round 3))
+... ; rational input
+==> #t
+
+>>> (round 7/2)
+==> 4
+
+>>> (round -7/2)
+==> -4
+
+>>> (round 5/2)
+... ; --- truncate ---
+==> 2
+
+>>> (truncate 3.7)
+==> 3.0
+
+>>> (truncate -3.7)
+==> -3.0
+
+>>> (truncate 0.9)
+... ; exact integer input
+==> 0.0
+
+>>> (truncate 7)
+... ; rational input
+==> 7
+
+>>> (truncate -7/2)
+... ; ===========================================
+... ; 9. Exact/inexact conversions
+... ; ===========================================
+==> -3
+
+>>> (exact->inexact 5)
+==> 5.0
+
+>>> (exact->inexact 0)
+==> 0.0
+
+>>> (exact->inexact -3)
+==> -3.0
+
+>>> (exact->inexact 1/4)
+==> 0.25
+
+>>> (exact->inexact 1/3)
+==> 0.3333333333333333
+
+>>> (inexact->exact 3.0)
+==> 3
+
+>>> (inexact->exact 3.7)
+==> 4165829655317709/1125899906842624
+
+>>> (inexact->exact 0.0)
+==> 0
+
+>>> (inexact->exact 0.5)
+==> 1/2
+
+>>> (inexact->exact 0.25)
+==> 1/4
+
+>>> (inexact->exact 0.1)
+==> 3602879701896397/36028797018963968
+
+>>> (exact 5)
+==> 5
+
+>>> (exact 3.9)
+==> 8782019273372467/2251799813685248
+
+>>> (inexact 5)
+==> 5.0
+
+>>> (inexact 0)
+... ; ===========================================
+... ; 10. Exact rational arithmetic
+... ; ===========================================
+... ; rational + rational
+==> 0.0
+
+>>> (- 3/4 1/4)
+==> 1/2
+
+>>> (* 2/3 3/4)
+==> 1/2
+
+>>> (/ 1/2 1/3)
+... ; integer / integer producing rational
+==> 3/2
+
+>>> (/ 5 3)
+... ; mixed exact: rational + integer
+==> 5/3
+
+>>> (+ 1/2 1)
+==> 3/2
+
+>>> (* 2 3/4)
+... ; exact cancellation
+==> 3/2
+
+>>> (+ 1/3 1/3 1/3)
+==> 1
+
+>>> (* 1/2 2)
+... ; rational predicates and type checks
+==> 1
+
+>>> (exact? 1/2)
+==> #t
+
+>>> (inexact? 1/2)
+==> #f
+
+>>> (rational? 1/2)
+==> #t
+
+>>> (number? 1/2)
+==> #t
+
+>>> (integer? 1/2)
+==> #f
+
+>>> (real? 1/2)
+... ; rational comparison
+==> #t
+
+>>> (= 1/2 1/2)
+==> #t
+
+>>> (= 1/2 2/4)
+==> #t
+
+>>> (<= 1/4 1/4)
+==> #t
+
+>>> (>= 3/4 1/2)
+... ; eqv? exact/inexact distinction
+==> #t
+
+>>> (eqv? 0 0.0)
+==> #f
+
+>>> (eqv? 1 1.0)
+==> #f
+
+>>> (eqv? 1/2 0.5)
+... ; ===========================================
+... ; 11. Rational predicates: numerator, denominator
+... ; ===========================================
+... ; integer inputs
+==> #f
+
+>>> (numerator 5)
+==> 5
+
+>>> (denominator 5)
+==> 1
+
+>>> (numerator 0)
+==> 0
+
+>>> (denominator 0)
+... ; rational inputs
+==> 1
+
+>>> (denominator 3/4)
+... ; flonum inputs return inexact
+==> 4
+
+>>> (numerator 3.0)
+==> 3.0
+
+>>> (denominator 3.0)
+==> 1.0
+
+>>> (numerator 0.5)
+==> 1.0
+
+>>> (denominator 0.5)
+==> 2.0
+
+>>> (numerator)
+%%% SchemeArityError: line 1, col 1: numerator: 0 arguments provided; 1 expected
+%%% (numerator)
+%%% ^
+
+>>> (denominator)
+%%% SchemeArityError: line 1, col 1: denominator: 0 arguments provided; 1 expected
+%%% (denominator)
+%%% ^
+
+>>> (rationalize 3 0)
+==> 3
+
+>>> (rationalize 1/3 1/10)
+==> 1/3
+
+>>> (rationalize 1/4 1/10)
+==> 1/3
+
+>>> (rationalize -1/3 1/10)
+==> -1/3
+
+>>> (rationalize 0 1/2)
+==> 0
+
+>>> (rationalize 1/2 0)
+==> 1/2
+
+>>> (rationalize 3 1/10)
+==> 3
+
+>>> (rationalize (exact .1) 0)
+==> 3602879701896397/36028797018963968
+
+>>> (exact? (rationalize 1/3 1/10))
+... ; inexact results when given inexact inputs
+==> #t
+
+>>> (rationalize 3.0 0.1)
+==> 3.0
+
+>>> (inexact? (rationalize 0.3 0.1))
+... ; ===========================================
+... ; 13. Min/max
+... ; ===========================================
+==> #t
+
+>>> (min 3)
+==> 3
+
+>>> (min 3 1 4 1 5 9)
+==> 1
+
+>>> (min -5 0 5)
+==> -5
+
+>>> (max 3)
+==> 3
+
+>>> (max 3 1 4 1 5 9)
+==> 9
+
+>>> (max -5 0 5)
+==> 5
+
+>>> (min)
+%%% SchemeArityError: line 1, col 1: min: 0 arguments provided; at least 1 expected
+%%% (min)
+%%% ^
+
+>>> (max)
+%%% SchemeArityError: line 1, col 1: max: 0 arguments provided; at least 1 expected
+%%% (max)
+%%% ^
+
+>>> (min 3 4.0)
+==> 3.0
+
+>>> (min 4.0 3)
+==> 3.0
+
+>>> (inexact? (min 3 4.0))
+==> #t
+
+>>> (max 3.0 4)
+==> 4.0
+
+>>> (max 4 3.0)
+==> 4.0
+
+>>> (inexact? (max 3.0 4))
+... ; all exact stays exact
+==> #t
+
+>>> (exact? (min 3 4))
+==> #t
+
+>>> (exact? (max 3 4))
+... ; all inexact stays inexact
+==> #t
+
+>>> (inexact? (min 3.0 4.0))
+... ; min/max with rationals
+==> #t
+
+>>> (max 1/3 1/2)
+==> 1/2
+
+>>> (min 1/3 0.5)
+... ; ===========================================
+... ; 14. GCD/LCM
+... ; ===========================================
+==> 0.3333333333333333
+
+>>> (gcd)
+==> 0
+
+>>> (gcd 5)
+==> 5
+
+>>> (gcd 12 8)
+==> 4
+
+>>> (gcd 12 8 6)
+==> 2
+
+>>> (gcd 0 5)
+==> 5
+
+>>> (gcd 0 0)
+==> 0
+
+>>> (lcm)
+==> 1
+
+>>> (lcm 5)
+==> 5
+
+>>> (lcm 4 6)
+==> 12
+
+>>> (lcm 4 6 10)
+... ; ===========================================
+... ; 15. number->string
+... ; ===========================================
+==> 60
+
+>>> (number->string 0)
+==> "0"
+
+>>> (number->string 42)
+==> "42"
+
+>>> (number->string -17)
+==> "-17"
+
+>>> (number->string)
+%%% SchemeArityError: line 1, col 1: number->string: 0 arguments provided; 1 or 2 expected
+%%% (number->string)
+%%% ^
+
+>>> (number->string #xFF 16)
+==> "ff"
+
+>>> (number->string #b1010 2)
+==> "1010"
+
+>>> (number->string #o17 8)
+... ; ===========================================
+... ; 16. string->number
+... ; ===========================================
+... ; basic decimal
+==> "17"
+
+>>> (string->number "42")
+==> 42
+
+>>> (string->number "0")
+==> 0
+
+>>> (string->number "-17")
+==> -17
+
+>>> (string->number "3.14")
+... ; invalid strings
+==> 3.14
+
+>>> (string->number "abc")
+==> #f
+
+>>> (string->number "")
+==> #f
+
+>>> (string->number "12abc")
+==> #f
+
+>>> (string->number)
+%%% SchemeArityError: line 1, col 1: string->number: 0 arguments provided; 1 or 2 expected
+%%% (string->number)
+%%% ^
+
+>>> (string->number "ff" 16)
+==> 255
+
+>>> (string->number "FF" 16)
+==> 255
+
+>>> (string->number "-a" 16)
+==> -10
+
+>>> (string->number "1010" 2)
+==> 10
+
+>>> (string->number "17" 8)
+==> 15
+
+>>> (string->number "255" 10)
+==> 255
+
+>>> (string->number "ff")
+==> #f
+
+>>> (string->number "0" 16)
+==> 0
+
+>>> (string->number "z" 16)
+... ; string->number with #e/#i prefixes
+==> #f
+
+>>> (string->number "#i3")
+==> 3.0
+
+>>> (inexact? (string->number "#i3"))
+==> #t
+
+>>> (string->number "#i1")
+==> 1.0
+
+>>> (string->number "#e1.0")
+==> 1
+
+>>> (exact? (string->number "#e1.0"))
+==> #t
+
+>>> (string->number "#e3.0")
+==> 3
+
+>>> (string->number "#e5")
+... ; string->number with #b/#o/#x/#d prefixes
+==> 5
+
+>>> (string->number "#b101")
+==> 5
+
+>>> (string->number "#b1111")
+==> 15
+
+>>> (string->number "#o10")
+==> 8
+
+>>> (string->number "#xff")
+==> 255
+
+>>> (string->number "#x1A")
+==> 26
+
+>>> (string->number "#d42")
+... ; two-prefix combos
+==> 42
+
+>>> (string->number "#e#b101")
+==> 5
+
+>>> (exact? (string->number "#e#b101"))
+==> #t
+
+>>> (inexact? (string->number "#i#xff"))
+... ; non-number with prefix still returns #f
+==> #t
+
+>>> (string->number "#inot")
+... ; special float literals
+==> #f
+
+>>> (infinite? (string->number "+inf.0"))
+==> #t
+
+>>> (infinite? (string->number "-inf.0"))
+==> #t
+
+>>> (nan? (string->number "+nan.0"))
+==> #t
+
+>>> (nan? (string->number "-nan.0"))
+%%% SchemeTypeError: line 1, col 1: nan?: argument must be a number
+%%% (nan? (string->number "-nan.0"))
+%%% ^
+
+>>> (string->number "+inf")
+==> +inf.0
+
+>>> (string->number "inf.0")
+... ; round-trips with number->string
+==> #f
+
+>>> (string->number (number->string 255 16) 16)
+==> 255
+
+>>> (string->number (number->string 10 2) 2)
+... ; ===========================================
+... ; 17. Type errors in arithmetic
+... ; ===========================================
+==> 10
+
+>>> (+ "a" 1)
+%%% SchemeTypeError: line 1, col 1: +: argument 1 is not a number
+%%% (+ "a" 1)
+%%% ^
+
+>>> (- #t 1)
+%%% SchemeTypeError: line 1, col 1: -: argument 1 is not a number
+%%% (- #t 1)
+%%% ^
+
+>>> (* '() 2)
+%%% SchemeTypeError: line 1, col 1: *: argument 1 is not a number
+%%% (* '() 2)
+%%% ^

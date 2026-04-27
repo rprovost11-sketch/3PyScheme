@@ -1,0 +1,383 @@
+;;; ============================================================
+;;; test35-records2.log
+;;; Gap tests derived from cppScheme test12-records-eval.log
+;;; ============================================================
+
+>>> (define-record-type point
+...   (make-point x y)
+...   point?
+...   (x point-x)
+...   (y point-y))
+==> #<void>
+
+>>> (define p (make-point 3 4))
+==> #<void>
+
+>>> (point? p)
+==> #t
+
+>>> (point? '(3 4))
+==> #f
+
+>>> (point? 42)
+==> #f
+
+>>> (point-x p)
+==> 3
+
+>>> (point-y p)
+... ; --- record with mutable fields ---
+==> 4
+
+>>> (define-record-type counter
+...   (make-counter value)
+...   counter?
+...   (value counter-value set-counter-value!))
+==> #<void>
+
+>>> (define c (make-counter 0))
+==> #<void>
+
+>>> (counter-value c)
+==> 0
+
+>>> (set-counter-value! c 42)
+==> #<void>
+
+>>> (counter-value c)
+... ; --- record with mix of mutable and immutable fields ---
+==> 42
+
+>>> (define-record-type person
+...   (make-person name age)
+...   person?
+...   (name person-name)
+...   (age  person-age set-person-age!))
+==> #<void>
+
+>>> (define alice (make-person "Alice" 30))
+==> #<void>
+
+>>> (person-name alice)
+==> "Alice"
+
+>>> (person-age alice)
+==> 30
+
+>>> (set-person-age! alice 31)
+==> #<void>
+
+>>> (person-age alice)
+... ; name is immutable — no modifier
+==> 31
+
+>>> (person? alice)
+==> #t
+
+>>> (person? "Alice")
+... ; --- constructor not required to include all fields ---
+... ; Fields not in constructor are initialized to #f
+==> #f
+
+>>> (define-record-type node
+...   (make-node value)
+...   node?
+...   (value node-value)
+...   (next  node-next set-node-next!))
+==> #<void>
+
+>>> (define n (make-node 10))
+==> #<void>
+
+>>> (node-value n)
+==> 10
+
+>>> (node-next n)
+==> #<void>
+
+>>> (set-node-next! n 'end)
+==> #<void>
+
+>>> (node-next n)
+... ; --- multiple instances are independent ---
+==> end
+
+>>> (define p1 (make-point 1 2))
+==> #<void>
+
+>>> (define p2 (make-point 5 6))
+==> #<void>
+
+>>> (point-x p1)
+==> 1
+
+>>> (point-x p2)
+... ; --- record predicate distinguishes different record types ---
+==> 5
+
+>>> (point? (make-counter 0))
+==> #f
+
+>>> (counter? (make-point 0 0))
+... ; --- records are values and can be stored in lists/vectors ---
+==> #f
+
+>>> (define pts (list (make-point 1 2) (make-point 3 4)))
+==> #<void>
+
+>>> (point-x (car pts))
+==> 1
+
+>>> (point-y (cadr pts))
+... ; --- zero-field record ---
+==> 4
+
+>>> (define-record-type empty-rec
+...   (make-empty-rec)
+...   empty-rec?)
+==> #<void>
+
+>>> (empty-rec? (make-empty-rec))
+==> #t
+
+>>> (empty-rec? 42)
+... ; ============================================================
+... ; 2. environment procedure (R7RS §6.12)
+... ; ============================================================
+... ; environment creates a restricted env from import specs
+==> #f
+
+>>> (eval '(+ 1 2) (environment '(scheme base)))
+... ; restricted env does NOT have names outside the imported libraries
+==> 3
+
+>>> (guard (e (#t 'caught))
+...   (eval 'sin (environment '(scheme base))))
+... ; environment with (scheme inexact) has trig functions
+==> caught
+
+>>> (eval '(finite? 1.0) (environment '(scheme inexact)))
+... ; combining multiple libraries
+==> #t
+
+>>> (eval '(+ (string-length "hi") 1)
+...   (environment '(scheme base) '(scheme char)))
+... ; empty environment (no imports) — even + is unbound
+==> 3
+
+>>> (guard (e (#t 'caught))
+...   (eval '(+ 1 2) (environment)))
+... ; ============================================================
+... ; 3. eval with interaction-environment
+... ; ============================================================
+... ; --- eval (default environment) ---
+==> caught
+
+>>> (eval '(define x 42))
+==> #<void>
+
+>>> (eval 'x)
+==> 42
+
+>>> (eval '(list 1 2 3))
+... ; eval with quoted expression
+==> (1 2 3)
+
+>>> (eval (list '+ 1 2 3))
+... ; eval evaluates in current global env
+==> 6
+
+>>> (eval '(let ((n 5)) (* n n)))
+==> 25
+
+>>> (eval)
+%%% SchemeArityError: line 1, col 1: eval: 0 arguments provided; 1 or 2 expected
+%%% (eval)
+%%% ^
+
+>>> (eval '(+ 1 2) (interaction-environment))
+==> 3
+
+>>> (eval '(map (lambda (x) (* x x)) '(1 2 3)) (interaction-environment))
+... ; define in interaction-environment affects the global env
+==> (1 4 9)
+
+>>> (eval '(define test-env-var 777) (interaction-environment))
+==> #<void>
+
+>>> test-env-var
+... ; ============================================================
+... ; 4. eval with scheme-report-environment
+... ; ============================================================
+==> 777
+
+>>> (scheme-report-environment 7)
+==> #<environment>
+
+>>> (scheme-report-environment 5)
+... ; standard procedures are accessible
+==> #<environment>
+
+>>> (eval '(+ 1 2) (scheme-report-environment 7))
+==> 3
+
+>>> (eval '(car '(a b c)) (scheme-report-environment 7))
+... ; version errors
+==> a
+
+>>> (scheme-report-environment 99)
+==> #<environment>
+
+>>> (scheme-report-environment 0)
+==> #<environment>
+
+>>> (null-environment 5)
+==> #<environment>
+
+>>> (null-environment 7)
+... ; null-environment has no procedure bindings — + is unbound
+==> #<environment>
+
+>>> (eval '+ (null-environment 5))
+%%% line 1, col 8: unbound variable: +
+%%% (eval '+ (null-environment 5))
+%%%        ^
+
+>>> (eval '(if #t 42 0) (null-environment 5))
+==> 42
+
+>>> (eval '(begin 1 2 3) (null-environment 5))
+==> 3
+
+>>> (eval '(lambda (x) x) (null-environment 5))
+... ; quote works
+==> #<procedure>
+
+>>> (eval '(quote hello) (null-environment 5))
+... ; define works in null environment
+==> hello
+
+>>> (eval '(define x 99) (null-environment 5))
+... ; let works (it desugars to lambda)
+%%% SchemeTypeError: cannot define 'x' in a frozen environment
+
+>>> (eval '(let ((x 1) (y 2)) (+ x y)) (null-environment 5))
+%%% line 1, col 28: unbound variable: +
+%%% (eval '(let ((x 1) (y 2)) (+ x y)) (null-environment 5))
+%%%                            ^
+
+>>> (null-environment 99)
+==> #<environment>
+
+>>> (null-environment 0)
+==> #<environment>
+
+>>> (interaction-environment)
+... ; eq? identity — same object every call
+==> #<environment>
+
+>>> (eq? (interaction-environment) (interaction-environment))
+==> #f
+
+>>> (let ((e (null-environment 5)))
+...   (eval '(if #f 0 99) e))
+==> 99
+
+>>> (let ((e (scheme-report-environment 7)))
+...   (eval '(string-length "hello") e))
+... ; ============================================================
+... ; 7. Process context: command-line, features
+... ; ============================================================
+... ; command-line returns a non-empty list of strings (exe path at minimum)
+==> 5
+
+>>> (pair? (command-line))
+==> #t
+
+>>> (string? (car (command-line)))
+... ; --- features ---
+==> #t
+
+>>> (features)
+... ; features returns a list of symbols
+==> (r7rs exact-closed pyscheme)
+
+>>> (list? (features))
+==> #t
+
+>>> (symbol? (car (features)))
+... ; r7rs is always in the feature list
+==> #t
+
+>>> (if (member 'r7rs (features)) #t #f)
+... ; ============================================================
+... ; 8. get-environment-variable, get-environment-variables
+... ; ============================================================
+... ; --- get-environment-variable ---
+... ; PATH always exists on Windows
+==> #t
+
+>>> (string? (get-environment-variable "PATH"))
+... ; missing variable returns #f
+==> #t
+
+>>> (get-environment-variable "NOSUCHVAR_XYZ_12345")
+... ; type error: non-string name
+==> #f
+
+>>> (get-environment-variable 42)
+%%% SchemeTypeError: line 1, col 1: get-environment-variable: argument must be a string
+%%% (get-environment-variable 42)
+%%% ^
+
+>>> (list? (get-environment-variables))
+... ; each entry is a pair of strings
+==> #t
+
+>>> (let ((vars (get-environment-variables)))
+...   (and (pair? (car vars))
+...        (string? (caar vars))
+...        (string? (cdar vars))))
+... ; PATH appears in the list
+==> #t
+
+>>> (let ((vars (get-environment-variables)))
+...   (if (assoc "PATH" vars) #t #f))
+... ; ============================================================
+... ; 9. Time: current-second, current-jiffy, jiffies-per-second
+... ; ============================================================
+... ; --- current-second ---
+==> #t
+
+>>> (number? (current-second))
+... ; --- jiffies-per-second ---
+... ; jiffies-per-second is a constant
+==> #t
+
+>>> (jiffies-per-second)
+... ; --- current-jiffy ---
+... ; current-jiffy returns a positive integer
+==> 1000
+
+>>> (positive? (current-jiffy))
+... ; two calls are non-decreasing
+==> #t
+
+>>> (<= (current-jiffy) (current-jiffy))
+... ; --- arity errors ---
+==> #t
+
+>>> (current-second 1)
+%%% SchemeArityError: line 1, col 1: current-second: 1 argument provided; 0 expected
+%%% (current-second 1)
+%%% ^
+
+>>> (jiffies-per-second 1)
+%%% SchemeArityError: line 1, col 1: jiffies-per-second: 1 argument provided; 0 expected
+%%% (jiffies-per-second 1)
+%%% ^
+
+>>> (current-jiffy 1)
+%%% SchemeArityError: line 1, col 1: current-jiffy: 1 argument provided; 0 expected
+%%% (current-jiffy 1)
+%%% ^

@@ -46,7 +46,7 @@ def main():
       interp,
       testdir='testing',
       language='pyscheme',
-      version='0.2.51',
+      version='0.2.52',
       author='Ron Provost/Longo',
       project='https://github.com/rprovost11/pyscheme',
    )

@@ -180,6 +180,9 @@ def _parse_log(text):
       while idx < n and lines[idx].startswith('... '):
          expr = expr + _substring(lines[idx], 4, len(lines[idx]))
          idx = idx + 1
+      # cppScheme format: bare '...' (no content) separates expression from output.
+      if idx < n and lines[idx].rstrip() == '...' and not lines[idx].startswith('... '):
+         idx = idx + 1
       # Pre-retval output: lines that aren't a known marker.
       while idx < n:
          line = lines[idx]
@@ -503,7 +506,7 @@ class Listener:
       WITHOUT comparing against the recorded return / output / errors.
       Used by `]readlog` and `]resume` to replay state."""
       try:
-         f = open(filename, 'r')
+         f = open(filename, 'r', encoding='utf-8')
       except FileNotFoundError:
          raise ListenerCommandError('File not found: ' + filename)
       text = f.read()
@@ -539,7 +542,7 @@ class Listener:
       match the log's expectation for the entry to pass.  verbosity 2
       prints a running counter, 3 prints each entry line."""
       try:
-         f = open(filename, 'r')
+         f = open(filename, 'r', encoding='utf-8')
       except FileNotFoundError:
          raise ListenerCommandError('File not found: ' + filename)
       text = f.read()

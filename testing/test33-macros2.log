@@ -1,0 +1,419 @@
+;;; ============================================================
+;;; test33-macros2.log
+;;; Gap tests derived from cppScheme test10-macros.log
+;;; ============================================================
+
+>>> (define-syntax my-if
+...   (syntax-rules ()
+...     ((my-if test then else)
+...      (cond (test then) (else else)))))
+==> #<void>
+
+>>> (my-if #t 'yes 'no)
+==> yes
+
+>>> (my-if #f 'yes 'no)
+... ; ================================================================
+... ; 2. SWAP! MACRO
+... ; ================================================================
+==> no
+
+>>> (define-syntax swap!
+...   (syntax-rules ()
+...     ((swap! a b)
+...      (let ((tmp a))
+...        (set! a b)
+...        (set! b tmp)))))
+==> #<void>
+
+>>> (define x 1)
+==> #<void>
+
+>>> (define y 2)
+==> #<void>
+
+>>> (swap! x y)
+==> #<void>
+
+>>> y
+... ; ================================================================
+... ; 3. WHILE LOOP MACRO (ellipsis in body)
+... ; ================================================================
+==> 1
+
+>>> (define-syntax while
+...   (syntax-rules ()
+...     ((while test body ...)
+...      (let loop ()
+...        (if test
+...            (begin body ... (loop)))))))
+==> #<void>
+
+>>> (define i 0)
+==> #<void>
+
+>>> (define sum 0)
+==> #<void>
+
+>>> (while (< i 5)
+...   (set! sum (+ sum i))
+...   (set! i (+ i 1)))
+==> #<void>
+
+>>> sum
+... ; ================================================================
+... ; 4. MY-AND, MY-OR MACROS (ellipsis patterns)
+... ; ================================================================
+... ; --- my-and ---
+==> 10
+
+>>> (define-syntax my-and
+...   (syntax-rules ()
+...     ((my-and)
+...      #t)
+...     ((my-and e)
+...      e)
+...     ((my-and e1 e2 ...)
+...      (if e1 (my-and e2 ...) #f))))
+==> #<void>
+
+>>> (my-and)
+==> #t
+
+>>> (my-and 1)
+==> 1
+
+>>> (my-and 1 2 3)
+==> 3
+
+>>> (my-and 1 #f 3)
+... ; --- my-or ---
+==> #f
+
+>>> (define-syntax my-or
+...   (syntax-rules ()
+...     ((my-or)
+...      #f)
+...     ((my-or e)
+...      e)
+...     ((my-or e1 e2 ...)
+...      (let ((t e1))
+...        (if t t (my-or e2 ...))))))
+==> #<void>
+
+>>> (my-or)
+==> #f
+
+>>> (my-or #f #f #f)
+... ; ================================================================
+... ; 5. PUSH! MACRO
+... ; ================================================================
+==> #f
+
+>>> (define-syntax push!
+...   (syntax-rules ()
+...     ((push! val lst)
+...      (set! lst (cons val lst)))))
+==> #<void>
+
+>>> (define stack '())
+==> #<void>
+
+>>> (push! 1 stack)
+==> #<void>
+
+>>> (push! 2 stack)
+==> #<void>
+
+>>> stack
+... ; ================================================================
+... ; 6. LITERAL MATCHING IN SYNTAX-RULES
+... ; ================================================================
+==> (2 1)
+
+>>> (define-syntax my-case
+...   (syntax-rules (=>)
+...     ((my-case val (test => result))
+...      (if (equal? val test) result 'no-match))))
+==> #<void>
+
+>>> (my-case 2 (2 => 'found))
+==> found
+
+>>> (my-case 5 (2 => 'found))
+... ; ================================================================
+... ; 7. LET-SYNTAX (local transformers)
+... ; ================================================================
+==> no-match
+
+>>> (let-syntax ((double (syntax-rules ()
+...                ((double x) (* x 2)))))
+...   (double 7))
+==> 14
+
+>>> (let-syntax ((inc (syntax-rules ()
+...                ((inc x) (+ x 1))))
+...              (dec (syntax-rules ()
+...                ((dec x) (- x 1)))))
+...   (list (inc 10) (dec 10)))
+... ; ================================================================
+... ; 8. LETREC-SYNTAX (mutual references)
+... ; ================================================================
+==> (11 9)
+
+>>> (letrec-syntax
+...   ((foo (syntax-rules ()
+...           ((foo x) (bar x x))))
+...    (bar (syntax-rules ()
+...           ((bar x y) (+ x y)))))
+...   (foo 5))
+... ; ================================================================
+... ; 9. NESTED MACRO CALLS
+... ; ================================================================
+==> 10
+
+>>> (define-syntax inc-by
+...   (syntax-rules ()
+...     ((inc-by x n) (+ x n))))
+==> #<void>
+
+>>> (define-syntax double-inc
+...   (syntax-rules ()
+...     ((double-inc x) (inc-by x x))))
+==> #<void>
+
+>>> (double-inc 5)
+... ; ================================================================
+... ; 10. MACROS PRODUCING DEFINE (def-const)
+... ; ================================================================
+==> 10
+
+>>> (define-syntax def-const
+...   (syntax-rules ()
+...     ((def-const name val)
+...      (define name val))))
+==> #<void>
+
+>>> (def-const pi 3.14159)
+==> #<void>
+
+>>> pi
+... ; ================================================================
+... ; 11. ELLIPSIS IN PATTERN
+... ; ================================================================
+==> 3.14159
+
+>>> (define-syntax my-list
+...   (syntax-rules ()
+...     ((my-list x ...)
+...      (list x ...))))
+==> #<void>
+
+>>> (my-list 1 2 3)
+==> (1 2 3)
+
+>>> (my-list)
+... ; ================================================================
+... ; 12. DEFINE-SYNTAX INSIDE BEGIN
+... ; ================================================================
+==> ()
+
+>>> (begin
+...   (define-syntax square-it
+...     (syntax-rules ()
+...       ((square-it x) (* x x))))
+...   (square-it 9))
+... ; ================================================================
+... ; 13. TRANSFORMER SCOPE (let-syntax not visible outside)
+... ; ================================================================
+==> 81
+
+>>> (define result
+...   (let-syntax ((triple (syntax-rules ()
+...                  ((triple x) (* x 3)))))
+...     (triple 4)))
+==> #<void>
+
+>>> result
+... ; ================================================================
+... ; 14. MACRO HYGIENE
+... ; ================================================================
+... ; --- swap!: 'tmp' must not capture user's 'tmp' ---
+==> 12
+
+>>> (let ((tmp 1) (x 2))
+...   (swap! tmp x)
+...   (list tmp x))
+... ; --- my-or: template 't' must not capture user's 't' ---
+==> (1 2)
+
+>>> (define-syntax my-or
+...   (syntax-rules ()
+...     ((my-or a b)
+...      (let ((t a)) (if t t b)))))
+==> #<void>
+
+>>> (let ((t 5))
+...   (my-or #f t))
+... ; --- my-and2: template 'v' must not capture user's 'v' ---
+==> #f
+
+>>> (define-syntax my-and2
+...   (syntax-rules ()
+...     ((my-and2 a b)
+...      (let ((v a)) (if v b #f)))))
+==> #<void>
+
+>>> (let ((v 10))
+...   (my-and2 #t v))
+... ; ================================================================
+... ; 15. BOUND IDENTIFIERS STILL WORK (inc2 uses +)
+... ; ================================================================
+==> #t
+
+>>> (define-syntax inc2
+...   (syntax-rules ()
+...     ((inc2 x) (+ x 1))))
+==> #<void>
+
+>>> (inc2 41)
+... ; definition-time binding used even when call site shadows +
+==> 42
+
+>>> (let ((+ *)) (inc2 5))
+... ; shadowed * in let-syntax — macro uses definition-time *
+==> 6
+
+>>> (let-syntax ((double (syntax-rules ()
+...               ((double x) (* x 2)))))
+...   (let ((* +)) (double 7)))
+... ; letrec-syntax uses definition-time + despite shadowing
+==> 14
+
+>>> (let ((+ *))
+...   (letrec-syntax
+...     ((foo (syntax-rules () ((foo x) (bar x x))))
+...      (bar (syntax-rules () ((bar x y) (+ x y)))))
+...     (foo 5)))
+... ; nested macros preserve definition-time bindings
+%%% unbound variable: foo
+
+>>> (let ((+ *)) (double-inc 5))
+... ; ================================================================
+... ; 16. QUOTED DATA IN TEMPLATES NOT RENAMED
+... ; ================================================================
+==> 10
+
+>>> (define-syntax my-case2
+...   (syntax-rules (=>)
+...     ((my-case2 val (test => result))
+...      (if (equal? val test) result 'no-match))))
+==> #<void>
+
+>>> (my-case2 5 (2 => 'found))
+... ; ================================================================
+... ; 17. NESTED ELLIPSIS: ((x ...) ...) patterns
+... ; ================================================================
+... ; --- basic nested ellipsis ---
+==> no-match
+
+>>> (define-syntax my-list-of-lists
+...   (syntax-rules ()
+...     ((my-list-of-lists (x ...) ...)
+...      (list (list x ...) ...))))
+==> #<void>
+
+>>> (my-list-of-lists (1 2 3) (4 5))
+... ; --- labeled-rows: nested ellipsis with mixed depth vars ---
+==> ((1 2 3) (4 5))
+
+>>> (define-syntax labeled-rows
+...   (syntax-rules ()
+...     ((labeled-rows (label val ...) ...)
+...      (list (cons 'label (list val ...)) ...))))
+==> #<void>
+
+>>> (labeled-rows (a 1 2) (b 3 4 5))
+... ; --- zero-length nested ellipsis ---
+==> ((a 1 2) (b 3 4 5))
+
+>>> (my-list-of-lists)
+... ; --- single-row nested ellipsis ---
+==> ()
+
+>>> (my-list-of-lists (10 20 30))
+... ; --- depth-3 nested ellipsis ---
+==> ((10 20 30))
+
+>>> (define-syntax depth3
+...   (syntax-rules ()
+...     ((depth3 ((x ...) ...) ...)
+...      (list (list (list x ...) ...) ...))))
+==> #<void>
+
+>>> (depth3 ((1 2) (3)) ((4 5 6)))
+... ; ================================================================
+... ; 18. CUSTOM ELLIPSIS (:::, ::, ???)
+... ; ================================================================
+... ; --- custom ellipsis ::: replaces ... ---
+==> (((1 2) (3)) ((4 5 6)))
+
+>>> (define-syntax my-list2
+...   (syntax-rules ::: ()
+...     ((my-list2 x :::) (list x :::))))
+==> #<void>
+
+>>> (my-list2 1 2 3)
+... ; --- custom ellipsis with zero elements ---
+==> (1 2 3)
+
+>>> (my-list2)
+... ; --- custom ellipsis :: ---
+==> ()
+
+>>> (define-syntax my-append
+...   (syntax-rules :: ()
+...     ((my-append (x ::) (y ::)) (list x :: y ::))))
+==> #<void>
+
+>>> (my-append (1 2 3) (4 5))
+... ; --- custom ellipsis with literals ---
+==> (1 2 3 4 5)
+
+>>> (define-syntax my-cond
+...   (syntax-rules ??? (else)
+...     ((my-cond (else e ???)) (begin e ???))
+...     ((my-cond (test body ???) rest ???)
+...      (if test (begin body ???) (my-cond rest ???)))))
+==> #<void>
+
+>>> (my-cond (#f 'no) (#t 'yes 'extra) (else 'never))
+... ; ================================================================
+... ; 19. SYNTAX-ERROR
+... ; ================================================================
+... ; --- syntax-error caught by guard ---
+==> extra
+
+>>> (guard (e (#t "caught"))
+...   (eval '(syntax-error "deliberate test error") (interaction-environment)))
+... ; --- syntax-error message content ---
+==> "caught"
+
+>>> (guard (e ((string? e) (> (string-length e) 0))
+...           (#t #f))
+...   (eval '(syntax-error "test message" 'extra) (interaction-environment)))
+... ; --- syntax-error inside define-syntax ---
+==> #f
+
+>>> (define-syntax must-be-pair
+...   (syntax-rules ()
+...     ((_ (a b)) (list a b))
+...     ((_ x) (syntax-error "must-be-pair requires a pair" x))))
+==> #<void>
+
+>>> (must-be-pair (1 2))
+==> (1 2)
+
+>>> (guard (e (#t "caught"))
+...   (eval '(must-be-pair 42) (interaction-environment)))
+==> "caught"

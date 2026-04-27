@@ -75,10 +75,17 @@ def _get_current_input(ctx):
 
 
 def _get_current_output(ctx):
+   import sys as _sys
    if _current_output_param[0] is None:
       _current_output_param[0] = make_parameter(_stdout_port(), None)
    from pyscheme.AST import as_parameter_value
-   return as_parameter_value(_current_output_param[0])
+   p = as_parameter_value(_current_output_param[0])
+   if ctx is not None and ctx.outStrm is not None:
+      port_obj = as_port(p)
+      if port_obj.file_h is _sys.stdout:
+         cap = Port([], is_input=False, is_text=True, file_h=ctx.outStrm, name='<capture>')
+         return make_port(cap)
+   return p
 
 
 def _check_port(v, name, app_node, idx=1):

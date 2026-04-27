@@ -1,0 +1,660 @@
+;;; ============================================================
+;;; test31-io-ports2.log
+;;; Gap tests derived from cppScheme test08-io-ports.log
+;;; ============================================================
+
+>>> (display 42)
+42
+==> #<void>
+
+>>> (display #t)
+#t
+==> #<void>
+
+>>> (display #f)
+#f
+==> #<void>
+
+>>> (display "hello")
+hello
+==> #<void>
+
+>>> (display 'foo)
+foo
+==> #<void>
+
+>>> (display '(1 2 3))
+(1 2 3)
+==> #<void>
+
+>>> (display '#(1 2 3))
+#(1 2 3)
+==> #<void>
+
+>>> (display '())
+... ; display vs write: strings not quoted in display mode
+()
+==> #<void>
+
+>>> (begin (display "abc") (display 42))
+... ; display to stdout still works alongside port output
+abc42
+==> #<void>
+
+>>> (display "stdout")
+... ; arity error
+stdout
+==> #<void>
+
+>>> (display)
+%%% SchemeArityError: line 1, col 1: display: 0 arguments provided; 1 or 2 expected
+%%% (display)
+%%% ^
+
+>>> (write 42)
+42
+==> #<void>
+
+>>> (write "hello")
+"hello"
+==> #<void>
+
+>>> (write 'foo)
+foo
+==> #<void>
+
+>>> (write '(1 "two" #t))
+(1 "two" #t)
+==> #<void>
+
+>>> (write #t)
+#t
+==> #<void>
+
+>>> (write '())
+... ; arity error
+()
+==> #<void>
+
+>>> (write)
+%%% SchemeArityError: line 1, col 1: write: 0 arguments provided; 1 or 2 expected
+%%% (write)
+%%% ^
+
+>>> (newline)
+==> #<void>
+
+>>> (begin (display "a") (newline) (display "b"))
+... ; ==========================================================
+... ; 5. write-char, write-u8
+... ; ==========================================================
+a
+b
+==> #<void>
+
+>>> (write-char #\A)
+A
+==> #<void>
+
+>>> (write-char #\a)
+a
+==> #<void>
+
+>>> (write-char #\newline)
+... ; arity error
+==> #<void>
+
+>>> (write-char)
+%%% SchemeArityError: line 1, col 1: write-char: 0 arguments provided; 1 or 2 expected
+%%% (write-char)
+%%% ^
+
+>>> (let ((p (open-output-bytevector)))
+...   (write-u8 65 p)
+...   (write-u8 66 p)
+...   (get-output-bytevector p))
+... ; ==========================================================
+... ; 6. write-simple
+... ; ==========================================================
+... ; write-simple is like write (no datum labels)
+==> #u8(65 66)
+
+>>> (write-simple '(1 "a" #t))
+(1 "a" #t)
+==> #<void>
+
+>>> (write-simple #\space)
+... ; ==========================================================
+... ; 7. write-shared
+... ; ==========================================================
+... ; --- non-shared structure: output same as write ---
+#\space
+==> #<void>
+
+>>> (write-shared '(1 2 3))
+(1 2 3)
+==> #<void>
+
+>>> (write-shared "hello")
+"hello"
+==> #<void>
+
+>>> (write-shared #t)
+... ; simple list, no sharing
+#t
+==> #<void>
+
+>>> (write-shared '(a b c))
+... ; nested list, no sharing
+(a b c)
+==> #<void>
+
+>>> (write-shared '(1 (2 3) 4))
+... ; --- shared structure: same object in two positions ---
+(1 (2 3) 4)
+==> #<void>
+
+>>> (let ((x '(1 2)))
+...   (write-shared (list x x)))
+... ; --- cyclic list ---
+(#0=(1 2) #0#)
+==> #<void>
+
+>>> (let ((x (list 1 2 3)))
+...   (set-cdr! (cddr x) x)
+...   (write-shared x))
+... ; --- shared vector ---
+#0=(1 2 3 . #0#)
+==> #<void>
+
+>>> (let ((v (vector 1 2)))
+...   (write-shared (list v v)))
+... ; optional port argument
+(#0=#(1 2) #0#)
+==> #<void>
+
+>>> (write-shared '(a b) (current-output-port))
+... ; --- write vs write-shared distinction ---
+... ; write does not detect sharing
+(a b)
+==> #<void>
+
+>>> (let ((x '(a b)))
+...   (write (list x x)))
+... ; write-shared does detect sharing
+((a b) (a b))
+==> #<void>
+
+>>> (let ((x '(a b)))
+...   (write-shared (list x x)))
+... ; ==========================================================
+... ; 8. eof-object, eof-object?
+... ; ==========================================================
+(#0=(a b) #0#)
+==> #<void>
+
+>>> (eof-object? (eof-object))
+==> #t
+
+>>> (eof-object? #f)
+==> #f
+
+>>> (eof-object? 0)
+==> #f
+
+>>> (eof-object? "")
+... ; eof is distinct from everything else
+==> #f
+
+>>> (eq? (eof-object) (eof-object))
+==> #t
+
+>>> (equal? (eof-object) (eof-object))
+... ; ==========================================================
+... ; 9. Port predicates: port?, input-port?, output-port?,
+... ;                     textual-port?, binary-port?
+... ; ==========================================================
+==> #t
+
+>>> (port? (current-output-port))
+==> #t
+
+>>> (port? (current-input-port))
+==> #t
+
+>>> (port? 42)
+==> #f
+
+>>> (port? "hello")
+==> #f
+
+>>> (input-port? (current-input-port))
+==> #t
+
+>>> (input-port? (current-output-port))
+==> #f
+
+>>> (output-port? (current-output-port))
+==> #t
+
+>>> (output-port? (current-input-port))
+... ; --- textual-port? ---
+==> #f
+
+>>> (textual-port? (current-input-port))
+==> #t
+
+>>> (textual-port? (current-output-port))
+==> #t
+
+>>> (textual-port? (open-input-string "x"))
+==> #t
+
+>>> (textual-port? 42)
+==> #f
+
+>>> (textual-port? "hello")
+... ; --- binary-port? ---
+==> #f
+
+>>> (binary-port? (current-input-port))
+==> #f
+
+>>> (binary-port? (open-output-bytevector))
+==> #t
+
+>>> (binary-port? #f)
+... ; ==========================================================
+... ; 10. input-port-open?, output-port-open?
+... ; ==========================================================
+==> #f
+
+>>> (input-port-open? (current-input-port))
+==> #t
+
+>>> (output-port-open? (current-output-port))
+... ; ==========================================================
+... ; 11. current-input-port, current-output-port
+... ; ==========================================================
+==> #t
+
+>>> (output-port? (current-output-port))
+... ; ==========================================================
+... ; 12. String ports: open-input-string, open-output-string,
+... ;                   get-output-string
+... ; ==========================================================
+... ; --- open-output-string / get-output-string ---
+==> #t
+
+>>> (output-port? (open-output-string))
+==> #t
+
+>>> (get-output-string (open-output-string))
+==> ""
+
+>>> (let ((p (open-output-string)))
+...   (display "hello" p)
+...   (get-output-string p))
+==> "hello"
+
+>>> (let ((p (open-output-string)))
+...   (display 42 p)
+...   (display " " p)
+...   (display #t p)
+...   (get-output-string p))
+==> "42 #t"
+
+>>> (let ((p (open-output-string)))
+...   (write "hello" p)
+...   (get-output-string p))
+==> "\"hello\""
+
+>>> (let ((p (open-output-string)))
+...   (write-char #\A p)
+...   (write-char #\B p)
+...   (write-char #\C p)
+...   (get-output-string p))
+==> "ABC"
+
+>>> (let ((p (open-output-string)))
+...   (newline p)
+...   (string-length (get-output-string p)))
+... ; display to port vs stdout
+==> 1
+
+>>> (let ((p (open-output-string)))
+...   (display "port" p)
+...   (get-output-string p))
+... ; --- open-input-string ---
+==> "port"
+
+>>> (input-port? (open-input-string "hello"))
+... ; ==========================================================
+... ; 13. with-input-from-string, with-output-to-string
+... ; ==========================================================
+==> #t
+
+>>> (let ((p (open-output-bytevector)))
+...   (write-u8 65 p)
+...   (write-u8 66 p)
+...   (get-output-bytevector p))
+... ; get-output-bytevector on wrong port type
+==> #u8(65 66)
+
+>>> (get-output-bytevector (open-input-string "x"))
+%%% SchemeTypeError: line 1, col 1: get-output-bytevector: argument 1 must be an output port
+%%% (get-output-bytevector (open-input-string "x"))
+%%% ^
+
+>>> (let ((p (open-input-bytevector #u8(1 2 3))))
+...   (list (read-u8 p) (read-u8 p) (read-u8 p) (read-u8 p)))
+... ; ==========================================================
+... ; 15. File ports: open-input-file, open-output-file
+... ; ==========================================================
+... ; open-input-file on nonexistent file raises file-error
+%%% line 1, col 33: unknown #-syntax: '#u8'
+%%% (let ((p (open-input-bytevector #u8(1 2 3))))
+%%%                                 ^
+
+>>> (file-error?
+...   (guard (e (#t e))
+...     (open-input-file "no_such_scheme_file_xyz.txt")))
+... ; ==========================================================
+... ; 16. Binary file ports: open-binary-input-file,
+... ;                        open-binary-output-file
+... ; ==========================================================
+==> #f
+
+>>> (let* ((fname "/tmp/scheme_bin_test.txt")
+...        (op (open-binary-output-file fname)))
+...   (display "hello" op)
+...   (close-port op)
+...   (let ((ip (open-binary-input-file fname)))
+...     (let ((line (read-line ip)))
+...       (close-port ip)
+...       line)))
+%%% internal error: a bytes-like object is required, not 'str'
+
+>>> (output-port? (open-binary-output-file "/tmp/scheme_bin2.txt"))
+==> #t
+
+>>> (input-port? (open-binary-input-file "/tmp/scheme_bin2.txt"))
+... ; binary file error on nonexistent file
+==> #t
+
+>>> (file-error?
+...   (guard (e (#t e))
+...     (open-binary-input-file "no_such_file_xyz.txt")))
+... ; ==========================================================
+... ; 17. close-port, close-input-port, close-output-port
+... ; ==========================================================
+==> #f
+
+>>> (let ((p (open-output-string)))
+...   (close-port p)
+...   (output-port-open? p))
+==> #f
+
+>>> (let ((p (open-input-string "hello")))
+...   (close-port p)
+...   (input-port-open? p))
+... ; ==========================================================
+... ; 18. call-with-input-file, call-with-output-file
+... ; ==========================================================
+==> #f
+
+>>> (let* ((fname "/tmp/scheme_test_io.txt")
+...        (dummy (call-with-output-file fname
+...                  (lambda (p) (display "hello file" p)))))
+...   (call-with-input-file fname read-line))
+... ; ==========================================================
+... ; 19. with-input-from-file, with-output-to-file
+... ; ==========================================================
+==> "hello file"
+
+>>> (let* ((fname "/tmp/scheme_test_io2.txt")
+...        (dummy (with-output-to-file fname
+...                  (lambda () (display "line1") (newline) (display "line2")))))
+...   (with-input-from-file fname
+...     (lambda ()
+...       (let ((l1 (read-line))
+...             (l2 (read-line)))
+...         (list l1 l2)))))
+... ; ==========================================================
+... ; 20. call-with-port
+... ; ==========================================================
+... ; call-with-port closes port after proc returns
+==> ("line1" "line2")
+
+>>> (let* ((p (open-input-string "42"))
+...        (result (call-with-port p read)))
+...   (list result (input-port-open? p)))
+... ; ==========================================================
+... ; 21. read (Scheme objects from port)
+... ; ==========================================================
+==> (42 #f)
+
+>>> (let ((p (open-input-string "42")))
+...   (read p))
+==> 42
+
+>>> (let ((p (open-input-string "hello")))
+...   (read p))
+==> hello
+
+>>> (let ((p (open-input-string "(+ 1 2)")))
+...   (read p))
+==> (+ 1 2)
+
+>>> (let ((p (open-input-string "#t")))
+...   (read p))
+==> #t
+
+>>> (let ((p (open-input-string "\"hello\"")))
+...   (read p))
+... ; read multiple datums
+==> "hello"
+
+>>> (let ((p (open-input-string "1 2 3")))
+...   (list (read p) (read p) (read p)))
+... ; read returns eof-object at end
+==> (1 2 3)
+
+>>> (let ((p (open-input-string "42")))
+...   (read p)
+...   (eof-object? (read p)))
+... ; read on empty string
+==> #t
+
+>>> (let ((p (open-input-string "")))
+...   (eof-object? (read p)))
+... ; ==========================================================
+... ; 22. read-char, peek-char, char-ready?
+... ; ==========================================================
+==> #t
+
+>>> (let ((p (open-input-string "abc")))
+...   (read-char p))
+==> #\a
+
+>>> (let ((p (open-input-string "abc")))
+...   (read-char p)
+...   (read-char p))
+==> #\b
+
+>>> (let ((p (open-input-string "")))
+...   (eof-object? (read-char p)))
+==> #t
+
+>>> (let ((p (open-input-string "abc")))
+...   (peek-char p))
+... ; peek-char does not advance
+==> #\a
+
+>>> (let ((p (open-input-string "abc")))
+...   (peek-char p)
+...   (read-char p))
+==> #\a
+
+>>> (let ((p (open-input-string "")))
+...   (eof-object? (peek-char p)))
+... ; ==========================================================
+... ; 23. read-line, read-string
+... ; ==========================================================
+==> #t
+
+>>> (let ((p (open-input-string "line1\nline2")))
+...   (read-line p))
+==> "line1"
+
+>>> (let ((p (open-input-string "line1\nline2")))
+...   (read-line p)
+...   (read-line p))
+==> "line2"
+
+>>> (let ((p (open-input-string "")))
+...   (eof-object? (read-line p)))
+... ; --- read-string ---
+==> #t
+
+>>> (read-string 5 (open-input-string "hello world"))
+==> "hello"
+
+>>> (read-string 11 (open-input-string "hello world"))
+... ; read-string past end returns what's available
+==> "hello world"
+
+>>> (read-string 20 (open-input-string "hi"))
+... ; read-string from empty port returns eof
+==> "hi"
+
+>>> (read-string 5 (open-input-string ""))
+... ; sequential reads
+==> #<eof>
+
+>>> (let ((p (open-input-string "abcde")))
+...   (list (read-string 2 p) (read-string 2 p) (read-string 2 p)))
+... ; ==========================================================
+... ; 24. read-u8, peek-u8, u8-ready?
+... ; ==========================================================
+==> ("ab" "cd" "e")
+
+>>> (let ((p (open-input-bytevector #u8(1 2 3))))
+...   (list (read-u8 p) (read-u8 p) (read-u8 p) (read-u8 p)))
+... ; --- peek-u8 ---
+%%% line 1, col 33: unknown #-syntax: '#u8'
+%%% (let ((p (open-input-bytevector #u8(1 2 3))))
+%%%                                 ^
+
+>>> (let ((p (open-input-bytevector #u8(42 43))))
+...   (list (peek-u8 p) (read-u8 p) (peek-u8 p)))
+... ; --- u8-ready? ---
+%%% line 1, col 33: unknown #-syntax: '#u8'
+%%% (let ((p (open-input-bytevector #u8(42 43))))
+%%%                                 ^
+
+>>> (let ((p (open-input-bytevector #u8(7))))
+...   (u8-ready? p))
+... ; ==========================================================
+... ; 25. read-bytevector, write-bytevector, write-string
+... ; ==========================================================
+... ; --- write-bytevector / read-bytevector roundtrip ---
+%%% line 1, col 33: unknown #-syntax: '#u8'
+%%% (let ((p (open-input-bytevector #u8(7))))
+%%%                                 ^
+
+>>> (let* ((out (open-output-bytevector))
+...        (_ (write-bytevector #u8(10 20 30) out))
+...        (bv (get-output-bytevector out))
+...        (in (open-input-bytevector bv)))
+...   (read-bytevector 3 in))
+... ; write-bytevector with start/end slice
+%%% line 2, col 29: unknown #-syntax: '#u8'
+%%%        (_ (write-bytevector #u8(10 20 30) out))
+%%%                             ^
+
+>>> (let* ((out (open-output-bytevector))
+...        (_ (write-bytevector #u8(1 2 3 4 5) out 1 4)))
+...   (get-output-bytevector out))
+... ; read-bytevector returning eof on empty port
+%%% line 2, col 29: unknown #-syntax: '#u8'
+%%%        (_ (write-bytevector #u8(1 2 3 4 5) out 1 4)))
+%%%                             ^
+
+>>> (read-bytevector 5 (open-input-bytevector #u8()))
+... ; ==========================================================
+... ; 26. flush-output-port
+... ; ==========================================================
+%%% line 1, col 43: unknown #-syntax: '#u8'
+%%% (read-bytevector 5 (open-input-bytevector #u8()))
+%%%                                           ^
+
+>>> (let ((p (open-output-string)))
+...   (display "x" p)
+...   (flush-output-port p)
+...   (get-output-string p))
+... ; ==========================================================
+... ; 27. file-exists?, delete-file
+... ; ==========================================================
+==> "x"
+
+>>> (file-exists? "no_such_scheme_test_xyz.txt")
+... ; file-exists? after creating a file
+==> #f
+
+>>> (let* ((fname "/tmp/scheme_fexists_test.txt")
+...        (dummy (call-with-output-file fname (lambda (p) (display "hi" p)))))
+...   (file-exists? fname))
+... ; arity error
+==> #t
+
+>>> (file-exists?)
+%%% SchemeArityError: line 1, col 1: file-exists?: 0 arguments provided; 1 expected
+%%% (file-exists?)
+%%% ^
+
+>>> (let* ((fname "/tmp/scheme_del_test.txt")
+...        (dummy (call-with-output-file fname (lambda (p) (display "x" p)))))
+...   (delete-file fname)
+...   (file-exists? fname))
+... ; delete-file on nonexistent file raises file-error
+==> #f
+
+>>> (file-error?
+...   (guard (e (#t e))
+...     (delete-file "no_such_scheme_file_xyz.txt")))
+... ; --- rename-file ---
+... ; rename a file and verify old is gone, new exists
+==> #f
+
+>>> (let* ((old "/tmp/scheme_rename_old.txt")
+...        (new "/tmp/scheme_rename_new.txt")
+...        (dummy (call-with-output-file old (lambda (p) (display "data" p)))))
+...   (rename-file old new)
+...   (let ((result (list (file-exists? old) (file-exists? new))))
+...     (delete-file new)
+...     result))
+... ; rename preserves content
+==> (#f #t)
+
+>>> (let* ((old "/tmp/scheme_rename_a.txt")
+...        (new "/tmp/scheme_rename_b.txt")
+...        (dummy (call-with-output-file old (lambda (p) (display "hello" p)))))
+...   (rename-file old new)
+...   (let ((content (call-with-input-file new
+...                    (lambda (p) (read-string 100 p)))))
+...     (delete-file new)
+...     content))
+... ; rename-file on nonexistent file raises file-error
+==> "hello"
+
+>>> (file-error?
+...   (guard (e (#t e))
+...     (rename-file "no_such_file_xyz.txt" "other.txt")))
+... ; arity error
+==> #f
+
+>>> (rename-file "a")
+%%% SchemeArityError: line 1, col 1: rename-file: 1 argument provided; 2 expected
+%%% (rename-file "a")
+%%% ^

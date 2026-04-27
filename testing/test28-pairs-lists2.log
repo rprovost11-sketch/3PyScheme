@@ -1,0 +1,521 @@
+;;; ============================================================
+;;; test28-pairs-lists2.log
+;;; Gap tests derived from cppScheme test05-pairs-lists.log
+;;; ============================================================
+
+>>> (cons 1 '(2 3))
+==> (1 2 3)
+
+>>> (cons 'a (cons 'b (cons 'c '())))
+==> (a b c)
+
+>>> (car '(a))
+==> a
+
+>>> (cdr '(a))
+==> ()
+
+>>> (car (cons 1 2))
+==> 1
+
+>>> (cdr (cons 1 2))
+... ; car/cdr of wrong type
+==> 2
+
+>>> (car 5)
+%%% SchemeTypeError: line 1, col 1: car: expected pair, got non-pair value
+%%% (car 5)
+%%% ^
+
+>>> (cdr "hello")
+%%% SchemeTypeError: line 1, col 1: cdr: expected pair, got non-pair value
+%%% (cdr "hello")
+%%% ^
+
+>>> (car)
+%%% SchemeArityError: line 1, col 1: car: 0 arguments provided; 1 expected
+%%% (car)
+%%% ^
+
+>>> (cdr)
+%%% SchemeArityError: line 1, col 1: cdr: 0 arguments provided; 1 expected
+%%% (cdr)
+%%% ^
+
+>>> (cons)
+%%% SchemeArityError: line 1, col 1: cons: 0 arguments provided; 2 expected
+%%% (cons)
+%%% ^
+
+>>> (cons 1 2 3)
+%%% SchemeArityError: line 1, col 1: cons: 3 arguments provided; 2 expected
+%%% (cons 1 2 3)
+%%% ^
+
+>>> (let ((p (cons 1 2))) (set-car! p 99) p)
+==> (99 . 2)
+
+>>> (let ((p (cons 1 2))) (set-cdr! p 99) p)
+==> (1 . 99)
+
+>>> (let ((p '(1 2 3))) (set-car! p 0) p)
+==> (0 2 3)
+
+>>> (let ((p '(1 2 3))) (set-cdr! p '(9)) p)
+... ; ==========================================================
+... ; 3. c[ad]+r compositions (2-level: caar, cadr, cdar, cddr)
+... ; ==========================================================
+==> (1 9)
+
+>>> (caar '((1 2) 3))
+==> 1
+
+>>> (cadr '(1 2 3))
+==> 2
+
+>>> (cdar '((1 2) 3))
+==> (2)
+
+>>> (cddr '(1 2 3))
+... ; ==========================================================
+... ; 4. 3-level cxr (caaar, caadr, cadar, caddr, cadddr)
+... ; ==========================================================
+==> (3)
+
+>>> (caaar '(((1 2) 3) 4))
+==> 1
+
+>>> (caadr '(1 (2 3) 4))
+==> 2
+
+>>> (cadar '((1 2) 3))
+==> 2
+
+>>> (caddr '(1 2 3 4))
+==> 3
+
+>>> (cadddr '(1 2 3 4 5))
+... ; ==========================================================
+... ; 5. 4-level cxr (caaaar through cdddar)
+... ; ==========================================================
+... ; caaaar = car(car(car(car(x))))
+==> 4
+
+>>> (caaaar '((((1)))))
+... ; caaadr = car(car(car(cdr(x))))
+==> 1
+
+>>> (caaadr '(0 ((1))))
+... ; caadar = car(car(cdr(car(x))))
+==> 1
+
+>>> (caadar '((0 (1))))
+... ; caaddr = car(car(cdr(cdr(x))))
+==> 1
+
+>>> (caaddr '(0 0 (1)))
+... ; cadaar = car(cdr(car(car(x))))
+==> 1
+
+>>> (cadaar '(((0 1))))
+... ; cadadr = car(cdr(car(cdr(x))))
+==> 1
+
+>>> (cadadr '(0 (0 1)))
+... ; caddar = car(cdr(cdr(car(x))))
+==> 1
+
+>>> (caddar '((0 0 1)))
+... ; cdaaar = cdr(car(car(car(x))))
+==> 1
+
+>>> (cdaaar '((((0 1)))))
+... ; cdaadr = cdr(car(car(cdr(x))))
+==> (1)
+
+>>> (cdaadr '(0 ((0 1))))
+... ; cdadar = cdr(car(cdr(car(x))))
+==> (1)
+
+>>> (cdadar '((0 (0 1))))
+... ; cdaddr = cdr(car(cdr(cdr(x))))
+==> (1)
+
+>>> (cdaddr '(0 0 (0 1)))
+... ; cddaar = cdr(cdr(car(car(x))))
+==> (1)
+
+>>> (cddaar '(((0 0 1))))
+... ; cddadr = cdr(cdr(car(cdr(x))))
+==> (1)
+
+>>> (cddadr '(0 (0 0 1)))
+... ; cdddar = cdr(cdr(cdr(car(x))))
+==> (1)
+
+>>> (cdddar '((0 0 0 1)))
+... ; ==========================================================
+... ; 6. list, list*
+... ; ==========================================================
+==> (1)
+
+>>> (list 1)
+==> (1)
+
+>>> (list 1 "hello" #t)
+... ; --- list* ---
+==> (1 "hello" #t)
+
+>>> (make-list 0)
+==> ()
+
+>>> (make-list 3 0)
+==> (0 0 0)
+
+>>> (make-list 4 'x)
+... ; default fill is nil
+==> (x x x x)
+
+>>> (make-list 2)
+==> (#<void> #<void>)
+
+>>> (make-list)
+%%% SchemeArityError: line 1, col 1: make-list: 0 arguments provided; 1 or 2 expected
+%%% (make-list)
+%%% ^
+
+>>> (length '())
+==> 0
+
+>>> (length '(1))
+==> 1
+
+>>> (length '(1 2 3))
+==> 3
+
+>>> (length '(a b c d e))
+... ; length of improper list
+==> 5
+
+>>> (length (cons 1 2))
+%%% SchemeTypeError: line 1, col 1: length: argument must be a proper list
+%%% (length (cons 1 2))
+%%% ^
+
+>>> (length)
+%%% SchemeArityError: line 1, col 1: length: 0 arguments provided; 1 expected
+%%% (length)
+%%% ^
+
+>>> (append)
+==> ()
+
+>>> (append '(1 2))
+==> (1 2)
+
+>>> (append '(1 2) '(3 4))
+==> (1 2 3 4)
+
+>>> (append '(1) '(2) '(3))
+==> (1 2 3)
+
+>>> (append '() '(1 2))
+==> (1 2)
+
+>>> (append '(1 2) '())
+... ; append with non-list tail
+==> (1 2)
+
+>>> (append '(1 2) 3)
+... ; --- reverse ---
+==> (1 2 . 3)
+
+>>> (reverse '())
+==> ()
+
+>>> (reverse '(1))
+==> (1)
+
+>>> (reverse '(1 2 3))
+==> (3 2 1)
+
+>>> (reverse '(a b c d))
+==> (d c b a)
+
+>>> (reverse)
+%%% SchemeArityError: line 1, col 1: reverse: 0 arguments provided; 1 expected
+%%% (reverse)
+%%% ^
+
+>>> (list-tail '(a b c d) 0)
+==> (a b c d)
+
+>>> (list-tail '(a b c d) 2)
+==> (c d)
+
+>>> (list-tail '(a b c d) 4)
+==> ()
+
+>>> (list-tail '(a b c) 5)
+%%% SchemeTypeError: line 1, col 1: list-tail: index out of range
+%%% (list-tail '(a b c) 5)
+%%% ^
+
+>>> (list-tail)
+%%% SchemeArityError: line 1, col 1: list-tail: 0 arguments provided; 2 expected
+%%% (list-tail)
+%%% ^
+
+>>> (list-ref '(a b c d) 0)
+==> a
+
+>>> (list-ref '(a b c d) 2)
+==> c
+
+>>> (list-ref '(a b c d) 3)
+==> d
+
+>>> (list-ref '(a b c) 5)
+%%% SchemeTypeError: line 1, col 1: list-ref: index out of range
+%%% (list-ref '(a b c) 5)
+%%% ^
+
+>>> (list-ref)
+%%% SchemeArityError: line 1, col 1: list-ref: 0 arguments provided; 2 expected
+%%% (list-ref)
+%%% ^
+
+>>> (let ((lst (list 10 20 30)))
+...   (list-set! lst 0 99)
+...   lst)
+==> (99 20 30)
+
+>>> (let ((lst (list 10 20 30)))
+...   (list-set! lst 1 99)
+...   lst)
+==> (10 99 30)
+
+>>> (let ((lst (list 10 20 30)))
+...   (list-set! lst 2 99)
+...   lst)
+... ; returns unspecified
+==> (10 20 99)
+
+>>> (list-set! (list 1 2 3) 0 9)
+==> #<void>
+
+>>> (list-set!)
+%%% SchemeArityError: line 1, col 1: list-set!: 0 arguments provided; 3 expected
+%%% (list-set!)
+%%% ^
+
+>>> (list-copy '())
+==> ()
+
+>>> (list-copy '(1 2 3))
+... ; copy is a distinct object
+==> (1 2 3)
+
+>>> (let ((original '(1 2 3)))
+...   (let ((copy (list-copy original)))
+...     (eq? original copy)))
+==> #f
+
+>>> (list-copy)
+%%% SchemeArityError: line 1, col 1: list-copy: 0 arguments provided; 1 expected
+%%% (list-copy)
+%%% ^
+
+>>> (assoc 2 '((1 a) (2 b) (3 c)))
+==> (2 b)
+
+>>> (assoc "b" '(("a" 1) ("b" 2) ("c" 3)))
+==> ("b" 2)
+
+>>> (assoc 99 '((1 a) (2 b)))
+==> #f
+
+>>> (assv 2 '((1 a) (2 b) (3 c)))
+==> (2 b)
+
+>>> (assv 99 '((1 a) (2 b)))
+==> #f
+
+>>> (assq 'b '((a 1) (b 2) (c 3)))
+==> (b 2)
+
+>>> (assq 'z '((a 1) (b 2) (c 3)))
+==> #f
+
+>>> (assq 'a '())
+... ; assoc with = comparator (matches inexact key to exact alist)
+==> #f
+
+>>> (assoc 2.0 '((1 . a) (2 . b) (3 . c)) =)
+... ; assoc with custom predicate
+==> (2 . b)
+
+>>> (assoc 4 '((1 . a) (2 . b) (3 . c)) (lambda (x y) (= x (* y 2))))
+... ; assoc 3-arg not found
+==> (2 . b)
+
+>>> (assoc 99 '((1 . a) (2 . b) (3 . c)) =)
+... ; assoc with string-ci=?
+==> #f
+
+>>> (assoc "banana" '(("Apple" . 1) ("Banana" . 2) ("Cherry" . 3)) string-ci=?)
+... ; ==========================================================
+... ; 10. member, memv, memq (including custom comparator)
+... ; ==========================================================
+==> ("Banana" . 2)
+
+>>> (member 3 '(1 2 3 4 5))
+==> (3 4 5)
+
+>>> (member 9 '(1 2 3))
+==> #f
+
+>>> (member '() '(1 '() 3))
+==> #f
+
+>>> (memv 3 '(1 2 3 4 5))
+==> (3 4 5)
+
+>>> (memv 9 '(1 2 3))
+==> #f
+
+>>> (memq 'b '(a b c))
+==> (b c)
+
+>>> (memq 'z '(a b c))
+... ; member with = comparator (matches inexact key to exact list)
+==> #f
+
+>>> (member 2.0 '(1 2 3 4) =)
+... ; member with custom predicate
+==> (2 3 4)
+
+>>> (member 3 '(1 2 4 5 6) <)
+... ; member 3-arg not found
+==> (4 5 6)
+
+>>> (member 99 '(1 2 3) =)
+... ; member with string-ci=?
+==> #f
+
+>>> (member "hello" '("Bye" "Hello" "World") string-ci=?)
+... ; ==========================================================
+... ; 11. apply (basic, leading args, closures)
+... ; ==========================================================
+==> ("Hello" "World")
+
+>>> (apply * '(2 3 4))
+==> 24
+
+>>> (apply cons '(1 2))
+==> (1 . 2)
+
+>>> (apply list '(1 2 3))
+... ; apply with leading args
+==> (1 2 3)
+
+>>> (apply + 1 2 '(3 4))
+==> 10
+
+>>> (apply list 'a 'b '(c d))
+==> (a b c d)
+
+>>> (apply max 1 '(2 3))
+... ; apply with a closure
+==> 3
+
+>>> (apply (lambda (x y) (* x y)) '(6 7))
+==> 42
+
+>>> (apply)
+%%% SchemeArityError: line 1, col 1: apply: 0 arguments provided; at least 2 expected
+%%% (apply)
+%%% ^
+
+>>> (map (lambda (x) (* x x)) '(1 2 3 4 5))
+==> (1 4 9 16 25)
+
+>>> (map car '((1 2) (3 4) (5 6)))
+==> (1 3 5)
+
+>>> (map (lambda (x) (+ x 1)) '(0 1 2))
+==> (1 2 3)
+
+>>> (map not '(#t #f #t))
+... ; map over empty list
+==> (#f #t #f)
+
+>>> (map (lambda (x) x) '())
+... ; map with multiple lists
+==> ()
+
+>>> (map + '(1 2 3) '(4 5 6))
+==> (5 7 9)
+
+>>> (map * '(1 2 3) '(10 10 10))
+==> (10 20 30)
+
+>>> (map list '(a b c) '(1 2 3))
+==> ((a 1) (b 2) (c 3))
+
+>>> (map)
+%%% SchemeArityError: line 1, col 1: map: 0 arguments provided; at least 2 expected
+%%% (map)
+%%% ^
+
+>>> (for-each display '(1 2 3))
+123
+==> #<void>
+
+>>> (for-each (lambda (x) (display (* x x))) '(1 2 3))
+... ; for-each over empty list
+149
+==> #<void>
+
+>>> (for-each display '())
+... ; for-each with multiple lists
+==> #<void>
+
+>>> (let ((result '())) (for-each (lambda (x y) (set! result (cons (+ x y) result))) '(1 2 3) '(4 5 6)) result)
+==> (9 7 5)
+
+>>> (for-each)
+%%% SchemeArityError: line 1, col 1: for-each: 0 arguments provided; at least 2 expected
+%%% (for-each)
+%%% ^
+
+>>> (length (iota 10))
+... ; arity errors
+%%% line 1, col 10: unbound variable: iota
+%%% (length (iota 10))
+%%%          ^
+
+>>> (call-with-values (lambda () (partition odd? '(1 2 3 4 5))) list)
+%%% line 1, col 31: unbound variable: partition
+%%% (call-with-values (lambda () (partition odd? '(1 2 3 4 5))) list)
+%%%                               ^
+
+>>> (call-with-values (lambda () (partition odd? '())) list)
+... ; --- delete-duplicates ---
+%%% line 1, col 31: unbound variable: partition
+%%% (call-with-values (lambda () (partition odd? '())) list)
+%%%                               ^
+
+>>> (receive (a . rest) (values 1 2 3) (cons a rest))
+%%% line 1, col 10: application must be a proper list
+%%% (receive (a . rest) (values 1 2 3) (cons a rest))
+%%%          ^
+
+>>> (length (filter even? '(1 2 3 4 5 6 7 8)))
+... ; sum of squares
+%%% line 1, col 10: unbound variable: filter
+%%% (length (filter even? '(1 2 3 4 5 6 7 8)))
+%%%          ^
+
+>>> (apply append '((1 2) (3 4) (5 6)))
+==> (1 2 3 4 5 6)

@@ -148,7 +148,7 @@ def _prim_integer_to_char(ctx, env, args, app_node):
       raise SchemeTypeError(
          'integer->char: argument must be an integer', src_of(app_node))
    n = as_integer(v)
-   if n < 0 or n > 0x10FFFF:
+   if n < 0 or n > 0x10FFFF or (0xD800 <= n <= 0xDFFF):
       raise SchemeTypeError(
          'integer->char: code point out of range', src_of(app_node))
    return make_character(chr(n))

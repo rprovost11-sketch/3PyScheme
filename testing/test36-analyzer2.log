@@ -1,0 +1,155 @@
+;;; ============================================================
+;;; test36-analyzer2.log
+;;; Gap tests derived from cppScheme test13-analyzer.log
+;;; ============================================================
+
+>>> (if #t 1 2 3)
+%%% line 1, col 1: if requires 2 or 3 arguments (test, then, optional else), got 4
+%%% (if #t 1 2 3)
+%%% ^
+
+>>> (lambda ())
+%%% line 1, col 1: lambda requires a parameter list and at least one body expression
+%%% (lambda ())
+%%% ^
+
+>>> (set! 42 1)
+%%% line 1, col 7: expected an identifier in set!, got 42
+%%% (set! 42 1)
+%%%       ^
+
+>>> (let)
+%%% line 1, col 1: let requires a binding list and at least one body expression
+%%% (let)
+%%% ^
+
+>>> (let ((x 1)))
+%%% line 1, col 1: let requires a binding list and at least one body expression
+%%% (let ((x 1)))
+%%% ^
+
+>>> (let*)
+%%% line 1, col 1: let* requires a binding list and at least one body expression
+%%% (let*)
+%%% ^
+
+>>> (letrec)
+%%% line 1, col 1: letrec requires a binding list and at least one body expression
+%%% (letrec)
+%%% ^
+
+>>> (define-record-type)
+%%% SchemeArityError: line 1, col 1: define-record-type: 0 arguments provided; at least 4 expected
+%%% (define-record-type)
+%%% ^
+
+>>> (guard)
+%%% SchemeArityError: line 1, col 1: guard: 0 arguments provided; at least 2 expected
+%%% (guard)
+%%% ^
+
+>>> (parameterize)
+%%% SchemeArityError: line 1, col 1: parameterize: 0 arguments provided; at least 2 expected
+%%% (parameterize)
+%%% ^
+
+>>> (case-lambda ())
+%%% line 1, col 14: case-lambda clause must be a list, got ()
+%%% (case-lambda ())
+%%%              ^
+
+>>> (case-lambda (()))
+%%% line 1, col 14: case-lambda clause must have formals and a non-empty body, got (())
+%%% (case-lambda (()))
+%%%              ^
+
+>>> (call/cc car cdr)
+%%% SchemeArityError: line 1, col 1: call/cc: 2 arguments provided; 1 expected
+%%% (call/cc car cdr)
+%%% ^
+
+>>> (car '(1 2) '(3 4))
+%%% SchemeArityError: line 1, col 1: car: 2 arguments provided; 1 expected
+%%% (car '(1 2) '(3 4))
+%%% ^
+
+>>> (not #t #f)
+%%% SchemeArityError: line 1, col 1: not: 2 arguments provided; 1 expected
+%%% (not #t #f)
+%%% ^
+
+>>> (sqrt)
+%%% SchemeArityError: line 1, col 1: sqrt: 0 arguments provided; 1 expected
+%%% (sqrt)
+%%% ^
+
+>>> (sqrt 4 9)
+%%% SchemeArityError: line 1, col 1: sqrt: 2 arguments provided; 1 expected
+%%% (sqrt 4 9)
+%%% ^
+
+>>> (expt)
+%%% SchemeArityError: line 1, col 1: expt: 0 arguments provided; 2 expected
+%%% (expt)
+%%% ^
+
+>>> (quotient 6 2 1)
+%%% SchemeArityError: line 1, col 1: quotient: 3 arguments provided; 2 expected
+%%% (quotient 6 2 1)
+%%% ^
+
+>>> (=)
+%%% SchemeArityError: line 1, col 1: =: 0 arguments provided; at least 1 expected
+%%% (=)
+%%% ^
+
+>>> (<)
+%%% SchemeArityError: line 1, col 1: <: 0 arguments provided; at least 1 expected
+%%% (<)
+%%% ^
+
+>>> (>)
+%%% SchemeArityError: line 1, col 1: >: 0 arguments provided; at least 1 expected
+%%% (>)
+%%% ^
+
+>>> (eof-object 42)
+%%% SchemeArityError: line 1, col 1: eof-object: 1 argument provided; 0 expected
+%%% (eof-object 42)
+%%% ^
+
+>>> (car '(1 2))
+==> 1
+
+>>> (+ 1 2 3)
+==> 6
+
+>>> (sqrt 4)
+... ; --- user-defined function arity checking ---
+==> 2
+
+>>> (define (sq x) (* x x))
+==> #<void>
+
+>>> (sq)
+%%% SchemeArityError: line 1, col 1: sq: 0 arguments provided; 1 expected
+%%% (sq)
+%%% ^
+
+>>> (sq 4 5)
+%%% SchemeArityError: line 1, col 1: sq: 2 arguments provided; 1 expected
+%%% (sq 4 5)
+%%% ^
+
+>>> (sq 5)
+... ; --- user-defined variadic function (no arity check) ---
+==> 25
+
+>>> (define (variadic x . rest) (cons x rest))
+==> #<void>
+
+>>> (variadic 1)
+==> (1)
+
+>>> (variadic 1 2 3)
+==> (1 2 3)

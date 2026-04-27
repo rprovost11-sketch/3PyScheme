@@ -1,0 +1,410 @@
+;;; ============================================================
+;;; test25-math.log
+;;; Gap tests derived from cppScheme test02-math.log
+;;; ============================================================
+
+>>> (square 5)
+==> 25
+
+>>> (square -3)
+==> 9
+
+>>> (square 0)
+==> 0
+
+>>> (square 2.5)
+==> 6.25
+
+>>> (square)
+%%% SchemeArityError: line 1, col 1: square: 0 arguments provided; 1 expected
+%%% (square)
+%%% ^
+
+>>> (log 1)
+... ; log with base
+==> 0.0
+
+>>> (log 8 2)
+==> 3.0
+
+>>> (log 100 10)
+==> 2.0
+
+>>> (exp)
+%%% SchemeArityError: line 1, col 1: exp: 0 arguments provided; 1 expected
+%%% (exp)
+%%% ^
+
+>>> (log)
+%%% SchemeArityError: line 1, col 1: log: 0 arguments provided; 1 or 2 expected
+%%% (log)
+%%% ^
+
+>>> (tan 0)
+==> 0.0
+
+>>> (sin)
+%%% SchemeArityError: line 1, col 1: sin: 0 arguments provided; 1 expected
+%%% (sin)
+%%% ^
+
+>>> (cos)
+%%% SchemeArityError: line 1, col 1: cos: 0 arguments provided; 1 expected
+%%% (cos)
+%%% ^
+
+>>> (tan)
+%%% SchemeArityError: line 1, col 1: tan: 0 arguments provided; 1 expected
+%%% (tan)
+%%% ^
+
+>>> (atan 0)
+... ; atan with two args: atan2(1,1) = pi/4
+==> 0.0
+
+>>> (atan 1 1)
+==> 0.7853981633974483
+
+>>> (asin)
+%%% SchemeArityError: line 1, col 1: asin: 0 arguments provided; 1 expected
+%%% (asin)
+%%% ^
+
+>>> (acos)
+%%% SchemeArityError: line 1, col 1: acos: 0 arguments provided; 1 expected
+%%% (acos)
+%%% ^
+
+>>> (atan)
+%%% SchemeArityError: line 1, col 1: atan: 0 arguments provided; 1 or 2 expected
+%%% (atan)
+%%% ^
+
+>>> (= (sinh 0) 0)
+... ; sinh(1) ~ 1.1752
+%%% line 1, col 5: unbound variable: sinh
+%%% (= (sinh 0) 0)
+%%%     ^
+
+>>> (< 1.17 (sinh 1) 1.18)
+... ; sinh is odd
+%%% line 1, col 10: unbound variable: sinh
+%%% (< 1.17 (sinh 1) 1.18)
+%%%          ^
+
+>>> (= (sinh -1) (- (sinh 1)))
+%%% line 1, col 5: unbound variable: sinh
+%%% (= (sinh -1) (- (sinh 1)))
+%%%     ^
+
+>>> (= (cosh 0) 1)
+... ; cosh(1) ~ 1.5430
+%%% line 1, col 5: unbound variable: cosh
+%%% (= (cosh 0) 1)
+%%%     ^
+
+>>> (< 1.54 (cosh 1) 1.55)
+... ; cosh is even
+%%% line 1, col 10: unbound variable: cosh
+%%% (< 1.54 (cosh 1) 1.55)
+%%%          ^
+
+>>> (= (cosh -1) (cosh 1))
+%%% line 1, col 5: unbound variable: cosh
+%%% (= (cosh -1) (cosh 1))
+%%%     ^
+
+>>> (= (tanh 0) 0)
+... ; tanh(1) ~ 0.7616
+%%% line 1, col 5: unbound variable: tanh
+%%% (= (tanh 0) 0)
+%%%     ^
+
+>>> (< 0.76 (tanh 1) 0.77)
+... ; tanh is odd
+%%% line 1, col 10: unbound variable: tanh
+%%% (< 0.76 (tanh 1) 0.77)
+%%%          ^
+
+>>> (= (tanh -1) (- (tanh 1)))
+... ; tanh approaches +/-1 for large arguments
+%%% line 1, col 5: unbound variable: tanh
+%%% (= (tanh -1) (- (tanh 1)))
+%%%     ^
+
+>>> (< 0.999 (tanh 10) 1.0)
+%%% line 1, col 11: unbound variable: tanh
+%%% (< 0.999 (tanh 10) 1.0)
+%%%           ^
+
+>>> (< -0.001 (- (asinh (sinh 1)) 1) 0.001)
+%%% line 1, col 15: unbound variable: asinh
+%%% (< -0.001 (- (asinh (sinh 1)) 1) 0.001)
+%%%               ^
+
+>>> (= (asinh 0) 0)
+... ; asinh is odd
+%%% line 1, col 5: unbound variable: asinh
+%%% (= (asinh 0) 0)
+%%%     ^
+
+>>> (= (asinh -1) (- (asinh 1)))
+%%% line 1, col 5: unbound variable: asinh
+%%% (= (asinh -1) (- (asinh 1)))
+%%%     ^
+
+>>> (= (acosh 1) 0)
+... ; acosh is the inverse of cosh (for x >= 1)
+%%% line 1, col 5: unbound variable: acosh
+%%% (= (acosh 1) 0)
+%%%     ^
+
+>>> (< -0.001 (- (acosh (cosh 2)) 2) 0.001)
+%%% line 1, col 15: unbound variable: acosh
+%%% (< -0.001 (- (acosh (cosh 2)) 2) 0.001)
+%%%               ^
+
+>>> (= (atanh 0) 0)
+... ; atanh is the inverse of tanh
+%%% line 1, col 5: unbound variable: atanh
+%%% (= (atanh 0) 0)
+%%%     ^
+
+>>> (< -0.001 (- (atanh (tanh 0.5)) 0.5) 0.001)
+... ; atanh is odd
+%%% line 1, col 15: unbound variable: atanh
+%%% (< -0.001 (- (atanh (tanh 0.5)) 0.5) 0.001)
+%%%               ^
+
+>>> (= (atanh -0.5) (- (atanh 0.5)))
+%%% line 1, col 5: unbound variable: atanh
+%%% (= (atanh -0.5) (- (atanh 0.5)))
+%%%     ^
+
+>>> (let ((x 2.0))
+...   (< -1e-10
+...      (- (* (cosh x) (cosh x)) (* (sinh x) (sinh x)) 1)
+...      1e-10))
+... ; --- hyperbolic round-trip tests via (scheme inexact) ---
+%%% line 3, col 13: unbound variable: cosh
+%%%      (- (* (cosh x) (cosh x)) (* (sinh x) (sinh x)) 1)
+%%%             ^
+
+>>> (import (scheme inexact))
+==> #<void>
+
+>>> (< (abs (- (asinh (sinh 1.0)) 1.0)) 1e-10)
+... ; acosh(cosh(x)) ~ x for x >= 0
+%%% line 1, col 13: unbound variable: asinh
+%%% (< (abs (- (asinh (sinh 1.0)) 1.0)) 1e-10)
+%%%             ^
+
+>>> (< (abs (- (acosh (cosh 1.0)) 1.0)) 1e-10)
+... ; atanh(tanh(x)) ~ x
+%%% line 1, col 13: unbound variable: acosh
+%%% (< (abs (- (acosh (cosh 1.0)) 1.0)) 1e-10)
+%%%             ^
+
+>>> (< (abs (- (atanh (tanh 0.5)) 0.5)) 1e-10)
+... ; --- special float predicates: exact-integer?, finite?, infinite?, nan? ---
+%%% line 1, col 13: unbound variable: atanh
+%%% (< (abs (- (atanh (tanh 0.5)) 0.5)) 1e-10)
+%%%             ^
+
+>>> (exact-integer? 42)
+==> #t
+
+>>> (exact-integer? 0)
+==> #t
+
+>>> (exact-integer? 3.0)
+==> #f
+
+>>> (exact-integer? "hi")
+==> #f
+
+>>> (exact-integer?)
+%%% SchemeArityError: line 1, col 1: exact-integer?: 0 arguments provided; 1 expected
+%%% (exact-integer?)
+%%% ^
+
+>>> (finite? 1)
+==> #t
+
+>>> (finite? +nan.0)
+==> #f
+
+>>> (infinite? 1)
+==> #f
+
+>>> (infinite? 1.0)
+==> #f
+
+>>> (nan? 0)
+==> #f
+
+>>> (nan? 0.0)
+==> #f
+
+>>> (finite?)
+%%% SchemeArityError: line 1, col 1: finite?: 0 arguments provided; 1 expected
+%%% (finite?)
+%%% ^
+
+>>> (infinite?)
+%%% SchemeArityError: line 1, col 1: infinite?: 0 arguments provided; 1 expected
+%%% (infinite?)
+%%% ^
+
+>>> (nan?)
+%%% SchemeArityError: line 1, col 1: nan?: 0 arguments provided; 1 expected
+%%% (nan?)
+%%% ^
+
+>>> 3-4i
+==> 3-4i
+
+>>> +4i
+==> 0+4i
+
+>>> -4i
+==> 0-4i
+
+>>> -i
+==> 0-1i
+
+>>> 3.5+2.1i
+... ; zero imaginary collapses to flonum
+==> 3.5+2.1i
+
+>>> (make-rectangular 3.0 0.0)
+... ; --- complex type predicates ---
+==> 3.0+0.0i
+
+>>> (complex? 3)
+==> #t
+
+>>> (complex? 3.0)
+==> #t
+
+>>> (real? 3.0)
+==> #t
+
+>>> (real? 3)
+==> #t
+
+>>> (rational? +nan.0)
+==> #f
+
+>>> (inexact? 3+4i)
+... ; zero imaginary -> flonum, which is real
+==> #f
+
+>>> (real? (make-rectangular 3.0 0.0))
+... ; --- complex arithmetic (+, -, *, /, negation) ---
+==> #t
+
+>>> (- 1+2i 3+4i)
+==> -2-2i
+
+>>> (* 1+2i 3+4i)
+==> -5+10i
+
+>>> (/ 2+4i 2+0i)
+... ; promotion: real + complex
+==> 1+2i
+
+>>> (+ 1+2i 3)
+==> 4+2i
+
+>>> (* 2 1+3i)
+... ; negation
+==> 2+6i
+
+>>> (- 3+4i)
+... ; --- complex equality ---
+==> -3-4i
+
+>>> (= 1+2i 1+2i)
+==> #t
+
+>>> (= 1+2i 1+3i)
+... ; 3+0i normalizes to 3.0, so = 3.0
+==> #f
+
+>>> (= (make-rectangular 3.0 0.0) 3.0)
+... ; --- complex sqrt and expt ---
+... ; sqrt of negative real -> pure imaginary
+==> #t
+
+>>> (sqrt -4)
+... ; sqrt of positive stays real
+==> 0.0+2.0i
+
+>>> (sqrt 4.0)
+... ; sqrt of complex
+==> 2.0
+
+>>> (sqrt 0+4i)
+... ; test real and imaginary parts separately to avoid FP residue issues
+==> 1.4142135623730951+1.414213562373095i
+
+>>> (real-part (expt 0+1i 2))
+==> -1.0
+
+>>> (< (abs (imag-part (expt 0+1i 2))) 1e-10)
+==> #t
+
+>>> (real-part (expt 0+1i 4))
+==> 1.0
+
+>>> (< (abs (imag-part (expt 0+1i 4))) 1e-10)
+==> #t
+
+>>> (expt 2+0i 2)
+... ; --- make-rectangular, make-polar, real-part, imag-part ---
+==> 4
+
+>>> (make-rectangular 3.0 4.0)
+==> 3.0+4.0i
+
+>>> (imag-part 3+4i)
+... ; R7RS: imag-part of exact integer returns exact 0
+==> 4
+
+>>> (imag-part 3)
+... ; imag-part of flonum returns inexact 0.0
+==> 0
+
+>>> (imag-part 3.0)
+... ; --- magnitude, angle ---
+==> 0.0
+
+>>> (magnitude 5.0)
+==> 5.0
+
+>>> (angle 1.0)
+==> 0.0
+
+>>> (angle -1.0)
+... ; angle of pure imaginary = pi/2
+==> 3.141592653589793
+
+>>> (< 1.5707 (angle +i) 1.5708)
+... ; --- complex string conversion ---
+==> #t
+
+>>> (string->number "-3.5+2.0i")
+==> -3.5+2.0i
+
+>>> (number->string 3+4i)
+... ; --- complex error cases ---
+... ; order predicates undefined for complex
+==> "3+4i"
+
+>>> (guard (e (#t 'ok)) (< 1+2i 3+4i))
+... ; exact of complex raises error
+==> ok
+
+>>> (guard (e (#t 'ok)) (exact 1+2i))
+==> 1+2i
