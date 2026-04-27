@@ -79,8 +79,10 @@ def _num_or_error(v, name, app_node):
       return Fraction(as_rational_num(v), as_rational_den(v))
    if is_real(v):
       return as_real(v)
+   if is_complex(v) and as_complex_imag(v) == 0.0:
+      return as_complex_real(v)
    raise SchemeTypeError(
-      '%s: expected number, got non-number value' % name,
+      '%s: argument is not a real number' % name,
       app_node)
 
 

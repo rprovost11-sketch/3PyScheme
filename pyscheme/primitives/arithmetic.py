@@ -208,8 +208,11 @@ def _prim_min(ctx, env, args, app_node):
       v = _num(args[i], 'min', app_node, i + 1)
       if is_real(args[i]):
          any_real = True
-      if v < result:
+      if isinstance(v, float) and math.isnan(v):
          result = v
+      elif not (isinstance(result, float) and math.isnan(result)):
+         if v < result:
+            result = v
       i = i + 1
    if any_real and not isinstance(result, float):
       result = float(result)
@@ -224,8 +227,11 @@ def _prim_max(ctx, env, args, app_node):
       v = _num(args[i], 'max', app_node, i + 1)
       if is_real(args[i]):
          any_real = True
-      if v > result:
+      if isinstance(v, float) and math.isnan(v):
          result = v
+      elif not (isinstance(result, float) and math.isnan(result)):
+         if v > result:
+            result = v
       i = i + 1
    if any_real and not isinstance(result, float):
       result = float(result)
@@ -406,11 +412,12 @@ def _prim_numerator(ctx, env, args, app_node):
       return make_integer(as_rational_num(v))
    if is_real(v):
       f = as_real(v)
-      if math.isfinite(f) and f.is_integer():
+      if not math.isfinite(f):
+         raise SchemeTypeError('numerator: argument must be finite', app_node)
+      if f.is_integer():
          return make_real(f)
-   raise SchemeTypeError(
-      'numerator: argument must be an integer, rational, or integer-valued real',
-      app_node)
+      return make_real(float(Fraction(f).numerator))
+   raise SchemeTypeError('numerator: argument must be a real number', app_node)
 
 
 def _prim_denominator(ctx, env, args, app_node):
@@ -421,11 +428,12 @@ def _prim_denominator(ctx, env, args, app_node):
       return make_integer(as_rational_den(v))
    if is_real(v):
       f = as_real(v)
-      if math.isfinite(f) and f.is_integer():
+      if not math.isfinite(f):
+         raise SchemeTypeError('denominator: argument must be finite', app_node)
+      if f.is_integer():
          return make_real(1.0)
-   raise SchemeTypeError(
-      'denominator: argument must be an integer, rational, or integer-valued real',
-      app_node)
+      return make_real(float(Fraction(f).denominator))
+   raise SchemeTypeError('denominator: argument must be a real number', app_node)
 
 
 def _format_num_str(f):
@@ -930,11 +938,9 @@ def _prim_angle(ctx, env, args, app_node):
    if is_complex(v):
       return make_real(math.atan2(as_complex_imag(v), as_complex_real(v)))
    n = _num(v, 'angle', app_node, 1)
-   if n > 0:
+   if n >= 0:
       return make_real(0.0)
-   if n < 0:
-      return make_real(math.pi)
-   raise SchemeTypeError('angle: undefined for zero', app_node)
+   return make_real(math.pi)
 
 
 def _simplest_rational(lo, hi):
