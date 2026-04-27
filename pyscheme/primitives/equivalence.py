@@ -14,11 +14,13 @@ from pyscheme.AST import (
    is_cons, is_nil, is_void,
    is_symbol, is_boolean, is_string, is_character,
    is_integer, is_real, is_rational, is_complex, is_exact_complex,
+   is_vector, is_bytevector,
    as_symbol, as_boolean, as_string, as_character,
    as_integer, as_real,
    as_rational_num, as_rational_den,
    as_complex_real, as_complex_imag,
    as_exact_complex_real, as_exact_complex_imag,
+   as_vector_items, as_bytevector_items,
    make_boolean, eqv_atom,
 )
 
@@ -44,14 +46,46 @@ def _prim_eqv_p(ctx, env, args, app_node):
    return make_boolean(eqv_atom(args[0], args[1]))
 
 
-def _value_equal(a, b):
+def _value_equal(a, b, seen=None):
    """Structural equality ignoring trailing src on atoms.
-   Walks ConsCell chains recursively."""
+   Walks ConsCell chains and vectors recursively.  The 'seen' set tracks
+   (id(a), id(b)) pairs for mutable structures to bound recursion on cycles."""
+   if seen is None:
+      seen = set()
    if is_cons(a):
       if not is_cons(b):
          return False
-      return _value_equal(a.car, b.car) and _value_equal(a.cdr, b.cdr)
+      key = (id(a), id(b))
+      if key in seen:
+         return True
+      seen.add(key)
+      return _value_equal(a.car, b.car, seen) and _value_equal(a.cdr, b.cdr, seen)
    if is_cons(b):
+      return False
+   if is_vector(a):
+      if not is_vector(b):
+         return False
+      va = as_vector_items(a)
+      vb = as_vector_items(b)
+      if len(va) != len(vb):
+         return False
+      key = (id(a), id(b))
+      if key in seen:
+         return True
+      seen.add(key)
+      i = 0
+      while i < len(va):
+         if not _value_equal(va[i], vb[i], seen):
+            return False
+         i = i + 1
+      return True
+   if is_vector(b):
+      return False
+   if is_bytevector(a):
+      if not is_bytevector(b):
+         return False
+      return as_bytevector_items(a) == as_bytevector_items(b)
+   if is_bytevector(b):
       return False
    if a is b:
       return True
@@ -72,8 +106,8 @@ def _value_equal(a, b):
       return (as_complex_real(a) == as_complex_real(b)
               and as_complex_imag(a) == as_complex_imag(b))
    if is_exact_complex(a) and is_exact_complex(b):
-      return (_value_equal(as_exact_complex_real(a), as_exact_complex_real(b))
-              and _value_equal(as_exact_complex_imag(a), as_exact_complex_imag(b)))
+      return (_value_equal(as_exact_complex_real(a), as_exact_complex_real(b), seen)
+              and _value_equal(as_exact_complex_imag(a), as_exact_complex_imag(b), seen))
    if is_boolean(a) and is_boolean(b):
       return as_boolean(a) is as_boolean(b)
    if is_string(a) and is_string(b):

@@ -509,10 +509,8 @@ def _prim_read_bytevector(ctx, env, args, app_node):
    if k < 0:
       raise SchemeTypeError(
          'read-bytevector: count must be non-negative', src_of(app_node))
-   if len(args) < 2:
-      raise SchemeTypeError(
-         'read-bytevector: a binary input port is required', src_of(app_node))
-   p = _check_binary_input(args[1], 'read-bytevector', app_node)
+   port_val = args[1] if len(args) >= 2 else _get_current_input(ctx)
+   p = _check_binary_input(port_val, 'read-bytevector', app_node)
    if p.pos >= len(p.buf) and k > 0:
       return make_eof()
    end = min(p.pos + k, len(p.buf))
@@ -527,11 +525,8 @@ def _prim_read_bytevector_bang(ctx, env, args, app_node):
          'read-bytevector!: first argument must be a bytevector',
          src_of(app_node))
    dst = as_bytevector_items(args[0])
-   if len(args) < 2:
-      raise SchemeTypeError(
-         'read-bytevector!: a binary input port is required',
-         src_of(app_node))
-   p = _check_binary_input(args[1], 'read-bytevector!', app_node)
+   port_val = args[1] if len(args) >= 2 else _get_current_input(ctx)
+   p = _check_binary_input(port_val, 'read-bytevector!', app_node)
    start = 0
    end   = len(dst)
    if len(args) >= 3:
@@ -605,9 +600,25 @@ def _prim_write_string(ctx, env, args, app_node):
    if not is_string(s):
       raise SchemeTypeError(
          'write-string: first argument must be a string', src_of(app_node))
+   text = as_string(s)
    port_val = _resolve_output_port(ctx, args, 1)
    p = _check_textual_output(port_val, 'write-string', app_node, 2)
-   _emit_to_port(p, as_string(s))
+   start = 0
+   end   = len(text)
+   if len(args) >= 3:
+      if not is_integer(args[2]):
+         raise SchemeTypeError(
+            'write-string: start must be an integer', src_of(app_node))
+      start = as_integer(args[2])
+   if len(args) >= 4:
+      if not is_integer(args[3]):
+         raise SchemeTypeError(
+            'write-string: end must be an integer', src_of(app_node))
+      end = as_integer(args[3])
+   if start < 0 or end > len(text) or start > end:
+      raise SchemeTypeError(
+         'write-string: range out of bounds', src_of(app_node))
+   _emit_to_port(p, text[start:end])
    return VOID_VALUE
 
 
@@ -619,10 +630,8 @@ def _prim_write_u8(ctx, env, args, app_node):
    if b < 0 or b > 255:
       raise SchemeTypeError(
          'write-u8: byte out of u8 range', src_of(app_node))
-   if len(args) < 2:
-      raise SchemeTypeError(
-         'write-u8: a binary output port is required', src_of(app_node))
-   p = _check_binary_output(args[1], 'write-u8', app_node, 2)
+   port_val = args[1] if len(args) >= 2 else _get_current_output(ctx)
+   p = _check_binary_output(port_val, 'write-u8', app_node, 2)
    _emit_bytes_to_port(p, bytes([b]))
    return VOID_VALUE
 
@@ -633,11 +642,8 @@ def _prim_write_bytevector(ctx, env, args, app_node):
          'write-bytevector: first argument must be a bytevector',
          src_of(app_node))
    src = as_bytevector_items(args[0])
-   if len(args) < 2:
-      raise SchemeTypeError(
-         'write-bytevector: a binary output port is required',
-         src_of(app_node))
-   p = _check_binary_output(args[1], 'write-bytevector', app_node, 2)
+   port_val = args[1] if len(args) >= 2 else _get_current_output(ctx)
+   p = _check_binary_output(port_val, 'write-bytevector', app_node, 2)
    start = 0
    end   = len(src)
    if len(args) >= 3:
@@ -994,19 +1000,19 @@ def register():
       doc=('(u8-ready? [port]) returns #t when read-u8 would not block.  '
            'Our buffered ports always return #t.  R7RS 6.13.'),
       category=CATEGORY)
-   register_primitive('read-bytevector', (2, 2), _prim_read_bytevector,
+   register_primitive('read-bytevector', (1, 2), _prim_read_bytevector,
       doc=('(read-bytevector k port) reads up to k bytes and returns a '
            'fresh bytevector.  R7RS 6.13.'),
       category=CATEGORY)
-   register_primitive('read-bytevector!', (2, 4), _prim_read_bytevector_bang,
+   register_primitive('read-bytevector!', (1, 4), _prim_read_bytevector_bang,
       doc=('(read-bytevector! bv port [start [end]]) reads bytes into bv '
            'in place; returns the count read.  R7RS 6.13.'),
       category=CATEGORY)
-   register_primitive('write-u8', (2, 2), _prim_write_u8,
+   register_primitive('write-u8', (1, 2), _prim_write_u8,
       doc=('(write-u8 byte port) writes one byte to a binary output port.  '
            'R7RS 6.13.'),
       category=CATEGORY)
-   register_primitive('write-bytevector', (2, 4), _prim_write_bytevector,
+   register_primitive('write-bytevector', (1, 4), _prim_write_bytevector,
       doc=('(write-bytevector bv port [start [end]]) writes bytes to a '
            'binary output port.  R7RS 6.13.'),
       category=CATEGORY)
@@ -1014,7 +1020,7 @@ def register():
    register_primitive('write-char', (1, 2), _prim_write_char,
       doc='(write-char char [port]) writes char to the output port.  R7RS 6.13.',
       category=CATEGORY)
-   register_primitive('write-string', (1, 2), _prim_write_string,
+   register_primitive('write-string', (1, 4), _prim_write_string,
       doc='(write-string string [port]) writes string to the output port.  R7RS 6.13.',
       category=CATEGORY)
    register_primitive('newline', (0, 1), _prim_newline,
