@@ -761,8 +761,12 @@ def _prim_call_with_port(ctx, env, args, app_node):
 
 
 def _prim_write_shared(ctx, env, args, app_node):
-   # In pyScheme there are no cyclic structures, so write-shared == write.
-   return _prim_write(ctx, env, args, app_node)
+   from pyscheme.PrettyPrinter import pretty_print_shared
+   v = args[0]
+   port_val = _resolve_output_port(ctx, args, 1)
+   p = _check_output_port(port_val, 'write-shared', app_node, 2)
+   _emit_to_port(p, pretty_print_shared(v))
+   return VOID_VALUE
 
 
 def _prim_write_simple(ctx, env, args, app_node):
@@ -1035,8 +1039,8 @@ def register():
            'of obj to the output port.  R7RS 6.13.'),
       category=CATEGORY)
    register_primitive('write-shared', (1, 2), _prim_write_shared,
-      doc=('(write-shared obj [port]) like write, but detects shared structure.  '
-           'pyScheme has no cyclic data, so this is identical to write.  R7RS 6.13.'),
+      doc=('(write-shared obj [port]) like write, but uses #n=/#n# datum labels '
+           'for shared or circular structure.  R7RS 6.13.'),
       category=CATEGORY)
    register_primitive('write-simple', (1, 2), _prim_write_simple,
       doc=('(write-simple obj [port]) like write, but never emits datum labels.  '

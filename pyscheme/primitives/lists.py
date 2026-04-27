@@ -54,13 +54,25 @@ def _prim_list(ctx, env, args, app_node):
 
 
 def _proper_list_p(v):
-   """True if v is a proper list (terminated by NIL).  Cycle-detection
-   omitted; pyScheme has no shared-tail mutators that create cycles in
-   practice, but list? in R7RS treats cyclic lists as non-lists."""
-   cur = v
-   while is_cons(cur):
-      cur = cur.cdr
-   return is_nil(cur)
+   """True if v is a proper list (terminated by NIL).  Uses Floyd's
+   cycle-detection so list? terminates in finite time on circular
+   structures, returning #f as R7RS §6.4 requires."""
+   slow = v
+   fast = v
+   while True:
+      if is_nil(fast):
+         return True
+      if not is_cons(fast):
+         return False
+      fast = fast.cdr
+      if is_nil(fast):
+         return True
+      if not is_cons(fast):
+         return False
+      fast = fast.cdr
+      slow = slow.cdr
+      if slow is fast:
+         return False
 
 
 def _prim_list_p(ctx, env, args, app_node):

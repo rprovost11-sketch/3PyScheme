@@ -687,10 +687,18 @@ def _analyze_case(sexpr, static_env):
             raise SchemeAnalysisError(
                "case 'else' clause must be the last clause", src_of(clause))
          body_cons = clause.cdr
-         cur = body_cons
-         while is_cons(cur):
-            analyze(cur.car, static_env)
-            cur = cur.cdr
+         if (is_cons(body_cons) and _is_symbol_named(body_cons.car, '=>')):
+            # (else => proc-expr)
+            if not (is_cons(body_cons.cdr) and is_nil(body_cons.cdr.cdr)):
+               raise SchemeAnalysisError(
+                  "case 'else =>' clause must have exactly one expression",
+                  src_of(clause))
+            analyze(body_cons.cdr.car, static_env)
+         else:
+            cur = body_cons
+            while is_cons(cur):
+               analyze(cur.car, static_env)
+               cur = cur.cdr
       else:
          if not (is_cons(head) or is_nil(head)):
             raise SchemeAnalysisError(
@@ -700,10 +708,18 @@ def _analyze_case(sexpr, static_env):
             raise SchemeAnalysisError(
                "case datum list must be a proper list", src_of(head))
          body_cons = clause.cdr
-         cur = body_cons
-         while is_cons(cur):
-            analyze(cur.car, static_env)
-            cur = cur.cdr
+         if (is_cons(body_cons) and _is_symbol_named(body_cons.car, '=>')):
+            # ((<datum>...) => proc-expr)
+            if not (is_cons(body_cons.cdr) and is_nil(body_cons.cdr.cdr)):
+               raise SchemeAnalysisError(
+                  "case '=>' clause must have exactly one expression",
+                  src_of(clause))
+            analyze(body_cons.cdr.car, static_env)
+         else:
+            cur = body_cons
+            while is_cons(cur):
+               analyze(cur.car, static_env)
+               cur = cur.cdr
       i = i + 1
 
 

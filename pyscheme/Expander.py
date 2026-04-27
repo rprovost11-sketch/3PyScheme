@@ -963,8 +963,14 @@ def _feature_req_matches(req):
    if op == 'not':
       return not _feature_req_matches(req.cdr.car)
    if op == 'library':
-      # No library system; no library ever matches.
-      return False
+      from pyscheme.library import library_name_to_key, library_registered_p
+      if not is_cons(req.cdr):
+         return False
+      try:
+         key = library_name_to_key(req.cdr.car)
+      except ValueError:
+         return False
+      return library_registered_p(key)
    return False
 
 

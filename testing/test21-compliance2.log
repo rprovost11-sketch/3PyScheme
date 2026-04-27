@@ -1,0 +1,112 @@
+;;; ============================================================
+;;; test21-compliance2.log
+;;; R7RS-small compliance corrections (round 2):
+;;;   #| ... |# block comments (nestable);
+;;;   #;   datum comments;
+;;;   #n=/#n# datum labels in reader;
+;;;   case => clause form;
+;;;   cond-expand (library name) requirement;
+;;;   list? O(1)-space cycle detection;
+;;;   write-shared datum labels for shared/circular structure.
+;;; ============================================================
+
+;;; -------- block comments --------
+
+>>> #| this is ignored |# 42
+==> 42
+
+>>> #| outer #| nested |# still outer |# 99
+==> 99
+
+>>> (+ 1 #| skip |# 2 #| skip |# 3)
+==> 6
+
+;;; -------- datum comments --------
+
+>>> #;(skipped) 'kept
+==> kept
+
+>>> (list 1 #;2 3)
+==> (1 3)
+
+>>> (+ 1 #;(ignored expression) 4)
+==> 5
+
+;;; -------- datum labels in reader --------
+
+>>> '#2=(a b c)
+==> (a b c)
+
+>>> (let ((x '#0=(1 2 . #0#))) (list (car x) (cadr x)))
+==> (1 2)
+
+>>> (let ((x '#1=(a #1# b))) (car x))
+==> a
+
+>>> (#3# . 5)
+%%% line 1, col 2: undefined datum label #3#
+%%% (#3# . 5)
+%%%  ^
+
+;;; -------- case => clause --------
+
+>>> (case 6 ((2 3 5 7) 'prime) ((1 4 6 8 9) => (lambda (x) (list 'composite x))) (else 'other))
+==> (composite 6)
+
+>>> (case 5 ((2 3 5 7) => (lambda (x) (list 'prime x))))
+==> (prime 5)
+
+>>> (case 1 (else => (lambda (x) (list 'got x))))
+==> (got 1)
+
+>>> (case 0 ((0) => (lambda (x) (* x x))))
+==> 0
+
+;;; -------- cond-expand (library ...) --------
+
+>>> (cond-expand ((library (scheme base)) 'yes) (else 'no))
+==> yes
+
+>>> (cond-expand ((library (srfi 1)) 'yes) (else 'no))
+==> no
+
+>>> (cond-expand ((library (no such lib)) 'yes) (else 'no))
+==> no
+
+;;; -------- list? on circular structures --------
+
+>>> (list? '())
+==> #t
+
+>>> (list? (list 1 2 3))
+==> #t
+
+>>> (list? (cons 1 2))
+==> #f
+
+>>> (list? (let ((x (list 1 2 3))) (set-cdr! (cddr x) x) x))
+==> #f
+
+;;; -------- write-shared datum labels --------
+
+>>> (let* ((p (open-output-string)))
+...   (write-shared '(1 2 3) p)
+...   (get-output-string p))
+==> "(1 2 3)"
+
+>>> (let* ((x (list 1 2)) (p (open-output-string)))
+...   (write-shared (list x x) p)
+...   (get-output-string p))
+==> "(#0=(1 2) #0#)"
+
+>>> (let* ((x (list 1 2)) (p (open-output-string)))
+...   (set-cdr! (cdr x) x)
+...   (write-shared x p)
+...   (get-output-string p))
+==> "#0=(1 2 . #0#)"
+
+>>> (let* ((v (vector 1 2 3)) (p (open-output-string)))
+...   (vector-set! v 2 v)
+...   (write-shared v p)
+...   (get-output-string p))
+==> "#0=#(1 2 #0#)"

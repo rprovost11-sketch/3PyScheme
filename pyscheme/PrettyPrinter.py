@@ -36,6 +36,7 @@ from pyscheme.AST import (
    as_error_object_message, as_error_object_irritants,
    as_syntax_transformer_name, as_vector_items, as_bytevector_items,
    INTEGER, REAL, RATIONAL, BOOLEAN, CHARACTER, STRING, CLOSURE, SYMBOL,
+   NIL_VALUE,
 )
 
 
@@ -196,6 +197,101 @@ def _print_list(pair):
    if is_nil(cur):
       return '(' + ' '.join(items) + ')'
    return '(' + ' '.join(items) + ' . ' + pretty_print(cur) + ')'
+
+
+def _shared_scan(val, counts):
+   """First pass for write-shared: count how many times each mutable
+   object (cons cell, vector) is reachable.  counts maps id -> [val, n]."""
+   if is_cons(val):
+      k = id(val)
+      if k in counts:
+         counts[k][1] = counts[k][1] + 1
+         return
+      counts[k] = [val, 1]
+      _shared_scan(val.car, counts)
+      _shared_scan(val.cdr, counts)
+      return
+   if is_vector(val):
+      k = id(val)
+      if k in counts:
+         counts[k][1] = counts[k][1] + 1
+         return
+      counts[k] = [val, 1]
+      items = as_vector_items(val)
+      i = 0
+      while i < len(items):
+         _shared_scan(items[i], counts)
+         i = i + 1
+
+
+def _shared_render(val, labels, next_label, seen):
+   """Render val with datum labels for any object that appears more than
+   once in the structure.  labels: id -> int; next_label: [int] (mutable
+   counter); seen: set of ids already printed (emitted with #n=)."""
+   if is_cons(val):
+      k = id(val)
+      if k in labels:
+         n = labels[k]
+         if k in seen:
+            return '#' + str(n) + '#'
+         seen.add(k)
+         prefix = '#' + str(n) + '='
+      else:
+         prefix = ''
+      items = []
+      cur = val
+      tail = NIL_VALUE
+      while is_cons(cur):
+         ck = id(cur)
+         if cur is not val and ck in labels:
+            tail = cur
+            break
+         items.append(_shared_render(cur.car, labels, next_label, seen))
+         cur = cur.cdr
+         if is_cons(cur) and id(cur) in seen:
+            tail = cur
+            break
+      if not is_nil(tail):
+         body = '(' + ' '.join(items) + ' . ' + _shared_render(tail, labels, next_label, seen) + ')'
+      elif is_nil(cur):
+         body = '(' + ' '.join(items) + ')'
+      else:
+         body = '(' + ' '.join(items) + ' . ' + _shared_render(cur, labels, next_label, seen) + ')'
+      return prefix + body
+   if is_vector(val):
+      k = id(val)
+      if k in labels:
+         n = labels[k]
+         if k in seen:
+            return '#' + str(n) + '#'
+         seen.add(k)
+         prefix = '#' + str(n) + '='
+      else:
+         prefix = ''
+      items_list = as_vector_items(val)
+      parts = []
+      i = 0
+      while i < len(items_list):
+         parts.append(_shared_render(items_list[i], labels, next_label, seen))
+         i = i + 1
+      return prefix + '#(' + ' '.join(parts) + ')'
+   return pretty_print(val)
+
+
+def pretty_print_shared(val):
+   """Like pretty_print but uses #n=/#n# datum labels for shared structure.
+   This is the rendering used by write-shared (R7RS §6.13)."""
+   counts = {}
+   _shared_scan(val, counts)
+   labels = {}
+   next_label = [0]
+   k = id(val)
+   for obj_id in counts:
+      if counts[obj_id][1] > 1:
+         labels[obj_id] = next_label[0]
+         next_label[0] = next_label[0] + 1
+   seen = set()
+   return _shared_render(val, labels, next_label, seen)
 
 
 def _escape_string(s):

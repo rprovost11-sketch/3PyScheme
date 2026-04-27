@@ -65,6 +65,7 @@ Frame forms (runtime continuation state):
    (FRAME_CASE,      current_clause, remaining_clauses_cons, env)
                         waits for the key value to pop, then eqv?-matches
                         it against the current clause's datum list
+   (FRAME_CASE_ARROW, key_value, env)
 """
 from __future__ import annotations
 
@@ -119,6 +120,7 @@ FRAME_LET        = 12
 FRAME_LET_STAR   = 13
 FRAME_LETREC     = 14
 FRAME_CASE       = 15
+FRAME_CASE_ARROW = 22
 FRAME_DYNAMIC_WIND_AFTER = 16
 FRAME_CWV_CONSUMER       = 17
 FRAME_FORCE_RESULT       = 18
@@ -1818,6 +1820,29 @@ def _cek_loop(expr, env, ctx):
                      K.append((FRAME_SEQ, r.body.cdr, r.new_env))
                   break
 
+               if ftag == FRAME_CASE_ARROW:
+                  key_value = frame[1]
+                  saved_env = frame[2]
+                  if is_continuation(V):
+                     _wind_walk(ctx, as_continuation_wind(V))
+                     _restore_handler_stack(as_continuation_handlers(V))
+                     K = list(as_continuation_k(V))
+                     V = _continuation_value(V, [key_value])
+                     continue
+                  pv = _apply_parameter_if(V, 1, None)
+                  if pv is not None:
+                     V = pv
+                     continue
+                  if is_primitive(V):
+                     V = as_primitive_fn(V)(ctx, saved_env, [key_value], None)
+                     continue
+                  r = _apply_value(V, [key_value], None)
+                  E = r.new_env
+                  C = r.body.car
+                  if is_cons(r.body.cdr):
+                     K.append((FRAME_SEQ, r.body.cdr, r.new_env))
+                  break
+
                if ftag == FRAME_CASE:
                   # V is the (possibly-matched) key value on first entry, or the
                   # outcome of the prior clause's no-match check on subsequent
@@ -1832,9 +1857,13 @@ def _cek_loop(expr, env, ctx):
                   if is_symbol(head) and as_symbol(head) == 'else':
                      body = current_clause.cdr
                      E = saved_env
-                     C = body.car
-                     if is_cons(body.cdr):
-                        K.append((FRAME_SEQ, body.cdr, saved_env))
+                     if is_cons(body) and is_symbol(body.car) and as_symbol(body.car) == '=>':
+                        K.append((FRAME_CASE_ARROW, V, saved_env))
+                        C = body.cdr.car
+                     else:
+                        C = body.car
+                        if is_cons(body.cdr):
+                           K.append((FRAME_SEQ, body.cdr, saved_env))
                      break
                   # Datum-list match: head is the list of literal datums.
                   matched = False
@@ -1847,9 +1876,13 @@ def _cek_loop(expr, env, ctx):
                   if matched:
                      body = current_clause.cdr
                      E = saved_env
-                     C = body.car
-                     if is_cons(body.cdr):
-                        K.append((FRAME_SEQ, body.cdr, saved_env))
+                     if is_cons(body) and is_symbol(body.car) and as_symbol(body.car) == '=>':
+                        K.append((FRAME_CASE_ARROW, V, saved_env))
+                        C = body.cdr.car
+                     else:
+                        C = body.car
+                        if is_cons(body.cdr):
+                           K.append((FRAME_SEQ, body.cdr, saved_env))
                      break
                   # No match; advance to the next clause (V stays as the key).
                   if is_nil(remaining):

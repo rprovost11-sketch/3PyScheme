@@ -96,6 +96,9 @@ TOK_CHAR              = 'CHAR'
 TOK_BOOL              = 'BOOL'
 TOK_IDENT             = 'IDENT'
 TOK_EOF               = 'EOF'
+TOK_DATUM_COMMENT     = 'DATUM_COMMENT'
+TOK_LABEL_DEF         = 'LABEL_DEF'
+TOK_LABEL_REF         = 'LABEL_REF'
 
 
 class Token:
@@ -199,6 +202,54 @@ def tokenize(source, filename=None):
    col  = 1
    n    = len(source)
    while pos < n:
+      # Block comment: #| ... |# (possibly nested).  R7RS §2.2.
+      if pos + 1 < n and source[pos] == '#' and source[pos + 1] == '|':
+         depth  = 1
+         pos    = pos + 2
+         col    = col + 2
+         while pos < n and depth > 0:
+            if pos + 1 < n and source[pos] == '#' and source[pos + 1] == '|':
+               depth = depth + 1
+               col   = col + 2
+               pos   = pos + 2
+            elif pos + 1 < n and source[pos] == '|' and source[pos + 1] == '#':
+               depth = depth - 1
+               col   = col + 2
+               pos   = pos + 2
+            else:
+               if source[pos] == '\n':
+                  line = line + 1
+                  col  = 1
+               else:
+                  col  = col + 1
+               pos = pos + 1
+         if depth != 0:
+            raise SchemeSyntaxError(
+               'unterminated block comment',
+               _make_src(line, col, source_lines, filename))
+         continue
+      # Datum comment: #; — skip the following datum.  R7RS §2.2.
+      if pos + 1 < n and source[pos] == '#' and source[pos + 1] == ';':
+         src = _make_src(line, col, source_lines, filename)
+         tokens.append(Token(TOK_DATUM_COMMENT, None, src))
+         col = col + 2
+         pos = pos + 2
+         continue
+      # Datum label definition #n= and reference #n#.  R7RS §2.4.
+      if pos < n and source[pos] == '#':
+         j = pos + 1
+         while j < n and source[j].isdigit():
+            j = j + 1
+         if j > pos + 1 and j < n and source[j] in ('=', '#'):
+            src     = _make_src(line, col, source_lines, filename)
+            label_n = int(source[pos + 1 : j])
+            if source[j] == '=':
+               tokens.append(Token(TOK_LABEL_DEF, label_n, src))
+            else:
+               tokens.append(Token(TOK_LABEL_REF, label_n, src))
+            col = col + (j - pos + 1)
+            pos = j + 1
+            continue
       match = _TOKEN_RE.match(source, pos)
       if not match:
          raise SchemeSyntaxError(
@@ -527,6 +578,7 @@ class Parser:
    def __init__(self, tokens):
       self.tokens = tokens
       self.pos    = 0
+      self.labels = {}   # datum labels: int -> value  (R7RS §2.4)
 
    def _peek(self):
       return self.tokens[self.pos]
@@ -537,15 +589,52 @@ class Parser:
          self.pos = self.pos + 1
       return tok
 
+   def _skip_datum_comments(self):
+      """Consume any leading #; tokens, discarding the datum each precedes."""
+      while self._peek().kind == TOK_DATUM_COMMENT:
+         self._advance()
+         self.parse_expr()
+
    def parse_program(self):
       forms = []
-      while self._peek().kind != TOK_EOF:
+      while True:
+         self._skip_datum_comments()
+         if self._peek().kind == TOK_EOF:
+            break
          forms.append(self.parse_expr())
       return forms
 
    def parse_expr(self):
+      self._skip_datum_comments()
       tok  = self._peek()
       kind = tok.kind
+      # Datum label definition: #n= <datum>  (R7RS §2.4)
+      if kind == TOK_LABEL_DEF:
+         self._advance()
+         label_n = tok.value
+         nxt = self._peek()
+         # Pre-allocate a ConsCell stub for lists so forward #n# refs work.
+         if nxt.kind == TOK_LPAREN or nxt.kind == TOK_VECTOR_LPAREN:
+            stub = alloc_cons(NIL_VALUE, NIL_VALUE, nxt.src)
+            self.labels[label_n] = stub
+            datum = self.parse_expr()
+            if is_cons(datum):
+               stub.car = datum.car
+               stub.cdr = datum.cdr
+               return stub
+            self.labels[label_n] = datum
+            return datum
+         datum = self.parse_expr()
+         self.labels[label_n] = datum
+         return datum
+      # Datum label reference: #n#  (R7RS §2.4)
+      if kind == TOK_LABEL_REF:
+         self._advance()
+         label_n = tok.value
+         if label_n not in self.labels:
+            raise SchemeSyntaxError(
+               'undefined datum label #%d#' % label_n, tok.src)
+         return self.labels[label_n]
       if kind == TOK_INT:
          self._advance()
          return make_integer(tok.value, tok.src)
@@ -616,6 +705,7 @@ class Parser:
       vec_tok = self._advance()   # consume '#('
       items = []
       while True:
+         self._skip_datum_comments()
          tok = self._peek()
          if tok.kind == TOK_RPAREN:
             self._advance()
@@ -629,6 +719,7 @@ class Parser:
       items  = []
       dotted_tail = None
       while True:
+         self._skip_datum_comments()
          tok = self._peek()
          if tok.kind == TOK_RPAREN:
             self._advance()
