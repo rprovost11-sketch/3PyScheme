@@ -24,10 +24,10 @@ primitives are emitted by the Expander; users do not call them directly:
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
-   is_cons, is_nil, is_string, is_primitive, is_closure, is_case_closure,
+   is_cons, is_nil, is_string, is_integer, is_primitive, is_closure, is_case_closure,
    is_promise, is_multi_values, is_symbol, is_record, is_record_type,
    is_parameter, is_error_object,
-   as_string, as_primitive_fn, as_symbol,
+   as_string, as_integer, as_primitive_fn, as_symbol,
    as_promise_is_done, as_promise_payload, promise_resolve, promise_become,
    as_multi_values_list, as_record_type, as_record_fields,
    as_record_type_name,
@@ -399,12 +399,18 @@ def _prim_call_with_values_unreached(ctx, env, args, app_node):
 
 def _prim_null_environment(ctx, env, args, app_node):
    from pyscheme.Environment import Environment
+   if not is_integer(args[0]) or as_integer(args[0]) != 5:
+      raise SchemeTypeError(
+         'null-environment: version must be 5', src_of(app_node))
    e = Environment(parent=None)
    e.freeze()
    return make_environment(e)
 
 
 def _prim_scheme_report_environment(ctx, env, args, app_node):
+   if not is_integer(args[0]) or as_integer(args[0]) != 5:
+      raise SchemeTypeError(
+         'scheme-report-environment: version must be 5', src_of(app_node))
    return make_environment(env.getGlobalEnv())
 
 
@@ -460,6 +466,19 @@ def _prim_exit(ctx, env, args, app_node):
    if is_integer(obj):
       _sys.exit(as_integer(obj))
    _sys.exit(1)
+
+
+def _prim_emergency_exit(ctx, env, args, app_node):
+   import os as _os
+   from pyscheme.AST import is_boolean, as_boolean, is_integer, as_integer
+   if len(args) == 0:
+      _os._exit(0)
+   obj = args[0]
+   if is_boolean(obj):
+      _os._exit(0 if as_boolean(obj) is True else 1)
+   if is_integer(obj):
+      _os._exit(as_integer(obj))
+   _os._exit(1)
 
 
 def _prim_get_environment_variable(ctx, env, args, app_node):
@@ -739,6 +758,12 @@ def register():
    register_primitive('exit', (0, 1), _prim_exit,
       doc=('(exit [obj]) exits the process.  #t or no arg exits 0; #f exits 1; '
            'exact integer uses that code.  R7RS §6.14 / (scheme process-context).'),
+      category=CATEGORY)
+
+   register_primitive('emergency-exit', (0, 1), _prim_emergency_exit,
+      doc=('(emergency-exit [obj]) terminates the process immediately via '
+           'os._exit(), bypassing port flushing and dynamic-wind after-thunks.  '
+           'R7RS §6.14 / (scheme process-context).'),
       category=CATEGORY)
 
    register_primitive('get-environment-variable', (1, 1),

@@ -923,14 +923,27 @@ def _expand_include_ci(sexpr):
    return _expand_include_form(sexpr, True)
 
 
-# R7RS 5.6.2 feature identifiers.  Extend as the interpreter gains
-# capabilities.  `pyscheme` is our implementation identifier; `r7rs`
-# indicates partial compliance with the standard.
+# R7RS 5.6.2 / Appendix B feature identifiers.  `pyscheme` is our
+# implementation identifier; `r7rs` indicates R7RS-small compliance.
+import sys as _sys
 _FEATURES = {
-   'r7rs':         True,
-   'exact-closed': True,   # Python ints are arbitrary precision
-   'pyscheme':     True,
+   'r7rs':           True,
+   'exact-closed':   True,   # algebraic ops on exact nums stay exact
+   'exact-rational': True,   # exact arithmetic always yields exact rationals
+   'ratios':         True,   # exact rational numbers (Fraction) supported
+   'ieee-float':     True,   # inexact reals are IEEE 754 doubles (Python float)
+   'full-unicode':   True,   # Python strings are full Unicode
+   'pyscheme':       True,
 }
+if _sys.platform == 'win32':
+   _FEATURES['windows'] = True
+elif _sys.platform.startswith('linux'):
+   _FEATURES['posix'] = True
+   _FEATURES['linux'] = True
+elif _sys.platform == 'darwin':
+   _FEATURES['posix'] = True
+   _FEATURES['darwin'] = True
+del _sys
 
 
 def _feature_req_matches(req):
