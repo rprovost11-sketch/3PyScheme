@@ -1,11 +1,7 @@
 ;;; ============================================================
-;;; test01-literals.log
-;;; Self-evaluating literals: integers, reals, rationals, booleans,
-;;; characters, and strings.  These are the "no-op" evaluations:
-;;; parsing produces a value, the evaluator returns it unchanged.
+;;; test01-literals
+;;; Literal value representation: integers, floats, rationals, booleans, chars, strings, symbols, vectors, bytevectors
 ;;; ============================================================
-
-;;; -------- Self-evaluating literals --------
 
 >>> 42
 ==> 42
@@ -33,3 +29,4 @@
 
 >>> "hello"
 ==> "hello"
+

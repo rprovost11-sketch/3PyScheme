@@ -1,123 +1,180 @@
 ;;; ============================================================
-;;; test36-analyzer2.log
-;;; Gap tests derived from cppScheme test13-analyzer.log
+;;; test03-analyzer
+;;; Static analysis: malformed forms, arity errors
 ;;; ============================================================
 
+>>> ()
+%%% line 1, col 1: empty list () is not a valid expression; use (quote ()) for the empty list
+%%% ()
+%%% ^
+>>> (lambda 1 x)
+%%% line 1, col 9: lambda parameter list must be a list or identifier, got 1
+%%% (lambda 1 x)
+%%%         ^
+>>> (lambda (x x) x)
+%%% line 1, col 12: duplicate parameter name in lambda: x
+%%% (lambda (x x) x)
+%%%            ^
+>>> (lambda (1) 1)
+%%% line 1, col 10: expected an identifier in lambda parameter list, got 1
+%%% (lambda (1) 1)
+%%%          ^
+>>> (define)
+%%% line 1, col 1: define requires a name and a value (got 0 arguments)
+%%% (define)
+%%% ^
+>>> (define 5 6)
+%%% line 1, col 9: expected an identifier in define, got 5
+%%% (define 5 6)
+%%%         ^
+>>> (set!)
+%%% line 1, col 1: set! requires a name and a value (got 0 arguments)
+%%% (set!)
+%%% ^
+>>> (if)
+%%% line 1, col 1: if requires 2 or 3 arguments (test, then, optional else), got 0
+%%% (if)
+%%% ^
+>>> (if a b c d)
+%%% line 1, col 1: if requires 2 or 3 arguments (test, then, optional else), got 4
+%%% (if a b c d)
+%%% ^
+>>> (begin)
+%%% line 1, col 1: begin must have at least one body expression
+%%% (begin)
+%%% ^
+>>> (let ((x)) x)
+%%% line 1, col 7: let binding must be (name value), got (x)
+%%% (let ((x)) x)
+%%%       ^
+>>> (let ((1 2)) x)
+%%% line 1, col 8: expected an identifier in let binding, got 1
+%%% (let ((1 2)) x)
+%%%        ^
+>>> (cond)
+%%% line 1, col 1: cond must have at least one clause
+%%% (cond)
+%%% ^
+>>> (cond ())
+%%% line 1, col 7: cond clause must be a non-empty list, got ()
+%%% (cond ())
+%%%       ^
+>>> (cond (else 1) (#t 2))
+%%% line 1, col 7: cond 'else' clause must be the last clause
+%%% (cond (else 1) (#t 2))
+%%%       ^
+>>> (cond (else))
+%%% line 1, col 7: cond 'else' clause must have at least one expression
+%%% (cond (else))
+%%%       ^
+>>> (when)
+%%% line 1, col 1: when requires a test and at least one body expression
+%%% (when)
+%%% ^
+>>> (when #t)
+%%% line 1, col 1: when requires a test and at least one body expression
+%%% (when #t)
+%%% ^
+>>> (quote)
+%%% line 1, col 1: quote requires exactly 1 argument, got 0
+%%% (quote)
+%%% ^
+>>> (quote a b)
+%%% line 1, col 1: quote requires exactly 1 argument, got 2
+%%% (quote a b)
+%%% ^
 >>> (if #t 1 2 3)
 %%% line 1, col 1: if requires 2 or 3 arguments (test, then, optional else), got 4
 %%% (if #t 1 2 3)
 %%% ^
-
 >>> (lambda ())
 %%% line 1, col 1: lambda requires a parameter list and at least one body expression
 %%% (lambda ())
 %%% ^
-
 >>> (set! 42 1)
 %%% line 1, col 7: expected an identifier in set!, got 42
 %%% (set! 42 1)
 %%%       ^
-
 >>> (let)
 %%% line 1, col 1: let requires a binding list and at least one body expression
 %%% (let)
 %%% ^
-
 >>> (let ((x 1)))
 %%% line 1, col 1: let requires a binding list and at least one body expression
 %%% (let ((x 1)))
 %%% ^
-
 >>> (let*)
 %%% line 1, col 1: let* requires a binding list and at least one body expression
 %%% (let*)
 %%% ^
-
 >>> (letrec)
 %%% line 1, col 1: letrec requires a binding list and at least one body expression
 %%% (letrec)
 %%% ^
-
 >>> (define-record-type)
 %%% SchemeArityError: line 1, col 1: define-record-type: 0 arguments provided; at least 4 expected
 %%% (define-record-type)
 %%% ^
-
 >>> (guard)
 %%% SchemeArityError: line 1, col 1: guard: 0 arguments provided; at least 2 expected
 %%% (guard)
 %%% ^
-
 >>> (parameterize)
 %%% SchemeArityError: line 1, col 1: parameterize: 0 arguments provided; at least 2 expected
 %%% (parameterize)
 %%% ^
-
 >>> (case-lambda ())
 %%% line 1, col 14: case-lambda clause must be a list, got ()
 %%% (case-lambda ())
 %%%              ^
-
 >>> (case-lambda (()))
 %%% line 1, col 14: case-lambda clause must have formals and a non-empty body, got (())
 %%% (case-lambda (()))
 %%%              ^
-
 >>> (call/cc car cdr)
 %%% SchemeArityError: line 1, col 1: call/cc: 2 arguments provided; 1 expected
 %%% (call/cc car cdr)
 %%% ^
-
 >>> (car '(1 2) '(3 4))
 %%% SchemeArityError: line 1, col 1: car: 2 arguments provided; 1 expected
 %%% (car '(1 2) '(3 4))
 %%% ^
-
 >>> (not #t #f)
 %%% SchemeArityError: line 1, col 1: not: 2 arguments provided; 1 expected
 %%% (not #t #f)
 %%% ^
-
 >>> (sqrt)
 %%% SchemeArityError: line 1, col 1: sqrt: 0 arguments provided; 1 expected
 %%% (sqrt)
 %%% ^
-
 >>> (sqrt 4 9)
 %%% SchemeArityError: line 1, col 1: sqrt: 2 arguments provided; 1 expected
 %%% (sqrt 4 9)
 %%% ^
-
 >>> (expt)
 %%% SchemeArityError: line 1, col 1: expt: 0 arguments provided; 2 expected
 %%% (expt)
 %%% ^
-
 >>> (quotient 6 2 1)
 %%% SchemeArityError: line 1, col 1: quotient: 3 arguments provided; 2 expected
 %%% (quotient 6 2 1)
 %%% ^
-
 >>> (=)
 %%% SchemeArityError: line 1, col 1: =: 0 arguments provided; at least 1 expected
 %%% (=)
 %%% ^
-
 >>> (<)
 %%% SchemeArityError: line 1, col 1: <: 0 arguments provided; at least 1 expected
 %%% (<)
 %%% ^
-
 >>> (>)
 %%% SchemeArityError: line 1, col 1: >: 0 arguments provided; at least 1 expected
 %%% (>)
 %%% ^
-
 >>> (eof-object 42)
 %%% SchemeArityError: line 1, col 1: eof-object: 1 argument provided; 0 expected
 %%% (eof-object 42)
 %%% ^
-
 >>> (car '(1 2))
 ==> 1
 
@@ -135,12 +192,10 @@
 %%% SchemeArityError: line 1, col 1: sq: 0 arguments provided; 1 expected
 %%% (sq)
 %%% ^
-
 >>> (sq 4 5)
 %%% SchemeArityError: line 1, col 1: sq: 2 arguments provided; 1 expected
 %%% (sq 4 5)
 %%% ^
-
 >>> (sq 5)
 ... ; --- user-defined variadic function (no arity check) ---
 ==> 25
@@ -153,3 +208,12 @@
 
 >>> (variadic 1 2 3)
 ==> (1 2 3)
+
+>>> (let-values)
+%%% SchemeArityError: line 1, col 1: let-values: 0 arguments provided; at least 2 expected
+%%% (let-values)
+%%% ^
+>>> (define-values)
+%%% SchemeArityError: line 1, col 1: define-values: 0 arguments provided; 2 expected
+%%% (define-values)
+%%% ^

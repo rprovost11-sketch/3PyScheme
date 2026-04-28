@@ -1,13 +1,7 @@
 ;;; ============================================================
-;;; test09-programs.log
-;;; End-to-end example programs exercising recursion, list
-;;; processing, higher-order procedures, and iterative patterns
-;;; via named let.  These tests touch almost every subsystem:
-;;; parsing, analysis, evaluation, primitives, and R7RS derived
-;;; forms.
+;;; test07-programs
+;;; TCO, named let, practical recursive programs
 ;;; ============================================================
-
-;;; -------- Example programs --------
 
 >>> (define (fact n) (if (zero? n) 1 (* n (fact (- n 1)))))
 ==> #<void>
@@ -58,11 +52,19 @@
 ==> 6
 
 >>> (gcd 17 5)
+... ;;; Iterative accumulators via named let
 ==> 1
 
-;;; Iterative accumulators via named let
 >>> (let loop ((i 1) (acc 1)) (if (> i 10) acc (loop (+ i 1) (* acc i))))
 ==> 3628800
 
 >>> (let loop ((lst (list 5 4 3 2 1)) (acc 0)) (if (null? lst) acc (loop (cdr lst) (+ acc (car lst)))))
 ==> 15
+
+>>> (let loop ((lst (list 1 2 3))) (if (null? lst) 'done (loop (cdr lst))))
+==> done
+
+>>> (let loop ((lst (list 1 2 3)) (acc (list))) (if (null? lst) acc (loop (cdr lst) (cons (car lst) acc))))
+... ;;; -------- do (R7RS 4.2.4) - iteration --------
+==> (3 2 1)
+

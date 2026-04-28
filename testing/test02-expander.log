@@ -1,0 +1,46 @@
+;;; ============================================================
+;;; test02-expander
+;;; Expander: cond-expand, include, include-ci
+;;; ============================================================
+
+>>> (cond-expand ((library (scheme base)) 'yes) (else 'no))
+==> yes
+
+>>> (cond-expand ((library (srfi 1)) 'yes) (else 'no))
+==> no
+
+>>> (cond-expand ((library (no such lib)) 'yes) (else 'no))
+... ;;; -------- list? on circular structures --------
+==> no
+
+>>> (cond-expand (r7rs 'yes-r7rs) (else 'no))
+==> yes-r7rs
+
+>>> (cond-expand (nosuch-feature 'no) (else 'fallback))
+==> fallback
+
+>>> (cond-expand ((and r7rs pyscheme) 'both) (else 'partial))
+==> both
+
+>>> (cond-expand ((or nosuch r7rs) 'matched) (else 'no))
+==> matched
+
+>>> (cond-expand ((not nosuch) 'yes) (else 'no))
+==> yes
+
+>>> (cond-expand ((library (srfi 1)) 'have-srfi) (else 'no-srfi))
+... ;;; Definitions spliced at top level persist.
+==> no-srfi
+
+>>> (cond-expand (r7rs (define sq (lambda (x) (* x x)))) (else 'skip)) (sq 9)
+... ;;; Shape errors.
+==> 81
+
+>>> (cond-expand)
+%%% line 1, col 1: cond-expand requires at least one clause
+%%% (cond-expand)
+%%% ^
+>>> (cond-expand (nosuch 1))
+%%% line 1, col 1: cond-expand: no clause matched
+%%% (cond-expand (nosuch 1))
+%%% ^

@@ -1,0 +1,144 @@
+;;; ============================================================
+;;; test22-bytevectors
+;;; bytevectors.py: all bytevector operations
+;;; ============================================================
+
+>>> (bytevector? #u8(1 2 3))
+%%% line 1, col 14: unknown #-syntax: '#u8'
+%%% (bytevector? #u8(1 2 3))
+%%%              ^
+>>> (bytevector? #u8())
+%%% line 1, col 14: unknown #-syntax: '#u8'
+%%% (bytevector? #u8())
+%%%              ^
+>>> (bytevector? "hello")
+==> #f
+
+>>> (bytevector? '(1 2 3))
+... ; --- literal syntax ---
+==> #f
+
+>>> (make-bytevector 3)
+==> #u8(0 0 0)
+
+>>> (make-bytevector 4 7)
+==> #u8(7 7 7 7)
+
+>>> (make-bytevector 0)
+... ; --- bytevector constructor ---
+==> #u8()
+
+>>> (bytevector 1 2 3)
+==> #u8(1 2 3)
+
+>>> (bytevector)
+==> #u8()
+
+>>> (bytevector 0 127 255)
+... ; === 9. bytevector-length, bytevector-u8-ref, bytevector-u8-set! ===
+... ; --- bytevector-length ---
+==> #u8(0 127 255)
+
+>>> (bytevector-length #u8(1 2 3))
+%%% line 1, col 20: unknown #-syntax: '#u8'
+%%% (bytevector-length #u8(1 2 3))
+%%%                    ^
+>>> (bytevector-length #u8())
+... ; --- bytevector-u8-ref ---
+%%% line 1, col 20: unknown #-syntax: '#u8'
+%%% (bytevector-length #u8())
+%%%                    ^
+>>> (bytevector-u8-ref #u8(10 20 30) 0)
+%%% line 1, col 20: unknown #-syntax: '#u8'
+%%% (bytevector-u8-ref #u8(10 20 30) 0)
+%%%                    ^
+>>> (bytevector-u8-ref #u8(10 20 30) 2)
+... ; out of range
+%%% line 1, col 20: unknown #-syntax: '#u8'
+%%% (bytevector-u8-ref #u8(10 20 30) 2)
+%%%                    ^
+>>> (bytevector-u8-ref #u8(1 2 3) 5)
+%%% line 1, col 20: unknown #-syntax: '#u8'
+%%% (bytevector-u8-ref #u8(1 2 3) 5)
+%%%                    ^
+>>> (bytevector-copy #u8(1 2 3 4 5))
+%%% line 1, col 18: unknown #-syntax: '#u8'
+%%% (bytevector-copy #u8(1 2 3 4 5))
+%%%                  ^
+>>> (bytevector-copy #u8(1 2 3 4 5) 1 3)
+%%% line 1, col 18: unknown #-syntax: '#u8'
+%%% (bytevector-copy #u8(1 2 3 4 5) 1 3)
+%%%                  ^
+>>> (bytevector-copy #u8(1 2 3 4 5) 2)
+... ; --- bytevector-copy! ---
+%%% line 1, col 18: unknown #-syntax: '#u8'
+%%% (bytevector-copy #u8(1 2 3 4 5) 2)
+%%%                  ^
+>>> (bytevector-append #u8(1 2) #u8(3 4))
+%%% line 1, col 20: unknown #-syntax: '#u8'
+%%% (bytevector-append #u8(1 2) #u8(3 4))
+%%%                    ^
+>>> (bytevector-append #u8() #u8(5 6))
+%%% line 1, col 20: unknown #-syntax: '#u8'
+%%% (bytevector-append #u8() #u8(5 6))
+%%%                    ^
+>>> (bytevector-append)
+... ; === 11. bytevector->u8-list, u8-list->bytevector ===
+... ; --- bytevector->u8-list ---
+==> #u8()
+
+>>> (bytevector->u8-list #u8(1 2 3 4 5))
+%%% line 1, col 22: unknown #-syntax: '#u8'
+%%% (bytevector->u8-list #u8(1 2 3 4 5))
+%%%                      ^
+>>> (bytevector->u8-list #u8())
+%%% line 1, col 22: unknown #-syntax: '#u8'
+%%% (bytevector->u8-list #u8())
+%%%                      ^
+>>> (bytevector-u8-set! (make-bytevector 3) 5 0)
+%%% SchemeTypeError: line 1, col 1: bytevector-u8-set!: index 5 out of range
+%%% (bytevector-u8-set! (make-bytevector 3) 5 0)
+%%% ^
+>>> (bytevector-u8-set! (make-bytevector 3) 0 256)
+%%% SchemeTypeError: line 1, col 1: bytevector-u8-set!: byte 256 out of u8 range (0..255)
+%%% (bytevector-u8-set! (make-bytevector 3) 0 256)
+%%% ^
+>>> (bytevector-copy #u8(1 2 3) 2 1)
+%%% line 1, col 18: unknown #-syntax: '#u8'
+%%% (bytevector-copy #u8(1 2 3) 2 1)
+%%%                  ^
+>>> (bytevector-copy! (make-bytevector 3) 2 #u8(9 9) 0 2)
+%%% line 1, col 41: unknown #-syntax: '#u8'
+%%% (bytevector-copy! (make-bytevector 3) 2 #u8(9 9) 0 2)
+%%%                                         ^
+>>> (bytevector-length "oops")
+%%% SchemeTypeError: line 1, col 1: bytevector-length: argument 1 must be a bytevector
+%%% (bytevector-length "oops")
+%%% ^
+>>> (bytevector-u8-ref '() 0)
+%%% SchemeTypeError: line 1, col 1: bytevector-u8-ref: argument 1 must be a bytevector
+%%% (bytevector-u8-ref '() 0)
+%%% ^
+>>> (utf8->string #u8(104 101 108 108 111))
+%%% line 1, col 15: unknown #-syntax: '#u8'
+%%% (utf8->string #u8(104 101 108 108 111))
+%%%               ^
+>>> (string->utf8 "hello")
+==> #u8(104 101 108 108 111)
+
+>>> (utf8->string (string->utf8 "abc"))
+==> "abc"
+
+>>> (string->utf8 "abc" 1 2)
+... ; --- error paths ---
+... ; utf8->string invalid range
+==> #u8(98)
+
+>>> (utf8->string #u8(1 2 3) 3 1)
+%%% line 1, col 15: unknown #-syntax: '#u8'
+%%% (utf8->string #u8(1 2 3) 3 1)
+%%%               ^
+>>> (string->utf8 "abc" 2 1)
+%%% SchemeTypeError: line 1, col 1: string->utf8: range out of bounds
+%%% (string->utf8 "abc" 2 1)
+%%% ^

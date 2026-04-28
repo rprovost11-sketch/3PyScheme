@@ -1,335 +1,60 @@
 ;;; ============================================================
-;;; test29-strings-chars2.log
-;;; Gap tests derived from cppScheme test06-strings-chars.log
+;;; test33-strings
+;;; strings.py: all string operations, case conversion, string<->list/vector
 ;;; ============================================================
 
->>> (char? #\a)
-==> #t
+>>> (string-length "\x41;")
+==> 1
 
->>> (char? #\A)
-==> #t
-
->>> (char? #\space)
-==> #t
-
->>> (char? 65)
-==> #f
-
->>> (char? "a")
-==> #f
-
->>> (char? #t)
-... ; --- char=? ---
-==> #f
-
->>> (char=? #\a #\a)
-==> #t
-
->>> (char=? #\a #\b)
-==> #f
-
->>> (char=? #\A #\A #\A)
-==> #t
-
->>> (char=?)
-%%% SchemeArityError: line 1, col 1: char=?: 0 arguments provided; at least 2 expected
-%%% (char=?)
-%%% ^
-
->>> (char<? #\a #\b)
-==> #t
-
->>> (char<? #\b #\a)
-==> #f
-
->>> (char<? #\a #\b #\c)
-... ; --- char>? ---
-==> #t
-
->>> (char>? #\b #\a)
-==> #t
-
->>> (char>? #\a #\b)
-... ; --- char<=? ---
-==> #f
-
->>> (char<=? #\a #\a)
-==> #t
-
->>> (char<=? #\a #\b)
-==> #t
-
->>> (char<=? #\b #\a)
-... ; --- char>=? ---
-==> #f
-
->>> (char>=? #\a #\a)
-==> #t
-
->>> (char>=? #\b #\a)
-==> #t
-
->>> (char>=? #\a #\b)
-... ; --- eq? on chars ---
-==> #f
-
->>> (eq? #\a #\a)
-==> #f
-
->>> (eq? #\a #\b)
-... ; ============================================================
-... ; 2. Case-insensitive char comparison
-... ; ============================================================
-... ; --- char-ci=? ---
-==> #f
-
->>> (char-ci=? #\a #\A)
-==> #t
-
->>> (char-ci=? #\a #\b)
-==> #f
-
->>> (char-ci=? #\A #\A #\a)
-==> #t
-
->>> (char-ci=?)
-%%% SchemeArityError: line 1, col 1: char-ci=?: 0 arguments provided; at least 2 expected
-%%% (char-ci=?)
-%%% ^
-
->>> (char-ci<? #\a #\B)
-==> #t
-
->>> (char-ci<? #\B #\a)
-==> #f
-
->>> (char-ci<? #\a #\A)
-... ; --- char-ci>? ---
-==> #f
-
->>> (char-ci>? #\a #\B)
-... ; --- char-ci<=? ---
-==> #f
-
->>> (char-ci<=? #\a #\A)
-==> #t
-
->>> (char-ci<=? #\a #\B)
-==> #t
-
->>> (char-ci<=? #\B #\a)
-... ; --- char-ci>=? ---
-==> #f
-
->>> (char-ci>=? #\A #\a)
-==> #t
-
->>> (char-ci>=? #\B #\a)
-==> #t
-
->>> (char-ci>=? #\a #\B)
-... ; ============================================================
-... ; 3. Character classification
-... ; ============================================================
-... ; --- char-alphabetic? ---
-... ; uppercase letter
-==> #f
-
->>> (char-alphabetic? #\A)
-... ; lowercase letter
-==> #t
-
->>> (char-alphabetic? #\a)
-... ; digit is not alphabetic
-==> #t
-
->>> (char-alphabetic? #\1)
-... ; space is not alphabetic
-==> #f
-
->>> (char-alphabetic? #\space)
-==> #f
-
->>> (char-alphabetic?)
-%%% SchemeArityError: line 1, col 1: char-alphabetic?: 0 arguments provided; 1 expected
-%%% (char-alphabetic?)
-%%% ^
-
->>> (char-numeric? #\0)
-==> #t
-
->>> (char-numeric? #\9)
-==> #t
-
->>> (char-numeric? #\A)
-==> #f
-
->>> (char-numeric?)
-%%% SchemeArityError: line 1, col 1: char-numeric?: 0 arguments provided; 1 expected
-%%% (char-numeric?)
-%%% ^
-
->>> (char-whitespace? #\space)
-... ; tab
-==> #t
-
->>> (char-whitespace? #\tab)
-... ; newline
-==> #t
-
->>> (char-whitespace? #\newline)
-... ; letter A is not whitespace
-==> #t
-
->>> (char-whitespace? #\A)
-==> #f
-
->>> (char-whitespace?)
-%%% SchemeArityError: line 1, col 1: char-whitespace?: 0 arguments provided; 1 expected
-%%% (char-whitespace?)
-%%% ^
-
->>> (char-upper-case? #\A)
-==> #t
-
->>> (char-upper-case? #\a)
-==> #f
-
->>> (char-upper-case? #\0)
-==> #f
-
->>> (char-lower-case? #\a)
-==> #t
-
->>> (char-lower-case? #\A)
-==> #f
-
->>> (char-upper-case?)
-%%% SchemeArityError: line 1, col 1: char-upper-case?: 0 arguments provided; 1 expected
-%%% (char-upper-case?)
-%%% ^
-
->>> (char-lower-case?)
-%%% SchemeArityError: line 1, col 1: char-lower-case?: 0 arguments provided; 1 expected
-%%% (char-lower-case?)
-%%% ^
-
->>> (char->integer #\A)
-==> 65
-
->>> (char->integer #\a)
-==> 97
-
->>> (char->integer #\space)
-==> 32
-
->>> (char->integer #\0)
-==> 48
-
->>> (char->integer #\newline)
-==> 10
-
->>> (char->integer)
-%%% SchemeArityError: line 1, col 1: char->integer: 0 arguments provided; 1 expected
-%%% (char->integer)
-%%% ^
-
->>> (char->integer 65)
-%%% SchemeTypeError: line 1, col 1: char->integer: argument 1 must be a character
-%%% (char->integer 65)
-%%% ^
-
->>> (integer->char 65)
+>>> (string-ref "\x41;" 0)
 ==> #\A
 
->>> (integer->char 97)
-==> #\a
+>>> (string-length "\|")
+==> 1
 
->>> (integer->char 32)
-==> #\space
+>>> (string=? "\|" "|")
+==> #t
 
->>> (integer->char 48)
-==> #\0
+>>> (string=? "a\|b" "a|b")
+... ;;; -------- #\x<hex> character hex literal --------
+==> #t
 
->>> (integer->char 10)
-==> #\newline
+>>> (string=? (symbol->string '|foo|) "foo")
+==> #t
 
->>> (integer->char)
-%%% SchemeArityError: line 1, col 1: integer->char: 0 arguments provided; 1 expected
-%%% (integer->char)
+>>> (string=? (symbol->string '|hello world|) "hello world")
+==> #t
+
+>>> (string=? (symbol->string '|a\|b|) "a|b")
+... ;;; -------- |...| vertical-bar symbol (write) --------
+==> #t
+
+>>> (string->list "hello")
+==> (#\h #\e #\l #\l #\o)
+
+>>> (string->list "hello" 1)
+==> (#\e #\l #\l #\o)
+
+>>> (string->list "hello" 1 3)
+==> (#\e #\l)
+
+>>> (string->list "hello" 0 0)
+==> ()
+
+>>> (string->list "hello" 5)
+==> ()
+
+>>> (string->list "hello" 2 2)
+==> ()
+
+>>> (string->list "hello" 3 1)
+%%% SchemeTypeError: line 1, col 1: string->list: start/end out of range
+%%% (string->list "hello" 3 1)
 %%% ^
-
->>> (integer->char (char->integer #\z))
-==> #\z
-
->>> (char->integer (integer->char 90))
-... ; --- char-upcase ---
-... ; a -> A
-==> 90
-
->>> (char-upcase #\a)
-... ; A stays A
-==> #\A
-
->>> (char-upcase #\A)
-... ; digit unchanged
-==> #\A
-
->>> (char-upcase #\0)
-==> #\0
-
->>> (char-upcase)
-%%% SchemeArityError: line 1, col 1: char-upcase: 0 arguments provided; 1 expected
-%%% (char-upcase)
+>>> (string->list "hello" 6)
+%%% SchemeTypeError: line 1, col 1: string->list: start/end out of range
+%%% (string->list "hello" 6)
 %%% ^
-
->>> (char-downcase #\A)
-... ; a stays a
-==> #\a
-
->>> (char-downcase #\a)
-... ; digit unchanged
-==> #\a
-
->>> (char-downcase #\0)
-==> #\0
-
->>> (char-downcase)
-%%% SchemeArityError: line 1, col 1: char-downcase: 0 arguments provided; 1 expected
-%%% (char-downcase)
-%%% ^
-
->>> (char-foldcase #\a)
-==> #\a
-
->>> (char-foldcase #\0)
-==> #\0
-
->>> (char-foldcase)
-%%% SchemeArityError: line 1, col 1: char-foldcase: 0 arguments provided; 1 expected
-%%% (char-foldcase)
-%%% ^
-
->>> (digit-value #\0)
-==> 0
-
->>> (digit-value #\5)
-==> 5
-
->>> (digit-value #\9)
-==> 9
-
->>> (digit-value #\a)
-==> #f
-
->>> (digit-value #\space)
-==> #f
-
->>> (digit-value)
-%%% SchemeArityError: line 1, col 1: digit-value: 0 arguments provided; 1 expected
-%%% (digit-value)
-%%% ^
-
 >>> (string)
 ==> ""
 
@@ -356,7 +81,6 @@
 %%% SchemeArityError: line 1, col 1: make-string: 0 arguments provided; 1 or 2 expected
 %%% (make-string)
 %%% ^
-
 >>> (string-length "")
 ==> 0
 
@@ -370,12 +94,10 @@
 %%% SchemeArityError: line 1, col 1: string-length: 0 arguments provided; 1 expected
 %%% (string-length)
 %%% ^
-
 >>> (string-length 42)
 %%% SchemeTypeError: line 1, col 1: string-length: argument 1 must be a string
 %%% (string-length 42)
 %%% ^
-
 >>> (string-ref "hello" 0)
 ==> #\h
 
@@ -390,34 +112,20 @@
 %%% SchemeTypeError: line 1, col 1: string-ref: index 10 out of range
 %%% (string-ref "hello" 10)
 %%% ^
-
 >>> (string-ref "hello" -1)
 %%% SchemeTypeError: line 1, col 1: string-ref: index -1 out of range
 %%% (string-ref "hello" -1)
 %%% ^
-
 >>> (string-ref)
 %%% SchemeArityError: line 1, col 1: string-ref: 0 arguments provided; 2 expected
 %%% (string-ref)
 %%% ^
-
->>> (char? (string-ref "hello" 0))
-==> #t
-
->>> (char-alphabetic? (string-ref "hello" 0))
-==> #t
-
->>> (char-upcase (string-ref "hello" 0))
-... ; --- string-set! ---
-==> #\H
-
 >>> (let ((s (string-copy "hello")))
 ...   (string-set! s 0 #\H)
 ...   s)
 %%% SchemeTypeError: line 2, col 3: string-set!: pyScheme strings are immutable - this primitive is present so (help string-set!) works, but cannot mutate.  R7RS allows impls to make strings immutable.
 %%%   (string-set! s 0 #\H)
 %%%   ^
-
 >>> (let ((s (make-string 3 #\A)))
 ...   (string-set! s 1 #\B)
 ...   (string-set! s 2 #\C)
@@ -425,12 +133,10 @@
 %%% SchemeTypeError: line 2, col 3: string-set!: pyScheme strings are immutable - this primitive is present so (help string-set!) works, but cannot mutate.  R7RS allows impls to make strings immutable.
 %%%   (string-set! s 1 #\B)
 %%%   ^
-
 >>> (string-set!)
 %%% SchemeArityError: line 1, col 1: string-set!: 0 arguments provided; 3 expected
 %%% (string-set!)
 %%% ^
-
 >>> (substring "hello" 0)
 ==> "hello"
 
@@ -453,7 +159,6 @@
 %%% SchemeArityError: line 1, col 1: substring: 0 arguments provided; 2 or 3 expected
 %%% (substring)
 %%% ^
-
 >>> (string-copy "hello")
 ==> "hello"
 
@@ -466,7 +171,6 @@
 %%% SchemeArityError: line 1, col 1: string-copy: 0 arguments provided; 1 to 3 expected
 %%% (string-copy)
 %%% ^
-
 >>> (string-copy "hello" 1 3)
 ==> "el"
 
@@ -481,19 +185,16 @@
 %%% SchemeTypeError: line 2, col 3: string-copy!: pyScheme strings are immutable.
 %%%   (string-copy! s 1 "ab")
 %%%   ^
-
 >>> (let ((s (string-copy "hello")))
 ...   (string-copy! s 1 "ABCDE" 1 3)
 ...   s)
 %%% SchemeTypeError: line 2, col 3: string-copy!: pyScheme strings are immutable.
 %%%   (string-copy! s 1 "ABCDE" 1 3)
 %%%   ^
-
 >>> (string-copy!)
 %%% SchemeArityError: line 1, col 1: string-copy!: 0 arguments provided; 3 to 5 expected
 %%% (string-copy!)
 %%% ^
-
 >>> (let ((s (make-string 3 #\A)))
 ...   (string-fill! s #\B)
 ...   s)
@@ -501,22 +202,18 @@
 %%% SchemeTypeError: line 2, col 3: string-fill!: pyScheme strings are immutable.
 %%%   (string-fill! s #\B)
 %%%   ^
-
 >>> (string-fill! (make-string 1 #\A) #\B)
 %%% SchemeTypeError: line 1, col 1: string-fill!: pyScheme strings are immutable.
 %%% (string-fill! (make-string 1 #\A) #\B)
 %%% ^
-
 >>> (string-fill!)
 %%% SchemeArityError: line 1, col 1: string-fill!: 0 arguments provided; 2 to 4 expected
 %%% (string-fill!)
 %%% ^
-
 >>> (let ((s (string-copy "hello"))) (string-fill! s #\* 1 3) s)
 %%% SchemeTypeError: line 1, col 34: string-fill!: pyScheme strings are immutable.
 %%% (let ((s (string-copy "hello"))) (string-fill! s #\* 1 3) s)
 %%%                                  ^
-
 >>> (let ((s (string-copy "hello"))) (string-fill! s #\x) s)
 ... ; ============================================================
 ... ; 10. string-append
@@ -524,7 +221,6 @@
 %%% SchemeTypeError: line 1, col 34: string-fill!: pyScheme strings are immutable.
 %%% (let ((s (string-copy "hello"))) (string-fill! s #\x) s)
 %%%                                  ^
-
 >>> (string-append)
 ==> ""
 
@@ -557,7 +253,6 @@
 %%% SchemeArityError: line 1, col 1: string->list: 0 arguments provided; 1 to 3 expected
 %%% (string->list)
 %%% ^
-
 >>> (string->list "hello" 2)
 ... ; --- list->string ---
 ==> (#\l #\l #\o)
@@ -575,47 +270,12 @@
 %%% SchemeArityError: line 1, col 1: list->string: 0 arguments provided; 1 expected
 %%% (list->string)
 %%% ^
-
 >>> (list->string (string->list "hello"))
 ... ; ============================================================
 ... ; 12. String/vector conversion
 ... ; ============================================================
 ... ; --- string->vector ---
 ==> "hello"
-
->>> (string->vector "hi")
-==> #(#\h #\i)
-
->>> (string->vector "")
-... ; with start/end
-==> #()
-
->>> (string->vector "hello" 1 3)
-... ; --- vector->string ---
-==> #(#\e #\l)
-
->>> (vector->string (vector #\h #\e #\l #\l #\o))
-==> "hello"
-
->>> (vector->string (vector))
-... ; with start/end
-==> ""
-
->>> (vector->string (vector #\a #\b #\c #\d) 1 3)
-... ; roundtrip
-==> "bc"
-
->>> (vector->string (string->vector "hello"))
-==> "hello"
-
->>> (string->vector (vector->string (vector #\x #\y #\z)))
-... ; type error: non-char element
-==> #(#\x #\y #\z)
-
->>> (vector->string (vector #\a 42))
-%%% SchemeTypeError: line 1, col 1: vector->string: vector elements must be characters
-%%% (vector->string (vector #\a 42))
-%%% ^
 
 >>> (string=? "abc" "abc")
 ==> #t
@@ -630,7 +290,6 @@
 %%% SchemeArityError: line 1, col 1: string=?: 0 arguments provided; at least 2 expected
 %%% (string=?)
 %%% ^
-
 >>> (string<? "abc" "abd")
 ==> #t
 
@@ -718,7 +377,6 @@
 %%% SchemeArityError: line 1, col 1: string-ci=?: 0 arguments provided; at least 2 expected
 %%% (string-ci=?)
 %%% ^
-
 >>> (string-upcase "hello")
 ==> "HELLO"
 
@@ -732,7 +390,6 @@
 %%% SchemeArityError: line 1, col 1: string-upcase: 0 arguments provided; 1 expected
 %%% (string-upcase)
 %%% ^
-
 >>> (string-downcase "WORLD")
 ==> "world"
 
@@ -746,7 +403,6 @@
 %%% SchemeArityError: line 1, col 1: string-downcase: 0 arguments provided; 1 expected
 %%% (string-downcase)
 %%% ^
-
 >>> (string-foldcase "Hello World")
 ==> "hello world"
 
@@ -763,7 +419,6 @@
 %%% SchemeArityError: line 1, col 1: string-foldcase: 0 arguments provided; 1 expected
 %%% (string-foldcase)
 %%% ^
-
 >>> (string-map char-upcase "hello")
 ==> "HELLO"
 
@@ -782,7 +437,6 @@
 %%% SchemeArityError: line 1, col 1: string-map: 0 arguments provided; at least 2 expected
 %%% (string-map)
 %%% ^
-
 >>> (string-map (lambda (a b) (if (char<? a b) a b)) "hello" "world")
 ==> "helld"
 
@@ -803,7 +457,6 @@
 %%% SchemeArityError: line 1, col 1: string-for-each: 0 arguments provided; at least 2 expected
 %%% (string-for-each)
 %%% ^
-
 >>> (let ((result '()))
 ...   (string-for-each
 ...     (lambda (a b) (set! result (cons (list a b) result)))
@@ -830,12 +483,10 @@
 %%% SchemeArityError: line 1, col 1: string->symbol: 0 arguments provided; 1 expected
 %%% (string->symbol)
 %%% ^
-
 >>> (symbol->string)
 %%% SchemeArityError: line 1, col 1: symbol->string: 0 arguments provided; 1 expected
 %%% (symbol->string)
 %%% ^
-
 >>> (symbol->string "not-a-symbol")
 %%% SchemeTypeError: line 1, col 1: symbol->string: argument must be a symbol
 %%% (symbol->string "not-a-symbol")

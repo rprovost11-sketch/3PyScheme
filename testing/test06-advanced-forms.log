@@ -1,0 +1,694 @@
+;;; ============================================================
+;;; test06-advanced-forms
+;;; Advanced forms: case-lambda, delay/force, call/cc, values, parameterize, dynamic-wind, guard, raise
+;;; ============================================================
+
+>>> (call-with-values (lambda () (floor/ 13 4))
+...   (lambda (q r) (list q r)))
+==> (3 1)
+
+>>> (call-with-values (lambda () (floor/ -13 4))
+...   (lambda (q r) (list q r)))
+==> (-4 3)
+
+>>> (call-with-values (lambda () (floor/ 13 -4))
+...   (lambda (q r) (list q r)))
+==> (-4 -3)
+
+>>> (call-with-values (lambda () (floor/ -13 -4))
+...   (lambda (q r) (list q r)))
+==> (3 -1)
+
+>>> (call-with-values (lambda () (truncate/ 13 4))
+...   (lambda (q r) (list q r)))
+==> (3 1)
+
+>>> (call-with-values (lambda () (truncate/ -13 4))
+...   (lambda (q r) (list q r)))
+==> (-3 -1)
+
+>>> (call-with-values (lambda () (exact-integer-sqrt 14))
+...   (lambda (s r) (list s r)))
+==> (3 5)
+
+>>> (call-with-values (lambda () (exact-integer-sqrt 9))
+...   (lambda (s r) (list s r)))
+==> (3 0)
+
+>>> (call-with-values (lambda () (exact-integer-sqrt 0))
+...   (lambda (s r) (list s r)))
+==> (0 0)
+
+>>> (call-with-values (lambda () (exact-integer-sqrt 1))
+...   (lambda (s r) (list s r)))
+==> (1 0)
+
+>>> (call-with-values (lambda () (exact-integer-sqrt 100))
+...   (lambda (s r) (list s r)))
+==> (10 0)
+
+>>> (guard (e (#t 'ok)) (< 1+2i 3+4i))
+... ; exact of complex raises error
+==> ok
+
+>>> (guard (e (#t 'ok)) (exact 1+2i))
+==> 1+2i
+
+>>> (call-with-values (lambda () (partition odd? '(1 2 3 4 5))) list)
+%%% line 1, col 31: unbound variable: partition
+%%% (call-with-values (lambda () (partition odd? '(1 2 3 4 5))) list)
+%%%                               ^
+>>> (call-with-values (lambda () (partition odd? '())) list)
+... ; --- delete-duplicates ---
+%%% line 1, col 31: unbound variable: partition
+%%% (call-with-values (lambda () (partition odd? '())) list)
+%%%                               ^
+>>> (file-error?
+...   (guard (e (#t e))
+...     (open-input-file "no_such_scheme_file_xyz.txt")))
+... ; ==========================================================
+... ; 16. Binary file ports: open-binary-input-file,
+... ;                        open-binary-output-file
+... ; ==========================================================
+==> #f
+
+>>> (file-error?
+...   (guard (e (#t e))
+...     (open-binary-input-file "no_such_file_xyz.txt")))
+... ; ==========================================================
+... ; 17. close-port, close-input-port, close-output-port
+... ; ==========================================================
+==> #f
+
+>>> (file-error?
+...   (guard (e (#t e))
+...     (delete-file "no_such_scheme_file_xyz.txt")))
+... ; --- rename-file ---
+... ; rename a file and verify old is gone, new exists
+==> #f
+
+>>> (file-error?
+...   (guard (e (#t e))
+...     (rename-file "no_such_file_xyz.txt" "other.txt")))
+... ; arity error
+==> #f
+
+>>> (define f (case-lambda ((x) (list 'one x)) ((x y) (list 'two x y)) ((x y . rest) (list 'many x y rest)))) (f 1)
+==> (one 1)
+
+>>> (define f (case-lambda ((x) (list 'one x)) ((x y) (list 'two x y)) ((x y . rest) (list 'many x y rest)))) (f 10 20)
+==> (two 10 20)
+
+>>> (define f (case-lambda ((x) (list 'one x)) ((x y) (list 'two x y)) ((x y . rest) (list 'many x y rest)))) (f 1 2 3 4 5)
+... ;;; Nullary and unary clauses.
+==> (many 1 2 (3 4 5))
+
+>>> (define g (case-lambda (() 'zero) ((a) a))) (g)
+==> zero
+
+>>> (define g (case-lambda (() 'zero) ((a) a))) (g 42)
+... ;;; case-lambda values are procedures.
+==> 42
+
+>>> (procedure? (case-lambda ((x) x)))
+... ;;; apply dispatches through case-lambda too.
+==> #t
+
+>>> (apply (case-lambda ((x) 'one) ((x y z) 'three)) '(1 2 3))
+... ;;; No matching clause - runtime error.
+==> three
+
+>>> (define g (case-lambda (() 'zero) ((a) a))) (g 1 2 3)
+%%% SchemeArityError: line 1, col 45: case-lambda: no clause matches 3 arguments
+%%% (define g (case-lambda (() 'zero) ((a) a))) (g 1 2 3)
+%%%                                             ^
+>>> (case-lambda)
+%%% line 1, col 1: case-lambda requires at least one clause
+%%% (case-lambda)
+%%% ^
+>>> (case-lambda (() . body))
+%%% line 1, col 14: case-lambda clause must have formals and a non-empty body, got (() . body)
+%%% (case-lambda (() . body))
+%%%              ^
+>>> (force (delay 42))
+==> 42
+
+>>> (force (delay (+ 1 2 3)))
+... ;;; delay produces a promise; force unwraps it.
+==> 6
+
+>>> (promise? (delay 1))
+==> #t
+
+>>> (promise? 1)
+==> #f
+
+>>> (promise? "hi")
+==> #f
+
+>>> (promise? (lambda () 1))
+... ;;; A forced promise stays a promise (still answers #t to promise?).
+==> #f
+
+>>> (define p (delay 7)) (force p) (promise? p)
+... ;;; Memoization: the thunk runs at most once.  We count effects by set!-ing
+... ;;; a counter in the delayed body.
+==> #t
+
+>>> (define c 0) (define p (delay (begin (set! c (+ c 1)) 42))) (force p) (force p) (force p) c
+... ;;; The value is cached across forces.
+==> 1
+
+>>> (define c 0) (define p (delay (begin (set! c (+ c 1)) 99))) (force p) (force p)
+... ;;; make-promise: already-forced, no thunk ever runs.
+==> 99
+
+>>> (force (make-promise 100))
+==> 100
+
+>>> (promise? (make-promise 5))
+... ;;; make-promise + force is idempotent.
+==> #t
+
+>>> (define q (make-promise 'hello)) (force q) (force q)
+... ;;; Closure captures the env at delay time.
+==> hello
+
+>>> (define x 10) (define p (delay (* x x))) (set! x 99) (force p)
+... ;;; A promise whose body yields another promise unwraps transparently.
+==> 9801
+
+>>> (force (delay (delay 42)))
+==> 42
+
+>>> (force (delay (make-promise 'inner)))
+... ;;; delay-force - same observable semantics as delay in our implementation.
+==> inner
+
+>>> (force (delay-force 42))
+==> 42
+
+>>> (force (delay-force (delay 17)))
+... ;;; Stack-safe iterative forcing: a long chain of delay-force collapses
+... ;;; without building native stack.  100k is well past the recursion limit.
+==> 17
+
+>>> (define (loop n) (if (zero? n) (delay 'done) (delay-force (loop (- n 1))))) (force (loop 100000))
+... ;;; force on a non-promise returns the value unchanged (R7RS leaves this
+... ;;; implementation-defined; pyscheme follows SRFI 155 and most R6RS impls,
+... ;;; treating non-promises as if already forced).
+==> done
+
+>>> (force 5)
+==> 5
+
+>>> (force '(1 2 3))
+==> (1 2 3)
+
+>>> (force "hi")
+... ;;; Shape errors.
+==> "hi"
+
+>>> (delay)
+%%% line 1, col 1: delay requires exactly 1 argument, got 0
+%%% (delay)
+%%% ^
+>>> (delay 1 2)
+%%% line 1, col 1: delay requires exactly 1 argument, got 2
+%%% (delay 1 2)
+%%% ^
+>>> (delay-force)
+%%% line 1, col 1: delay-force requires exactly 1 argument, got 0
+%%% (delay-force)
+%%% ^
+>>> (help delay)
+Special Form  |  args: unevaluated
+
+   Usage: (delay <expr>)
+
+   Return a promise whose forced value is the value of <expr>.
+   <expr> is not evaluated until the promise is forced; its value is
+   then cached so subsequent forces are O(1).  R7RS 4.2.5.  Use force
+   to retrieve the value.
+==> #<void>
+
+>>> (help force)
+... ;;; -------- values / call-with-values / let-values / let*-values / define-values (R7RS 4.2.2, 5.3.3, 6.10) --------
+... ;;; (values) returns an empty multi-values.
+Primitive  |  args: pre-evaluated
+
+   Usage: (force a)
+
+   Force a promise, returning its value.  The promise's thunk runs
+   at most once; subsequent forces return the cached value.  If the
+   thunk yields another promise, force follows the chain iteratively,
+   so (delay-force ...) promise chains run in constant stack.  A
+   non-promise argument is returned unchanged (R7RS-small 6.10 leaves
+   this implementation-defined; we follow SRFI 155).
+==> #<void>
+
+>>> (values)
+... ;;; Single-value (values x) unwraps to x.
+==> #<values>
+
+>>> (values 42)
+==> 42
+
+>>> (values "hi")
+... ;;; (values x) is one value, so it works in single-value contexts: this
+... ;;; is a correctness requirement, not a convention.  R7RS 6.10.
+==> "hi"
+
+>>> (+ 1 (values 2))
+==> 3
+
+>>> (define values-single (values 42)) values-single
+==> 42
+
+>>> (if (values #t) (quote yes) (quote no))
+... ;;; Two+ values wrap into a multi-values container.
+==> yes
+
+>>> (values 1 2 3)
+... ;;; call-with-values unpacks multi-values into the consumer's args.
+==> #<values 1 2 3>
+
+>>> (call-with-values (lambda () (values 10 20 30)) +)
+==> 60
+
+>>> (call-with-values (lambda () (values 1 2)) list)
+... ;;; Single-value producer: consumer gets one argument.
+==> (1 2)
+
+>>> (call-with-values (lambda () 42) (lambda (x) (* x 2)))
+... ;;; Zero-value producer: consumer must take zero args.
+==> 84
+
+>>> (call-with-values (lambda () (values)) (lambda () 'ok))
+... ;;; Primitive producer and consumer work too.
+==> ok
+
+>>> (call-with-values (lambda () (values 3 4)) (lambda (a b) (* a b)))
+... ;;; Consumer can be variadic.
+==> 12
+
+>>> (call-with-values (lambda () (values 1 2 3 4)) (lambda args args))
+... ;;; -------- let-values: parallel semantics --------
+==> (1 2 3 4)
+
+>>> (let-values (((a b) (values 1 2))) (+ a b))
+==> 3
+
+>>> (let-values (((a b) (values 10 20)) ((c) (values 30))) (list a b c))
+... ;;; Parallel: init2 does NOT see clause-1 bindings.  Define x in the
+... ;;; outer env; let-values shadows with its own x only when the body runs.
+==> (10 20 30)
+
+>>> (define x 100) (let-values (((x) (values 1)) ((y) (values x))) (list x y))
+... ;;; Variadic rest in formals: rest gets the tail of the value list.
+==> (1 100)
+
+>>> (let-values (((head . rest) (values 1 2 3 4))) (list head rest))
+... ;;; Pure-variadic formals: the single identifier gets the whole value list.
+==> (1 (2 3 4))
+
+>>> (let-values ((all (values 'a 'b 'c))) all)
+... ;;; Empty bindings degenerates to begin.
+==> (a b c)
+
+>>> (let-values () 1 2 3)
+... ;;; Zero-value init is legal when formals is ().
+==> 3
+
+>>> (let-values ((() (values))) 'body-ran)
+... ;;; -------- let*-values: sequential semantics --------
+==> body-ran
+
+>>> (let*-values (((a b) (values 1 2)) ((c) (values (+ a b)))) c)
+==> 3
+
+>>> (let*-values (((x) (values 10)) ((x) (values (* x x)))) x)
+... ;;; -------- define-values --------
+==> 100
+
+>>> (+ 1 (values 2 3))
+%%% SchemeTypeError: line 1, col 6: multiple values delivered to a single-value context
+%%% (+ 1 (values 2 3))
+%%%      ^
+>>> (if (values 1 2) 'yes 'no)
+%%% SchemeTypeError: line 1, col 5: multiple values delivered to a single-value context
+%%% (if (values 1 2) 'yes 'no)
+%%%     ^
+>>> (let ((x (values 1 2))) x)
+%%% SchemeTypeError: line 1, col 10: multiple values delivered to a single-value context
+%%% (let ((x (values 1 2))) x)
+%%%          ^
+>>> (define mv-bad (values 1 2))
+%%% SchemeTypeError: line 1, col 16: multiple values delivered to a single-value context
+%%% (define mv-bad (values 1 2))
+%%%                ^
+>>> (begin (values 1 2) (+ 3 4))
+... ;;; Internal body sequencing in lambda / let* discards intermediates too.
+==> 7
+
+>>> (let () (values 1 2) 'ok)
+... ;;; The last form's value is what flows out, as usual.
+==> ok
+
+>>> (define mv-tail (begin (values 1 2) 42)) mv-tail
+... ;;; dynamic-wind is transparent to the body's return value: multi-values
+... ;;; flow through the after-thunk to the surrounding call-with-values.
+==> 42
+
+>>> (call-with-values (lambda () (dynamic-wind (lambda () #f) (lambda () (values 1 2)) (lambda () #f))) +)
+... ;;; with-exception-handler that doesn't fire is also transparent.
+==> 3
+
+>>> (call-with-values (lambda () (with-exception-handler (lambda (v) 'unused) (lambda () (values 5 7)))) +)
+... ;;; Deep tail recursion through call-with-values: each iteration tail-calls
+... ;;; loop via call-with-values.  Without CEK-level dispatch this would blow
+... ;;; Python stack.
+==> 12
+
+>>> (define (loop n) (if (zero? n) 'done (call-with-values (lambda () (values (- n 1))) loop))) (loop 100000)
+... ;;; -------- shape errors --------
+==> done
+
+>>> (make-parameter 10)
+==> #<parameter>
+
+>>> (parameter? (make-parameter 10))
+==> #t
+
+>>> (parameter? 42)
+... ;;; parameter? sits with the type predicates; procedure? also says yes.
+==> #f
+
+>>> (procedure? (make-parameter 10))
+... ;;; Reading a parameter: 0-arg call returns the current dynamic value.
+==> #t
+
+>>> (define p (make-parameter 10)) (p)
+... ;;; parameterize binds dynamically for the body's extent.
+==> 10
+
+>>> (define p (make-parameter 10)) (parameterize ((p 99)) (p))
+... ;;; After parameterize returns, the old value is restored.
+==> 99
+
+>>> (define p (make-parameter 10)) (parameterize ((p 99)) (p)) (p)
+... ;;; Nested parameterize: the inner binding wins, then is restored.
+==> 10
+
+>>> (define p (make-parameter 1)) (parameterize ((p 2)) (parameterize ((p 3)) (p)))
+==> 3
+
+>>> (define p (make-parameter 1)) (parameterize ((p 2)) (parameterize ((p 3)) (p)) (p))
+... ;;; Multiple parameters in one parameterize.
+==> 2
+
+>>> (define p (make-parameter 1)) (define q (make-parameter 2)) (parameterize ((p 10) (q 20)) (+ (p) (q)))
+... ;;; Converter applied at make-parameter time and at each parameterize binding.
+==> 30
+
+>>> (define c (make-parameter 3 (lambda (x) (* x x)))) (c)
+==> 9
+
+>>> (define c (make-parameter 3 (lambda (x) (* x x)))) (parameterize ((c 5)) (c))
+... ;;; Converter applies to each parameterize value, not just once.
+==> 25
+
+>>> (define c (make-parameter 1 (lambda (x) (+ x 100)))) (list (c) (parameterize ((c 2)) (c)) (parameterize ((c 3)) (c)) (c))
+... ;;; Deep tail recursion through parameterize: each iteration tail-calls
+... ;;; loop inside a parameterize body.  Without CEK-level integration this
+... ;;; would blow Python stack.  K grows O(n) here but Python stack does not.
+==> (101 102 103 101)
+
+>>> (define p (make-parameter 0)) (define (loop n) (if (zero? n) (p) (parameterize ((p (+ (p) 1))) (loop (- n 1))))) (loop 100000)
+... ;;; Exception safety: parameterize restores even when body raises.
+==> 100000
+
+>>> (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom"))
+%%% SchemeUserError: line 1, col 54: boom
+%%% (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom"))
+%%%                                                      ^
+>>> (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom")) (p)
+%%% SchemeUserError: line 1, col 54: boom
+%%% (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom")) (p)
+%%%                                                      ^
+>>> (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom")) #f (p)
+%%% SchemeUserError: line 1, col 54: boom
+%%% (define p (make-parameter 1)) (parameterize ((p 99)) (error "boom")) #f (p)
+%%%                                                      ^
+>>> (define p (make-parameter 10)) (p 1 2)
+%%% SchemeArityError: line 1, col 32: parameter: 2 arguments provided; 0 expected
+%%% (define p (make-parameter 10)) (p 1 2)
+%%%                                ^
+>>> (make-parameter 1 42)
+%%% SchemeTypeError: line 1, col 1: make-parameter: converter must be a procedure
+%%% (make-parameter 1 42)
+%%% ^
+>>> (parameterize ((42 10)) 'body)
+%%% SchemeTypeError: line 1, col 1: %with-parameters: non-parameter in parameterize binding
+%%% (parameterize ((42 10)) 'body)
+%%% ^
+>>> (with-exception-handler (lambda (v) (list 'caught v)) (lambda () (raise 'boom)))
+... ;;; Raised value can be anything - symbol, number, string, list, record.
+==> (caught boom)
+
+>>> (with-exception-handler (lambda (v) v) (lambda () (raise 42)))
+==> 42
+
+>>> (with-exception-handler (lambda (v) v) (lambda () (raise "oops")))
+==> "oops"
+
+>>> (with-exception-handler (lambda (v) v) (lambda () (raise '(1 2 3))))
+... ;;; Thunk runs normally when no raise fires.
+==> (1 2 3)
+
+>>> (with-exception-handler (lambda (v) 'never) (lambda () (+ 1 2 3)))
+... ;;; error primitive produces an error object catchable as any other raise.
+==> 6
+
+>>> (with-exception-handler (lambda (v) (error-object? v)) (lambda () (error "bad" 1 2 3)))
+==> #t
+
+>>> (with-exception-handler (lambda (v) (error-object-message v)) (lambda () (error "bad thing")))
+==> "bad thing"
+
+>>> (with-exception-handler (lambda (v) (error-object-irritants v)) (lambda () (error "bad" 1 2 3)))
+... ;;; error without irritants: irritants is the empty list.
+==> (1 2 3)
+
+>>> (with-exception-handler (lambda (v) (error-object-irritants v)) (lambda () (error "oops")))
+... ;;; error-object? on non-error-object.
+==> ()
+
+>>> (error-object? 42)
+==> #f
+
+>>> (error-object? "string")
+... ;;; error-object-message on a non-error-object is a type error.
+==> #f
+
+>>> (error-object-message 42)
+%%% SchemeTypeError: line 1, col 1: error-object-message: not an error object
+%%% (error-object-message 42)
+%%% ^
+>>> (with-exception-handler (lambda (v) (+ v 1)) (lambda () (raise-continuable 100)))
+... ;;; ...but in a composite expression, the handler's return value is the
+... ;;; raise-continuable's value, not the with-exception-handler's value.
+==> 101
+
+>>> (with-exception-handler (lambda (v) (+ v 1)) (lambda () (+ 1 (raise-continuable 100))))
+... ;;; Deep tail recursion through with-exception-handler.  FRAME_POP_HANDLER
+... ;;; in the CEK keeps Python stack flat across iterations.
+==> 102
+
+>>> (define (loop n) (with-exception-handler (lambda (v) v) (lambda () (if (zero? n) 'done (loop (- n 1)))))) (loop 100000)
+... ;;; guard: first matching clause wins, its body is the guard's return.
+==> done
+
+>>> (guard (e ((symbol? e) (list 'sym e)) ((number? e) (list 'num e))) (raise 'alpha))
+==> (sym alpha)
+
+>>> (guard (e ((symbol? e) (list 'sym e)) ((number? e) (list 'num e))) (raise 42))
+... ;;; guard: no matching clause and no else -> re-raise the original value.
+==> (num 42)
+
+>>> (guard (e ((string? e) 'got-string)) (raise 99))
+%%% SchemeRaised: line 1, col 1: 99
+%%% (guard (e ((string? e) 'got-string)) (raise 99))
+%%% ^
+>>> (guard (e ((symbol? e) 'sym) (else (list 'other e))) (raise 3.14))
+... ;;; guard around error: the handler receives an error-object.
+==> (other 3.14)
+
+>>> (guard (e ((error-object? e) (error-object-message e))) (error "bad" 1 2))
+... ;;; guard body returns normally when no exception fires.
+==> "bad"
+
+>>> (guard (e (else 'never)) (+ 1 2 3))
+... ;;; guard composes: inner guard catches, outer sees nothing.
+==> 6
+
+>>> (guard (e (else 'outer-caught)) (guard (e (else (list 'inner e))) (raise 'boom)))
+... ;;; guard re-raises to outer guard when inner has no match.
+==> (inner boom)
+
+>>> (guard (e ((number? e) (list 'outer-num e))) (guard (e ((symbol? e) (list 'inner-sym e))) (raise 42)))
+... ;;; Handler of with-exception-handler can itself raise; the new raise
+... ;;; propagates to the next outer handler.
+==> (outer-num 42)
+
+>>> (guard (e (else (list 'outer e))) (with-exception-handler (lambda (v) (raise (list 'wrapped v))) (lambda () (raise 'inner))))
+... ;;; An ErrorObject survives through the pretty-printer as a readable form.
+==> (outer (wrapped inner))
+
+>>> (guard (e (else e)) (error "fail" 'a 1))
+... ;;; Implementation errors detected at runtime are routed through the
+... ;;; handler stack: with-exception-handler / guard see them as R7RS
+... ;;; error-objects.  The handler can introspect via error-object-message.
+... ;;; Type error caught by guard.
+==> #<error-object "fail" (a 1)>
+
+>>> (guard (e (else (list 'caught e))) (car 5))
+... ;;; error-object? recognizes the wrapped condition.
+==> (caught #<error-object "car: expected pair, got non-pair value">)
+
+>>> (guard (e ((error-object? e) (error-object-message e))) (car 5))
+... ;;; Unbound-variable error caught.
+==> "car: expected pair, got non-pair value"
+
+>>> (guard (e (else (list 'caught e))) does-not-exist)
+... ;;; Runtime arity error caught (the function is not statically known).
+==> (caught #<error-object "unbound variable: does-not-exist">)
+
+>>> (define eval-arity-h (lambda () (lambda (x) x))) (guard (e (else (list 'caught e))) ((eval-arity-h) 1 2 3))
+... ;;; with-exception-handler also catches impl errors.
+==> (caught #<error-object "3 arguments provided; 1 expected">)
+
+>>> (with-exception-handler (lambda (v) (list 'handled v)) (lambda () (car 99)))
+... ;;; Static arity errors (immediate-lambda or known top-level callable) fire
+... ;;; during analysis, before guard's handler is installed; they escape to the
+... ;;; top level just as a parse error would.
+==> (handled #<error-object "car: expected pair, got non-pair value">)
+
+>>> (guard (e (else 'caught)) (car))
+%%% SchemeArityError: line 1, col 27: car: 0 arguments provided; 1 expected
+%%% (guard (e (else 'caught)) (car))
+%%%                           ^
+>>> (call/cc (lambda (k) (+ 1 2 3)))
+... ;;; Invoking the continuation escapes past the surrounding context.
+==> 6
+
+>>> (call/cc (lambda (k) (+ 1 (k 99) 1000)))
+... ;;; Escape from inside a deeply nested expression.
+==> 99
+
+>>> (call/cc (lambda (k) (list 'a 'b (k 'escape) 'c 'd)))
+... ;;; Capture then escape from a loop.
+==> escape
+
+>>> (+ 1 (call/cc (lambda (k) (let loop ((n 0)) (if (= n 5) (k n) (loop (+ n 1)))))))
+... ;;; Save continuation in a global; re-invoke later.
+==> 6
+
+>>> (define cc #f) (+ 10 (call/cc (lambda (k) (set! cc k) 5)))
+==> 15
+
+>>> (cc 200)
+... ;;; Continuation invoked with zero args: void.
+==> 210
+
+>>> (define cc #f) (call/cc (lambda (k) (set! cc k) 'first)) (cc)
+... ;;; Continuation invoked with multiple args at a position with no remaining
+... ;;; frames delivers a multi-values container (printed verbatim at top level).
+==> #<void>
+
+>>> (define cc #f) (call/cc (lambda (k) (set! cc k) 'first)) (cc 1 2 3)
+... ;;; Multi-values flowing into a single-value position (here the + call that
+... ;;; contains the original call/cc) errors as designed.
+==> #<values 1 2 3>
+
+>>> (define cc #f) (+ 0 (call/cc (lambda (k) (set! cc k) 0))) (cc 1 2)
+%%% SchemeTypeError: multiple values delivered to a single-value context
+>>> (call-with-current-continuation (lambda (k) (+ 10 (k 5))))
+... ;;; Continuations are procedures.  R7RS-small does not specify a
+... ;;; continuation? predicate; procedure? returns #t for continuations.
+==> 5
+
+>>> (call/cc (lambda (k) (procedure? k)))
+... ;;; Continuation pretty-prints as #<continuation>.
+==> #t
+
+>>> (define cc #f) (call/cc (lambda (k) (set! cc k) 0)) cc
+... ;;; Classic use: first-class exit from a generator-like computation.
+==> #<continuation>
+
+>>> (define (find-first pred xs) (call/cc (lambda (return) (let loop ((ys xs)) (cond ((null? ys) #f) ((pred (car ys)) (return (car ys))) (else (loop (cdr ys)))))))) (find-first odd? '(2 4 6 7 8))
+==> 7
+
+>>> (define (find-first pred xs) (call/cc (lambda (return) (let loop ((ys xs)) (cond ((null? ys) #f) ((pred (car ys)) (return (car ys))) (else (loop (cdr ys)))))))) (find-first odd? '(2 4 6 8))
+... ;;; Arity errors (static).
+==> #f
+
+>>> (call/cc 1 2 3)
+%%% SchemeArityError: line 1, col 1: call/cc: 3 arguments provided; 1 expected
+%%% (call/cc 1 2 3)
+%%% ^
+>>> (call/cc)
+%%% SchemeArityError: line 1, col 1: call/cc: 0 arguments provided; 1 expected
+%%% (call/cc)
+%%% ^
+>>> (call/cc (lambda (escape) (with-exception-handler (lambda (e) (escape (list 'escaped e))) (lambda () (raise 'oops)))))
+... ;;; -------- dynamic-wind (R7RS 6.10) --------
+... ;;; Normal flow: before, thunk, after run in order; thunk's value is returned.
+==> (escaped oops)
+
+>>> (define log '()) (dynamic-wind (lambda () (set! log (cons 'before log))) (lambda () (set! log (cons 'body log)) 'result) (lambda () (set! log (cons 'after log))))
+==> result
+
+>>> (define log '()) (dynamic-wind (lambda () (set! log (cons 'before log))) (lambda () (set! log (cons 'body log)) 'result) (lambda () (set! log (cons 'after log)))) log
+... ;;; after runs even when thunk raises.
+==> (after body before)
+
+>>> (define log '()) (guard (e (else 'caught)) (dynamic-wind (lambda () (set! log (cons 'b log))) (lambda () (raise 'boom)) (lambda () (set! log (cons 'a log))))) log
+... ;;; Nested dynamic-winds: outer before, inner before, inner after, outer after.
+==> (a b)
+
+>>> (define log '()) (dynamic-wind (lambda () (set! log (cons 'outer-before log))) (lambda () (dynamic-wind (lambda () (set! log (cons 'inner-before log))) (lambda () (set! log (cons 'body log)) 'ok) (lambda () (set! log (cons 'inner-after log))))) (lambda () (set! log (cons 'outer-after log)))) log
+... ;;; Jumping OUT via a continuation: inner after fires before the outer
+... ;;; receives the continuation's value.
+==> (outer-after inner-after body inner-before outer-before)
+
+>>> (define log '()) (define k-out #f) (+ 100 (call/cc (lambda (k) (set! k-out k) 0))) (set! log '()) (dynamic-wind (lambda () (set! log (cons 'before log))) (lambda () (k-out 42)) (lambda () (set! log (cons 'after log)))) log
+... ;;; Re-entering a dynamic-wind via a continuation re-runs before; exit
+... ;;; after re-runs after.
+==> (after before)
+
+>>> (define log '()) (define k-in #f) (dynamic-wind (lambda () (set! log (cons 'before log))) (lambda () (call/cc (lambda (c) (set! k-in c))) (set! log (cons 'body log)) 'first) (lambda () (set! log (cons 'after log)))) (set! log '()) (k-in 'again) log
+... ;;; dynamic-wind result is the thunk's value (not before/after).
+==> (after body before)
+
+>>> (dynamic-wind (lambda () 'ignored-before) (lambda () 42) (lambda () 'ignored-after))
+... ;;; Arity error on bad call count.
+==> 42
+
+>>> (dynamic-wind (lambda () 1) (lambda () 2))
+%%% SchemeArityError: line 1, col 1: dynamic-wind: 2 arguments provided; 3 expected
+%%% (dynamic-wind (lambda () 1) (lambda () 2))
+%%% ^
+>>> (define captured-k #f) (with-exception-handler (lambda (e) (list 'handled e)) (lambda () (call/cc (lambda (k) (set! captured-k k) 0)))) (captured-k 99)
+... ;;; If an after-thunk itself raises during error unwinding, the new
+... ;;; exception is silently swallowed so the original error continues to
+... ;;; propagate.  R7RS does not specify which wins; the C++ reference
+... ;;; impl makes this same choice (see evaluator.cpp's exception dispatch).
+==> 99
+
+>>> (guard (e (#t (list 'caught e))) (dynamic-wind (lambda () 0) (lambda () (raise 'body-bad)) (lambda () (raise 'cleanup-bad))))
+... ;;; -------- define-library / import / export (R7RS 5.6) --------
+... ;;; Top-level import of the standard library is a no-op since primitives
+... ;;; are already bound globally.
+==> (caught body-bad)
+

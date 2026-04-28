@@ -1,8 +1,133 @@
 ;;; ============================================================
-;;; test28-pairs-lists2.log
-;;; Gap tests derived from cppScheme test05-pairs-lists.log
+;;; test28-lists
+;;; lists.py: all list primitives, cxr, assoc/member, list-set!, list-copy
 ;;; ============================================================
 
+>>> (cons 1 2)
+==> (1 . 2)
+
+>>> (cons 1 '())
+==> (1)
+
+>>> (cons 1 (cons 2 (cons 3 '())))
+==> (1 2 3)
+
+>>> (car '(1 2 3))
+==> 1
+
+>>> (cdr '(1 2 3))
+==> (2 3)
+
+>>> (car (cons 'a 'b))
+==> a
+
+>>> (cdr (cons 'a 'b))
+==> b
+
+>>> (list)
+==> ()
+
+>>> (list 1 2 3)
+==> (1 2 3)
+
+>>> (list 'a 'b 'c)
+==> (a b c)
+
+>>> (pair? '(1))
+==> #t
+
+>>> (pair? '())
+==> #f
+
+>>> (pair? 1)
+==> #f
+
+>>> (null? '())
+==> #t
+
+>>> (null? '(1))
+==> #f
+
+>>> (null? 1)
+... ;;; -------- primitive is callable; appears as a value --------
+==> #f
+
+>>> (car '())
+%%% SchemeTypeError: line 1, col 1: car: expected pair, got non-pair value
+%%% (car '())
+%%% ^
+>>> (car 1)
+%%% SchemeTypeError: line 1, col 1: car: expected pair, got non-pair value
+%%% (car 1)
+%%% ^
+>>> (cdr '())
+%%% SchemeTypeError: line 1, col 1: cdr: expected pair, got non-pair value
+%%% (cdr '())
+%%% ^
+>>> (cons 1)
+%%% SchemeArityError: line 1, col 1: cons: 1 argument provided; 2 expected
+%%% (cons 1)
+%%% ^
+>>> (car 1 2)
+%%% SchemeArityError: line 1, col 1: car: 2 arguments provided; 1 expected
+%%% (car 1 2)
+%%% ^
+>>> (list 1 #;2 3)
+==> (1 3)
+
+>>> (list? '())
+==> #t
+
+>>> (list? (list 1 2 3))
+==> #t
+
+>>> (list? (cons 1 2))
+==> #f
+
+>>> (list? (let ((x (list 1 2 3))) (set-cdr! (cddr x) x) x))
+... ;;; -------- write-shared datum labels --------
+==> #f
+
+>>> (null? '(1 2))
+==> #f
+
+>>> (null? #f)
+==> #f
+
+>>> (null? 0)
+==> #f
+
+>>> (null?)
+%%% SchemeArityError: line 1, col 1: null?: 0 arguments provided; 1 expected
+%%% (null?)
+%%% ^
+>>> (pair? (cons 1 2))
+==> #t
+
+>>> (pair? '(1 2 3))
+==> #t
+
+>>> (pair? "hello")
+==> #f
+
+>>> (pair?)
+%%% SchemeArityError: line 1, col 1: pair?: 0 arguments provided; 1 expected
+%%% (pair?)
+%%% ^
+>>> (list? '(1 2 3))
+==> #t
+
+>>> (list? 42)
+==> #f
+
+>>> (list? '#(1 2))
+... ; circular list detection
+==> #f
+
+>>> (list?)
+%%% SchemeArityError: line 1, col 1: list?: 0 arguments provided; 1 expected
+%%% (list?)
+%%% ^
 >>> (cons 1 '(2 3))
 ==> (1 2 3)
 
@@ -26,32 +151,26 @@
 %%% SchemeTypeError: line 1, col 1: car: expected pair, got non-pair value
 %%% (car 5)
 %%% ^
-
 >>> (cdr "hello")
 %%% SchemeTypeError: line 1, col 1: cdr: expected pair, got non-pair value
 %%% (cdr "hello")
 %%% ^
-
 >>> (car)
 %%% SchemeArityError: line 1, col 1: car: 0 arguments provided; 1 expected
 %%% (car)
 %%% ^
-
 >>> (cdr)
 %%% SchemeArityError: line 1, col 1: cdr: 0 arguments provided; 1 expected
 %%% (cdr)
 %%% ^
-
 >>> (cons)
 %%% SchemeArityError: line 1, col 1: cons: 0 arguments provided; 2 expected
 %%% (cons)
 %%% ^
-
 >>> (cons 1 2 3)
 %%% SchemeArityError: line 1, col 1: cons: 3 arguments provided; 2 expected
 %%% (cons 1 2 3)
 %%% ^
-
 >>> (let ((p (cons 1 2))) (set-car! p 99) p)
 ==> (99 . 2)
 
@@ -183,7 +302,6 @@
 %%% SchemeArityError: line 1, col 1: make-list: 0 arguments provided; 1 or 2 expected
 %%% (make-list)
 %%% ^
-
 >>> (length '())
 ==> 0
 
@@ -201,12 +319,10 @@
 %%% SchemeTypeError: line 1, col 1: length: argument must be a proper list
 %%% (length (cons 1 2))
 %%% ^
-
 >>> (length)
 %%% SchemeArityError: line 1, col 1: length: 0 arguments provided; 1 expected
 %%% (length)
 %%% ^
-
 >>> (append)
 ==> ()
 
@@ -246,7 +362,6 @@
 %%% SchemeArityError: line 1, col 1: reverse: 0 arguments provided; 1 expected
 %%% (reverse)
 %%% ^
-
 >>> (list-tail '(a b c d) 0)
 ==> (a b c d)
 
@@ -260,12 +375,10 @@
 %%% SchemeTypeError: line 1, col 1: list-tail: index out of range
 %%% (list-tail '(a b c) 5)
 %%% ^
-
 >>> (list-tail)
 %%% SchemeArityError: line 1, col 1: list-tail: 0 arguments provided; 2 expected
 %%% (list-tail)
 %%% ^
-
 >>> (list-ref '(a b c d) 0)
 ==> a
 
@@ -279,12 +392,10 @@
 %%% SchemeTypeError: line 1, col 1: list-ref: index out of range
 %%% (list-ref '(a b c) 5)
 %%% ^
-
 >>> (list-ref)
 %%% SchemeArityError: line 1, col 1: list-ref: 0 arguments provided; 2 expected
 %%% (list-ref)
 %%% ^
-
 >>> (let ((lst (list 10 20 30)))
 ...   (list-set! lst 0 99)
 ...   lst)
@@ -308,7 +419,6 @@
 %%% SchemeArityError: line 1, col 1: list-set!: 0 arguments provided; 3 expected
 %%% (list-set!)
 %%% ^
-
 >>> (list-copy '())
 ==> ()
 
@@ -325,7 +435,6 @@
 %%% SchemeArityError: line 1, col 1: list-copy: 0 arguments provided; 1 expected
 %%% (list-copy)
 %%% ^
-
 >>> (assoc 2 '((1 a) (2 b) (3 c)))
 ==> (2 b)
 
@@ -409,113 +518,20 @@
 ... ; ==========================================================
 ==> ("Hello" "World")
 
->>> (apply * '(2 3 4))
-==> 24
-
->>> (apply cons '(1 2))
-==> (1 . 2)
-
->>> (apply list '(1 2 3))
-... ; apply with leading args
-==> (1 2 3)
-
->>> (apply + 1 2 '(3 4))
-==> 10
-
->>> (apply list 'a 'b '(c d))
-==> (a b c d)
-
->>> (apply max 1 '(2 3))
-... ; apply with a closure
-==> 3
-
->>> (apply (lambda (x y) (* x y)) '(6 7))
-==> 42
-
->>> (apply)
-%%% SchemeArityError: line 1, col 1: apply: 0 arguments provided; at least 2 expected
-%%% (apply)
-%%% ^
-
->>> (map (lambda (x) (* x x)) '(1 2 3 4 5))
-==> (1 4 9 16 25)
-
->>> (map car '((1 2) (3 4) (5 6)))
-==> (1 3 5)
-
->>> (map (lambda (x) (+ x 1)) '(0 1 2))
-==> (1 2 3)
-
->>> (map not '(#t #f #t))
-... ; map over empty list
-==> (#f #t #f)
-
->>> (map (lambda (x) x) '())
-... ; map with multiple lists
-==> ()
-
->>> (map + '(1 2 3) '(4 5 6))
-==> (5 7 9)
-
->>> (map * '(1 2 3) '(10 10 10))
-==> (10 20 30)
-
->>> (map list '(a b c) '(1 2 3))
-==> ((a 1) (b 2) (c 3))
-
->>> (map)
-%%% SchemeArityError: line 1, col 1: map: 0 arguments provided; at least 2 expected
-%%% (map)
-%%% ^
-
->>> (for-each display '(1 2 3))
-123
-==> #<void>
-
->>> (for-each (lambda (x) (display (* x x))) '(1 2 3))
-... ; for-each over empty list
-149
-==> #<void>
-
->>> (for-each display '())
-... ; for-each with multiple lists
-==> #<void>
-
 >>> (let ((result '())) (for-each (lambda (x y) (set! result (cons (+ x y) result))) '(1 2 3) '(4 5 6)) result)
 ==> (9 7 5)
-
->>> (for-each)
-%%% SchemeArityError: line 1, col 1: for-each: 0 arguments provided; at least 2 expected
-%%% (for-each)
-%%% ^
 
 >>> (length (iota 10))
 ... ; arity errors
 %%% line 1, col 10: unbound variable: iota
 %%% (length (iota 10))
 %%%          ^
-
->>> (call-with-values (lambda () (partition odd? '(1 2 3 4 5))) list)
-%%% line 1, col 31: unbound variable: partition
-%%% (call-with-values (lambda () (partition odd? '(1 2 3 4 5))) list)
-%%%                               ^
-
->>> (call-with-values (lambda () (partition odd? '())) list)
-... ; --- delete-duplicates ---
-%%% line 1, col 31: unbound variable: partition
-%%% (call-with-values (lambda () (partition odd? '())) list)
-%%%                               ^
-
 >>> (receive (a . rest) (values 1 2 3) (cons a rest))
 %%% line 1, col 10: application must be a proper list
 %%% (receive (a . rest) (values 1 2 3) (cons a rest))
 %%%          ^
-
 >>> (length (filter even? '(1 2 3 4 5 6 7 8)))
 ... ; sum of squares
 %%% line 1, col 10: unbound variable: filter
 %%% (length (filter even? '(1 2 3 4 5 6 7 8)))
 %%%          ^
-
->>> (apply append '((1 2) (3 4) (5 6)))
-==> (1 2 3 4 5 6)

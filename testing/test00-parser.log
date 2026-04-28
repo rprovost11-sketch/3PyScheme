@@ -1,39 +1,419 @@
 ;;; ============================================================
-;;; test00-parser.log
-;;; Parser subsystem: lexical errors and malformed dotted syntax.
-;;; These tests exercise the reader before any evaluation happens.
+;;; test00-parser
+;;; Lexer/parser: special syntax, comments, datum labels, character/string/symbol escapes
 ;;; ============================================================
-
-;;; -------- Parser rejects (lexical / syntactic errors) --------
 
 >>> 1abc
 %%% line 1, col 1: malformed number or identifier: '1abc'
 %%% 1abc
 %%% ^
-
 >>> #z
 %%% line 1, col 1: unknown #-syntax: '#z'
 %%% #z
 %%% ^
-
 >>> #\unknown
 %%% line 1, col 1: unknown character name: #\unknown
 %%% #\unknown
 %%% ^
-
-;;; -------- Parser rejects malformed dotted --------
-
 >>> (.)
 %%% line 1, col 2: dot must be preceded by at least one element
 %%% (.)
 %%%  ^
-
 >>> (a .)
 %%% line 1, col 5: dot must be followed by an expression
 %%% (a .)
 %%%     ^
-
 >>> (a . b c)
 %%% line 1, col 8: expected ')' after dotted tail
 %%% (a . b c)
 %%%        ^
+>>> 0
+==> 0
+
+>>> 1
+==> 1
+
+>>> -1
+==> -1
+
+>>> -99
+==> -99
+
+>>> 1000000
+... ; --- Flonum literals ---
+==> 1000000
+
+>>> -2.5
+==> -2.5
+
+>>> 0.0
+==> 0.0
+
+>>> 1.5
+==> 1.5
+
+>>> 1e10
+... ; special flonums
+==> 10000000000.0
+
+>>> +nan.0
+... ; --- Boolean literals ---
+==> +nan.0
+
+>>> #f
+... ; --- Character literals ---
+==> #f
+
+>>> #\A
+==> #\A
+
+>>> #\0
+... ; named characters
+==> #\0
+
+>>> #\newline
+==> #\newline
+
+>>> #\tab
+==> #\tab
+
+>>> #\nul
+... ; hex character literals #\xNN
+==> #\null
+
+>>> #\x41
+==> #\A
+
+>>> #\x61
+==> #\a
+
+>>> #\x0a
+==> #\newline
+
+>>> #\x20
+... ; hex char equivalence
+==> #\space
+
+>>> ""
+==> ""
+
+>>> "hello world"
+... ; escape sequences in strings
+==> "hello world"
+
+>>> "with \"quotes\""
+==> "with \"quotes\""
+
+>>> "line\nnewline"
+... ; \xNN; hex escapes in strings (R7RS: terminated by semicolon)
+==> "line\nnewline"
+
+>>> 'hello-world
+==> hello-world
+
+>>> 'x
+==> x
+
+>>> '+
+... ; escaped symbols with vertical bars
+==> +
+
+>>> '()
+... ; --- List literals (including dotted pairs) ---
+==> ()
+
+>>> '(a b c)
+==> (a b c)
+
+>>> '((1 2) (3 4))
+... ; dotted pairs
+==> ((1 2) (3 4))
+
+>>> '(1 . 2)
+==> (1 . 2)
+
+>>> '(1 2 . 3)
+... ; --- Vector literals ---
+==> (1 2 . 3)
+
+>>> '#(1 2 3)
+==> #(1 2 3)
+
+>>> '#()
+... ; --- Bytevector literals ---
+==> #()
+
+>>> #x0
+==> 0
+
+>>> #xFF
+==> 255
+
+>>> #x1234
+==> 4660
+
+>>> #xDEAD
+==> 57005
+
+>>> #x-10
+... ; uppercase #X
+==> -16
+
+>>> #X1A
+... ; hex in expression
+==> 26
+
+>>> #b0
+==> 0
+
+>>> #b1
+==> 1
+
+>>> #b1111
+==> 15
+
+>>> #b-101
+==> -5
+
+>>> #b11111111
+... ; #o octal
+==> 255
+
+>>> #o0
+==> 0
+
+>>> #o7
+==> 7
+
+>>> #o777
+==> 511
+
+>>> #o-10
+... ; #d decimal (explicit)
+==> -8
+
+>>> #d0
+==> 0
+
+>>> #d-99
+... ; --- Exactness prefixes ---
+... ; #e exact (convert to integer)
+==> -99
+
+>>> #e1.0
+==> 1
+
+>>> #e3.7
+==> 4165829655317709/1125899906842624
+
+>>> #e-2.9
+==> -6530219459687219/2251799813685248
+
+>>> #i0
+==> 0.0
+
+>>> #i5
+==> 5.0
+
+>>> #i-3
+==> -3.0
+
+>>> #i1.5
+... ; --- Cross-radix equality ---
+==> 1.5
+
+>>> '(1 2 3)
+... ; quasiquote (`) — basic form without computed unquoting
+==> (1 2 3)
+
+>>> `(a b c)
+... ; unquote (,) — basic form
+==> (a b c)
+
+>>> (char=? #\x61 #\a)
+==> #t
+
+>>> (char=? #\x0a #\newline)
+==> #t
+
+>>> (char=? #\x20 #\space)
+==> #t
+
+>>> (char->integer #\x7f)
+... ; --- String literals ---
+==> 127
+
+>>> (string-ref "\x61;" 0)
+==> #\a
+
+>>> (string-ref "\x0a;" 0)
+==> #\newline
+
+>>> (string-length "\x41;\x42;\x43;")
+==> 3
+
+>>> (string=? "\x41;" "A")
+==> #t
+
+>>> (string=? "\x61;\x62;\x63;" "abc")
+... ; \| escape in strings
+==> #t
+
+>>> (string-ref "\|" 0)
+... ; --- Symbol literals ---
+==> #\|
+
+>>> (symbol? '|has (parens)|)
+==> #t
+
+>>> (symbol->string '|hello world|)
+... ; empty symbol
+==> "hello world"
+
+>>> (symbol->string '||)
+... ; digits that would otherwise parse as a number
+==> ""
+
+>>> (symbol? '|123|)
+... ; interning of escaped symbols
+==> #t
+
+>>> (eq? '|foo| '|foo|)
+... ; |foo| and foo are the same symbol
+==> #t
+
+>>> (eq? '|foo| 'foo)
+... ; escaped bar inside escaped symbol
+==> #t
+
+>>> (symbol? '|has \| bar|)
+... ; quotes inside escaped symbol
+==> #t
+
+>>> (symbol? '|has "quotes"|)
+... ; --- Empty list ---
+==> #t
+
+>>> (read (open-input-string "#u8(1 2 3)"))
+%%% "<input-string>" line 1, col 1: unknown #-syntax: '#u8'
+%%% #u8(1 2 3)
+%%% ^
+>>> (read (open-input-string "#u8()"))
+%%% "<input-string>" line 1, col 1: unknown #-syntax: '#u8'
+%%% #u8()
+%%% ^
+>>> (bytevector? (read (open-input-string "#u8(10 20 30)")))
+%%% "<input-string>" line 1, col 1: unknown #-syntax: '#u8'
+%%% #u8(10 20 30)
+%%% ^
+>>> (bytevector-u8-ref (read (open-input-string "#u8(5 10 15)")) 1)
+... ; --- Radix prefixes ---
+... ; #x hexadecimal
+%%% "<input-string>" line 1, col 1: unknown #-syntax: '#u8'
+%%% #u8(5 10 15)
+%%% ^
+>>> (+ #xFF 1)
+==> 256
+
+>>> (* #x10 #x10)
+... ; #b binary
+==> 256
+
+>>> (exact? #e3.7)
+==> #t
+
+>>> (exact? #e0.0)
+... ; #i inexact (convert to flonum)
+==> #t
+
+>>> (inexact? #i42)
+==> #t
+
+>>> (inexact? #i0)
+... ; #i on already-inexact value
+==> #t
+
+>>> (= #b1111 #o17 #d15 #xF)
+==> #t
+
+>>> (= #b11111111 #o377 #d255 #xFF)
+... ; radix literals in list context
+==> #t
+
+>>> (list #xFF #b1010 #o17)
+... ; --- Quote / quasiquote reader syntax ---
+... ; quote (')
+==> (255 10 15)
+
+>>> (let ((x 5)) `(a ,x c))
+... ; unquote-splicing (,@) — basic form
+==> (a 5 c)
+
+>>> (let ((xs '(1 2 3))) `(a ,@xs b))
+... ; --- Datum labels (#N= / #N#) ---
+... ; shared atoms
+==> (a 1 2 3 b)
+
+>>> (read (open-input-string "#0=hello"))
+==> hello
+
+>>> (read (open-input-string "(#0=hello #0#)"))
+... ; shared cons cells (non-cyclic)
+==> (hello hello)
+
+>>> (let* ((x (read (open-input-string "(#0=(a b) #0#)"))))
+...   (eq? (car x) (cadr x)))
+... ; cyclic list #0=(1 2 . #0#)
+==> #t
+
+>>> (let ((x (read (open-input-string "#0=(1 2 . #0#)"))))
+...   (list (car x) (cadr x) (eq? x (cddr x))))
+... ; cyclic list with single element
+==> (1 2 #t)
+
+>>> (let ((x (read (open-input-string "#0=(1 . #0#)"))))
+...   (list (car x) (eq? x (cdr x))))
+... ; multi-digit label
+==> (1 #t)
+
+>>> (read (open-input-string "(#10=foo #10#)"))
+... ; write-shared for shared structure (non-cyclic)
+==> (foo foo)
+
+>>> (let* ((p (cons 1 2))
+...        (q (list p p)))
+...   (with-output-to-string (lambda () (write-shared q))))
+... ; write-shared for cyclic list round-trip
+%%% line 3, col 4: unbound variable: with-output-to-string
+%%%   (with-output-to-string (lambda () (write-shared q))))
+%%%    ^
+>>> (let* ((x (list 1 2 3))
+...        (_ (set-cdr! (cddr x) x))
+...        (s (with-output-to-string (lambda () (write-shared x))))
+...        (y (read (open-input-string s))))
+...   (list (car y) (cadr y) (caddr y) (eq? y (cdddr y))))
+... ; write-shared produces datum labels for shared cons
+%%% line 3, col 12: unbound variable: with-output-to-string
+%%%        (s (with-output-to-string (lambda () (write-shared x))))
+%%%            ^
+>>> (let* ((p (cons 'a 'b))
+...        (q (cons p p))
+...        (s (with-output-to-string (lambda () (write-shared q)))))
+...   (string=? s "(#0=(a . b) . #0#)"))
+... ; round-trip of shared dotted pair
+%%% line 3, col 12: unbound variable: with-output-to-string
+%%%        (s (with-output-to-string (lambda () (write-shared q)))))
+%%%            ^
+>>> (let* ((s "(#0=(a . b) . #0#)")
+...        (x (read (open-input-string s))))
+...   (list (caar x) (cdar x) (eq? (car x) (cdr x))))
+... ; write (not write-shared) also handles cycles
+==> (a b #t)
+
+>>> (let* ((x (list 1 2))
+...        (_ (set-cdr! (cdr x) x)))
+...   (with-output-to-string (lambda () (write x))))
+... ; --- Unbound variable error ---
+%%% line 3, col 4: unbound variable: with-output-to-string
+%%%   (with-output-to-string (lambda () (write x))))
+%%%    ^

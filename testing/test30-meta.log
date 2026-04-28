@@ -1,12 +1,8 @@
 ;;; ============================================================
-;;; test11-meta.log
-;;; Meta-operations: error, apply, eval.
-;;; R7RS 6.10 (apply), 6.11 (error), 6.12 (eval).
+;;; test30-meta
+;;; meta.py: eval, environments, error objects, process context, time
 ;;; ============================================================
 
-;;; -------- apply (R7RS 6.10) --------
-
-;;; Basic: apply a primitive to a list of args.
 >>> (apply + '(1 2 3))
 ==> 6
 
@@ -14,20 +10,20 @@
 ==> 0
 
 >>> (apply * '(2 3 4))
+... ;;; Leading args are prepended to the list contents.
 ==> 24
 
-;;; Leading args are prepended to the list contents.
 >>> (apply + 10 20 '(3 4))
 ==> 37
 
 >>> (apply + 1 2 3 '(4 5 6))
+... ;;; Single-arg list.
 ==> 21
 
-;;; Single-arg list.
 >>> (apply - '(100))
+... ;;; Apply a user-defined procedure.
 ==> -100
 
-;;; Apply a user-defined procedure.
 >>> (apply (lambda (x y) (+ x y)) '(100 200))
 ==> 300
 
@@ -35,49 +31,42 @@
 ==> (1 2 3 4 5)
 
 >>> (apply (lambda (x . rest) (cons x rest)) '(head a b c))
+... ;;; Apply to an empty list with a nullary closure.
 ==> (head a b c)
 
-;;; Apply to an empty list with a nullary closure.
 >>> (apply (lambda () 42) '())
+... ;;; car applied to a quoted pair.
 ==> 42
 
-;;; car applied to a quoted pair.
 >>> (apply car '((1 2)))
+... ;;; Result is a pair.
 ==> 1
 
-;;; Result is a pair.
 >>> (apply cons '(1 2))
+... ;;; Nested apply.
 ==> (1 . 2)
 
-;;; Nested apply.
 >>> (apply apply (list + (list 1 2 3)))
+... ;;; Deep tail recursion through apply: each iteration tail-calls loop via
+... ;;; apply.  Without CEK-level apply dispatch this would blow Python stack.
 ==> 6
 
-;;; Deep tail recursion through apply: each iteration tail-calls loop via
-;;; apply.  Without CEK-level apply dispatch this would blow Python stack.
 >>> (define (loop n acc) (if (zero? n) acc (apply loop (list (- n 1) (+ acc 1))))) (loop 100000 0)
+... ;;; Type errors.
 ==> 100000
 
-;;; Type errors.
 >>> (apply + 'not-a-list)
 %%% SchemeTypeError: line 1, col 1: apply: last argument must be a proper list
 %%% (apply + 'not-a-list)
 %%% ^
-
 >>> (apply 1 '(2 3))
 %%% SchemeTypeError: line 1, col 1: apply: first argument must be a procedure
 %%% (apply 1 '(2 3))
 %%% ^
-
-;;; Arity propagates from the underlying procedure.
 >>> (apply (lambda (x y) (+ x y)) '(1))
 %%% SchemeArityError: line 1, col 1: 1 argument provided; 2 expected
 %%% (apply (lambda (x y) (+ x y)) '(1))
 %%% ^
-
-;;; -------- eval (R7RS 6.12) --------
-
-;;; Self-evaluating values.
 >>> (eval 42)
 ==> 42
 
@@ -85,9 +74,9 @@
 ==> "hello"
 
 >>> (eval #t)
+... ;;; Basic expressions.
 ==> #t
 
-;;; Basic expressions.
 >>> (eval '(+ 1 2))
 ==> 3
 
@@ -95,123 +84,103 @@
 ==> 12
 
 >>> (eval '(if #t 'yes 'no))
+... ;;; Let bindings inside eval.
 ==> yes
 
-;;; Let bindings inside eval.
 >>> (eval '(let ((x 5)) (* x x)))
+... ;;; Definitions persist into the global environment.
 ==> 25
 
-;;; Definitions persist into the global environment.
 >>> (eval '(define xx 99)) xx
+... ;;; Calling a previously defined procedure.
 ==> 99
 
-;;; Calling a previously defined procedure.
 >>> (define (double x) (* x 2)) (eval '(double 21))
+... ;;; Nested eval.
 ==> 42
 
-;;; Nested eval.
 >>> (eval '(eval '(+ 100 1)))
+... ;;; Deep tail recursion through eval: each iteration tail-calls loop via
+... ;;; eval.  Without CEK-level eval dispatch this would blow Python stack.
 ==> 101
 
-;;; Deep tail recursion through eval: each iteration tail-calls loop via
-;;; eval.  Without CEK-level eval dispatch this would blow Python stack.
 >>> (define (loop n) (if (zero? n) 'done (eval (list 'loop (- n 1))))) (loop 100000)
+... ;;; Shape errors inside the evaluated datum surface normally.  The
+... ;;; position points at the source location of the offending datum
+... ;;; inside the quote, since positioned NIL carries the opening '('.
 ==> done
 
-;;; Shape errors inside the evaluated datum surface normally.  The
-;;; position points at the source location of the offending datum
-;;; inside the quote, since positioned NIL carries the opening '('.
 >>> (eval '())
 %%% line 1, col 8: empty list () is not a valid expression; use (quote ()) for the empty list
 %%% (eval '())
 %%%        ^
-
-;;; -------- environment specifiers (R7RS 6.12) --------
-
-;;; (interaction-environment) returns the mutable global env.
 >>> (interaction-environment)
 ==> #<environment>
 
 >>> (eval '(+ 1 2) (interaction-environment))
+... ;;; eval against the interaction-environment sees globals.
 ==> 3
 
-;;; eval against the interaction-environment sees globals.
 >>> (define eval-test-x 11) (eval 'eval-test-x (interaction-environment))
+... ;;; eval against the interaction-environment can install globals.
 ==> 11
 
-;;; eval against the interaction-environment can install globals.
 >>> (eval '(define eval-test-y 22) (interaction-environment)) eval-test-y
+... ;;; (environment ...) builds a fresh frozen env from the named libraries.
 ==> 22
 
-;;; (environment ...) builds a fresh frozen env from the named libraries.
 >>> (environment '(scheme base))
 ==> #<environment>
 
 >>> (eval '(+ 10 20) (environment '(scheme base)))
+... ;;; Multiple library specs unite their exports.  The arithmetic comes
+... ;;; from (scheme base), force/make-promise from (scheme lazy).
 ==> 30
 
-;;; Multiple library specs unite their exports.  The arithmetic comes
-;;; from (scheme base), force/make-promise from (scheme lazy).
 >>> (eval '(force (make-promise (+ 1 2))) (environment '(scheme base) '(scheme lazy)))
+... ;;; The environment from (environment ...) is frozen: defining errors.
 ==> 3
 
-;;; The environment from (environment ...) is frozen: defining errors.
 >>> (eval '(define z 1) (environment '(scheme base)))
 %%% SchemeTypeError: cannot define 'z' in a frozen environment
-
-;;; ... and set! on an imported name errors.
 >>> (eval '(set! cons 1) (environment '(scheme base)))
 %%% SchemeTypeError: set! on 'cons' in a frozen environment
-
-;;; Second argument must be an environment value.
 >>> (eval '(+ 1 2) 'not-an-env)
 %%% SchemeTypeError: line 1, col 1: eval: second argument must be an environment
 %%% (eval '(+ 1 2) 'not-an-env)
 %%% ^
-
 >>> (eval '(+ 1 2) 42)
 %%% SchemeTypeError: line 1, col 1: eval: second argument must be an environment
 %%% (eval '(+ 1 2) 42)
 %%% ^
-
-;;; Unknown library raises a clear error.
 >>> (environment '(no such lib))
 %%% SchemeTypeError: line 1, col 1: environment: library not found: (no such lib)
 %%% (environment '(no such lib))
 %%% ^
-
-;;; environment with no args returns an empty frozen env.
 >>> (eval '(quote ok) (environment))
+... ;;; Deep tail recursion through eval also works with an env-spec arg.
 ==> ok
 
-;;; Deep tail recursion through eval also works with an env-spec arg.
 >>> (define (loop2 n) (if (zero? n) 'done (eval (list 'loop2 (- n 1)) (interaction-environment)))) (loop2 100000)
+... ;;; -------- error (R7RS 6.11) --------
 ==> done
-
-;;; -------- error (R7RS 6.11) --------
 
 >>> (error "oops")
 %%% SchemeUserError: line 1, col 1: oops
 %%% (error "oops")
 %%% ^
-
 >>> (error "bad input:" 42)
 %%% SchemeUserError: line 1, col 1: bad input: 42
 %%% (error "bad input:" 42)
 %%% ^
-
 >>> (error "wrong" 1 'two "three")
 %%% SchemeUserError: line 1, col 1: wrong 1 two "three"
 %%% (error "wrong" 1 'two "three")
 %%% ^
-
-;;; Non-string first arg.
 >>> (error 42)
 %%% SchemeTypeError: line 1, col 1: error: first argument must be a string
 %%% (error 42)
 %%% ^
-
-;;; error raised from inside a procedure body.
 >>> (define (sqrt-safe x) (if (negative? x) (error "sqrt of negative:" x) 'ok)) (sqrt-safe -1)
 %%% SchemeUserError: line 1, col 41: sqrt of negative: -1
 %%% (define (sqrt-safe x) (if (negative? x) (error "sqrt of negative:" x) 'ok)) (sqrt-safe -1)

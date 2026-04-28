@@ -1,0 +1,496 @@
+;;; ============================================================
+;;; test32-predicates
+;;; predicates.py: all type predicates, numeric predicates
+;;; ============================================================
+
+>>> (number? 42)
+==> #t
+
+>>> (number? "hi")
+==> #f
+
+>>> (integer? 42)
+==> #t
+
+>>> (integer? '())
+==> #f
+
+>>> (boolean? #t)
+==> #t
+
+>>> (boolean? 0)
+==> #f
+
+>>> (symbol? 'x)
+==> #t
+
+>>> (symbol? "x")
+==> #f
+
+>>> (string? "hi")
+==> #t
+
+>>> (procedure? car)
+==> #t
+
+>>> (procedure? (lambda (x) x))
+==> #t
+
+>>> (procedure? 42)
+... ;;; -------- Numeric predicates --------
+==> #f
+
+>>> (zero? 0)
+==> #t
+
+>>> (zero? 1)
+==> #f
+
+>>> (positive? 1)
+==> #t
+
+>>> (positive? 0)
+==> #f
+
+>>> (negative? -1)
+==> #t
+
+>>> (even? 4)
+==> #t
+
+>>> (odd? 3)
+... ;;; -------- Equivalence --------
+==> #t
+
+>>> (number? +inf.0)
+==> #t
+
+>>> (real? +inf.0)
+==> #t
+
+>>> (rational? +inf.0)
+==> #f
+
+>>> (integer? +inf.0)
+... ;;; -------- finite? --------
+==> #f
+
+>>> (finite? 42)
+==> #t
+
+>>> (finite? 1.5)
+==> #t
+
+>>> (finite? +inf.0)
+==> #f
+
+>>> (finite? -inf.0)
+==> #f
+
+>>> (finite? +nan.0)
+... ;;; -------- infinite? --------
+==> #f
+
+>>> (infinite? +inf.0)
+==> #t
+
+>>> (infinite? -inf.0)
+==> #t
+
+>>> (infinite? 42)
+==> #f
+
+>>> (infinite? +nan.0)
+... ;;; -------- nan? --------
+==> #f
+
+>>> (nan? +nan.0)
+==> #t
+
+>>> (nan? +inf.0)
+==> #f
+
+>>> (nan? 42)
+==> #f
+
+>>> (nan? 0.0)
+... ;;; -------- floor / ceiling / truncate / round on special reals --------
+==> #f
+
+>>> (finite? (exp 1000))
+... ;;; -------- log --------
+==> #f
+
+>>> (number? 3+4i)
+==> #t
+
+>>> (complex? 3+4i)
+==> #t
+
+>>> (real? 3+4i)
+==> #f
+
+>>> (rational? 3+4i)
+==> #f
+
+>>> (integer? 3+4i)
+... ;;; -------- equality on complex --------
+==> #f
+
+>>> (rational? 3/4)
+... ;;; Finite reals are also rational in R7RS.
+==> #t
+
+>>> (rational? 1.5)
+==> #t
+
+>>> (number? 3/4)
+==> #t
+
+>>> (real? 3/4)
+==> #t
+
+>>> (integer? 3/4)
+... ;;; -------- comparisons --------
+==> #f
+
+>>> (finite? 3+4i)
+==> #t
+
+>>> (finite? +inf.0+0.0i)
+==> #f
+
+>>> (infinite? +inf.0+0.0i)
+==> #t
+
+>>> (infinite? 3+4i)
+==> #f
+
+>>> (nan? +nan.0+0.0i)
+==> #t
+
+>>> (nan? 3+4i)
+... ;;; -------- = on complex --------
+==> #f
+
+>>> (integer? 3+4i)
+==> #f
+
+>>> (finite? 3+4i)
+... ;;; Numerical equality across exact/inexact.
+==> #t
+
+>>> (symbol? '|foo|)
+==> #t
+
+>>> (symbol? '|hello world|)
+==> #t
+
+>>> (rational? 1/2)
+==> #t
+
+>>> (number? 1/2)
+==> #t
+
+>>> (integer? 1/2)
+==> #f
+
+>>> (real? 1/2)
+... ; rational comparison
+==> #t
+
+>>> (infinite? (string->number "+inf.0"))
+==> #t
+
+>>> (infinite? (string->number "-inf.0"))
+==> #t
+
+>>> (nan? (string->number "+nan.0"))
+==> #t
+
+>>> (nan? (string->number "-nan.0"))
+%%% SchemeTypeError: line 1, col 1: nan?: argument must be a number
+%%% (nan? (string->number "-nan.0"))
+%%% ^
+>>> (finite? 1)
+==> #t
+
+>>> (finite? +nan.0)
+==> #f
+
+>>> (infinite? 1)
+==> #f
+
+>>> (infinite? 1.0)
+==> #f
+
+>>> (nan? 0)
+==> #f
+
+>>> (nan? 0.0)
+==> #f
+
+>>> (finite?)
+%%% SchemeArityError: line 1, col 1: finite?: 0 arguments provided; 1 expected
+%%% (finite?)
+%%% ^
+>>> (infinite?)
+%%% SchemeArityError: line 1, col 1: infinite?: 0 arguments provided; 1 expected
+%%% (infinite?)
+%%% ^
+>>> (nan?)
+%%% SchemeArityError: line 1, col 1: nan?: 0 arguments provided; 1 expected
+%%% (nan?)
+%%% ^
+>>> (complex? 3)
+==> #t
+
+>>> (complex? 3.0)
+==> #t
+
+>>> (real? 3.0)
+==> #t
+
+>>> (real? 3)
+==> #t
+
+>>> (rational? +nan.0)
+==> #f
+
+>>> (real? (make-rectangular 3.0 0.0))
+... ; --- complex arithmetic (+, -, *, /, negation) ---
+==> #t
+
+>>> (let ((x (list 1 2 3))) (set-cdr! (cddr x) x) (list? x))
+==> #f
+
+>>> (let ((x (list 1 2))) (set-cdr! (cdr x) x) (list? x))
+==> #f
+
+>>> (boolean? #f)
+==> #t
+
+>>> (boolean? '())
+==> #f
+
+>>> (boolean?)
+%%% SchemeArityError: line 1, col 1: boolean?: 0 arguments provided; 1 expected
+%%% (boolean?)
+%%% ^
+>>> (number? 3.14)
+==> #t
+
+>>> (number? "42")
+==> #f
+
+>>> (number? #t)
+==> #f
+
+>>> (number? '())
+==> #f
+
+>>> (number?)
+%%% SchemeArityError: line 1, col 1: number?: 0 arguments provided; 1 expected
+%%% (number?)
+%%% ^
+>>> (integer? 3)
+==> #t
+
+>>> (integer? 3.0)
+==> #t
+
+>>> (integer? 3.5)
+==> #f
+
+>>> (integer? "3")
+==> #f
+
+>>> (integer? 1/2)
+... ; non-finite flonums return #f
+==> #f
+
+>>> (integer? +inf.0)
+==> #f
+
+>>> (integer? -inf.0)
+==> #f
+
+>>> (integer? +nan.0)
+... ; finite integer-valued flonums still return #t
+==> #f
+
+>>> (integer? 1.0)
+==> #t
+
+>>> (integer? -3.0)
+==> #t
+
+>>> (integer? 0.0)
+... ; non-integer flonums return #f
+==> #t
+
+>>> (integer? 1.5)
+... ; exact integers always #t
+==> #f
+
+>>> (integer?)
+%%% SchemeArityError: line 1, col 1: integer?: 0 arguments provided; 1 expected
+%%% (integer?)
+%%% ^
+>>> (real? 42)
+==> #t
+
+>>> (real? 3.14)
+==> #t
+
+>>> (real? "x")
+==> #f
+
+>>> (real? 1/2)
+... ; --- rational? ---
+==> #t
+
+>>> (rational? 42)
+==> #t
+
+>>> (rational? 3.14)
+==> #t
+
+>>> (rational? 1/2)
+... ; --- complex? ---
+==> #t
+
+>>> (complex? 42)
+==> #t
+
+>>> (complex? 3.14)
+... ; ============================================================
+... ; 4. exact?, inexact?, exact-integer?
+... ; ============================================================
+... ; --- exact? ---
+==> #t
+
+>>> (string? "hello")
+==> #t
+
+>>> (string? "")
+==> #t
+
+>>> (string? 42)
+==> #f
+
+>>> (string? 'hello)
+==> #f
+
+>>> (string?)
+%%% SchemeArityError: line 1, col 1: string?: 0 arguments provided; 1 expected
+%%% (string?)
+%%% ^
+>>> (symbol? 'foo)
+==> #t
+
+>>> (symbol? "foo")
+==> #f
+
+>>> (symbol? 42)
+==> #f
+
+>>> (symbol?)
+%%% SchemeArityError: line 1, col 1: symbol?: 0 arguments provided; 1 expected
+%%% (symbol?)
+%%% ^
+>>> (procedure? +)
+==> #t
+
+>>> (procedure? 42)
+==> #f
+
+>>> (procedure? "car")
+==> #f
+
+>>> (procedure?)
+%%% SchemeArityError: line 1, col 1: procedure?: 0 arguments provided; 1 expected
+%%% (procedure?)
+%%% ^
+>>> (zero? 0.0)
+==> #t
+
+>>> (zero? -1)
+==> #f
+
+>>> (zero?)
+%%% SchemeArityError: line 1, col 1: zero?: 0 arguments provided; 1 expected
+%%% (zero?)
+%%% ^
+>>> (positive? 0.5)
+==> #t
+
+>>> (positive? -1)
+==> #f
+
+>>> (positive?)
+%%% SchemeArityError: line 1, col 1: positive?: 0 arguments provided; 1 expected
+%%% (positive?)
+%%% ^
+>>> (negative? -0.5)
+==> #t
+
+>>> (negative? 0)
+==> #f
+
+>>> (negative? 1)
+==> #f
+
+>>> (negative?)
+%%% SchemeArityError: line 1, col 1: negative?: 0 arguments provided; 1 expected
+%%% (negative?)
+%%% ^
+>>> (odd? 1)
+==> #t
+
+>>> (odd? 3)
+==> #t
+
+>>> (odd? -1)
+==> #t
+
+>>> (odd? 0)
+==> #f
+
+>>> (odd? 2)
+==> #f
+
+>>> (odd?)
+%%% SchemeArityError: line 1, col 1: odd?: 0 arguments provided; 1 expected
+%%% (odd?)
+%%% ^
+>>> (even? 0)
+==> #t
+
+>>> (even? 2)
+==> #t
+
+>>> (even? -4)
+==> #t
+
+>>> (even? 1)
+==> #f
+
+>>> (even? 3)
+==> #f
+
+>>> (even?)
+%%% SchemeArityError: line 1, col 1: even?: 0 arguments provided; 1 expected
+%%% (even?)
+%%% ^
+>>> (zero? "x")
+%%% SchemeTypeError: line 1, col 1: zero?: argument is not a real number
+%%% (zero? "x")
+%%% ^
+>>> (odd? 1.5)
+%%% SchemeTypeError: line 1, col 1: odd?: expected integer, got non-integer value
+%%% (odd? 1.5)
+%%% ^
+>>> (even? 2.0)
+==> #t
+

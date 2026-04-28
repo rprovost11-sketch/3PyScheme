@@ -1,8 +1,17 @@
 ;;; ============================================================
-;;; test31-io-ports2.log
-;;; Gap tests derived from cppScheme test08-io-ports.log
+;;; test31-ports
+;;; ports.py: all I/O - ports, string/bytevector ports, file I/O, read/write variants, write-shared
 ;;; ============================================================
 
+>>> (read-bytevector! (make-bytevector 3) (open-input-bytevector #u8()))
+... ; out of range
+%%% line 1, col 62: unknown #-syntax: '#u8'
+%%% (read-bytevector! (make-bytevector 3) (open-input-bytevector #u8()))
+%%%                                                              ^
+>>> (read-bytevector! (make-bytevector 3) (open-input-bytevector #u8(1 2)) 2 5)
+%%% line 1, col 62: unknown #-syntax: '#u8'
+%%% (read-bytevector! (make-bytevector 3) (open-input-bytevector #u8(1 2)) 2 5)
+%%%                                                              ^
 >>> (display 42)
 42
 ==> #<void>
@@ -50,7 +59,6 @@ stdout
 %%% SchemeArityError: line 1, col 1: display: 0 arguments provided; 1 or 2 expected
 %%% (display)
 %%% ^
-
 >>> (write 42)
 42
 ==> #<void>
@@ -80,7 +88,6 @@ foo
 %%% SchemeArityError: line 1, col 1: write: 0 arguments provided; 1 or 2 expected
 %%% (write)
 %%% ^
-
 >>> (newline)
 ==> #<void>
 
@@ -108,7 +115,6 @@ a
 %%% SchemeArityError: line 1, col 1: write-char: 0 arguments provided; 1 or 2 expected
 %%% (write-char)
 %%% ^
-
 >>> (let ((p (open-output-bytevector)))
 ...   (write-u8 65 p)
 ...   (write-u8 66 p)
@@ -205,16 +211,6 @@ a
 >>> (eof-object? "")
 ... ; eof is distinct from everything else
 ==> #f
-
->>> (eq? (eof-object) (eof-object))
-==> #t
-
->>> (equal? (eof-object) (eof-object))
-... ; ==========================================================
-... ; 9. Port predicates: port?, input-port?, output-port?,
-... ;                     textual-port?, binary-port?
-... ; ==========================================================
-==> #t
 
 >>> (port? (current-output-port))
 ==> #t
@@ -345,7 +341,6 @@ a
 %%% SchemeTypeError: line 1, col 1: get-output-bytevector: argument 1 must be an output port
 %%% (get-output-bytevector (open-input-string "x"))
 %%% ^
-
 >>> (let ((p (open-input-bytevector #u8(1 2 3))))
 ...   (list (read-u8 p) (read-u8 p) (read-u8 p) (read-u8 p)))
 ... ; ==========================================================
@@ -355,16 +350,6 @@ a
 %%% line 1, col 33: unknown #-syntax: '#u8'
 %%% (let ((p (open-input-bytevector #u8(1 2 3))))
 %%%                                 ^
-
->>> (file-error?
-...   (guard (e (#t e))
-...     (open-input-file "no_such_scheme_file_xyz.txt")))
-... ; ==========================================================
-... ; 16. Binary file ports: open-binary-input-file,
-... ;                        open-binary-output-file
-... ; ==========================================================
-==> #f
-
 >>> (let* ((fname "/tmp/scheme_bin_test.txt")
 ...        (op (open-binary-output-file fname)))
 ...   (display "hello" op)
@@ -374,21 +359,12 @@ a
 ...       (close-port ip)
 ...       line)))
 %%% internal error: a bytes-like object is required, not 'str'
-
 >>> (output-port? (open-binary-output-file "/tmp/scheme_bin2.txt"))
 ==> #t
 
 >>> (input-port? (open-binary-input-file "/tmp/scheme_bin2.txt"))
 ... ; binary file error on nonexistent file
 ==> #t
-
->>> (file-error?
-...   (guard (e (#t e))
-...     (open-binary-input-file "no_such_file_xyz.txt")))
-... ; ==========================================================
-... ; 17. close-port, close-input-port, close-output-port
-... ; ==========================================================
-==> #f
 
 >>> (let ((p (open-output-string)))
 ...   (close-port p)
@@ -545,14 +521,12 @@ a
 %%% line 1, col 33: unknown #-syntax: '#u8'
 %%% (let ((p (open-input-bytevector #u8(1 2 3))))
 %%%                                 ^
-
 >>> (let ((p (open-input-bytevector #u8(42 43))))
 ...   (list (peek-u8 p) (read-u8 p) (peek-u8 p)))
 ... ; --- u8-ready? ---
 %%% line 1, col 33: unknown #-syntax: '#u8'
 %%% (let ((p (open-input-bytevector #u8(42 43))))
 %%%                                 ^
-
 >>> (let ((p (open-input-bytevector #u8(7))))
 ...   (u8-ready? p))
 ... ; ==========================================================
@@ -562,7 +536,6 @@ a
 %%% line 1, col 33: unknown #-syntax: '#u8'
 %%% (let ((p (open-input-bytevector #u8(7))))
 %%%                                 ^
-
 >>> (let* ((out (open-output-bytevector))
 ...        (_ (write-bytevector #u8(10 20 30) out))
 ...        (bv (get-output-bytevector out))
@@ -572,7 +545,6 @@ a
 %%% line 2, col 29: unknown #-syntax: '#u8'
 %%%        (_ (write-bytevector #u8(10 20 30) out))
 %%%                             ^
-
 >>> (let* ((out (open-output-bytevector))
 ...        (_ (write-bytevector #u8(1 2 3 4 5) out 1 4)))
 ...   (get-output-bytevector out))
@@ -580,7 +552,6 @@ a
 %%% line 2, col 29: unknown #-syntax: '#u8'
 %%%        (_ (write-bytevector #u8(1 2 3 4 5) out 1 4)))
 %%%                             ^
-
 >>> (read-bytevector 5 (open-input-bytevector #u8()))
 ... ; ==========================================================
 ... ; 26. flush-output-port
@@ -588,7 +559,6 @@ a
 %%% line 1, col 43: unknown #-syntax: '#u8'
 %%% (read-bytevector 5 (open-input-bytevector #u8()))
 %%%                                           ^
-
 >>> (let ((p (open-output-string)))
 ...   (display "x" p)
 ...   (flush-output-port p)
@@ -612,19 +582,11 @@ a
 %%% SchemeArityError: line 1, col 1: file-exists?: 0 arguments provided; 1 expected
 %%% (file-exists?)
 %%% ^
-
 >>> (let* ((fname "/tmp/scheme_del_test.txt")
 ...        (dummy (call-with-output-file fname (lambda (p) (display "x" p)))))
 ...   (delete-file fname)
 ...   (file-exists? fname))
 ... ; delete-file on nonexistent file raises file-error
-==> #f
-
->>> (file-error?
-...   (guard (e (#t e))
-...     (delete-file "no_such_scheme_file_xyz.txt")))
-... ; --- rename-file ---
-... ; rename a file and verify old is gone, new exists
 ==> #f
 
 >>> (let* ((old "/tmp/scheme_rename_old.txt")
@@ -647,12 +609,6 @@ a
 ...     content))
 ... ; rename-file on nonexistent file raises file-error
 ==> "hello"
-
->>> (file-error?
-...   (guard (e (#t e))
-...     (rename-file "no_such_file_xyz.txt" "other.txt")))
-... ; arity error
-==> #f
 
 >>> (rename-file "a")
 %%% SchemeArityError: line 1, col 1: rename-file: 1 argument provided; 2 expected
