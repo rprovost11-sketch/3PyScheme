@@ -94,7 +94,7 @@ from pyscheme.AST import (
    promise_resolve, promise_become, set_parameter_value,
    as_parameter_converter,
    make_boolean, make_closure, make_case_closure, make_promise_lazy,
-   make_continuation, make_multi_values, make_primitive, make_parameter,
+   make_continuation, make_multi_values, make_primitive, make_parameter, make_symbol,
    eqv_atom,
    src_of,
    VOID, BOOLEAN, COMPLEX, REAL, RATIONAL, INTEGER, CHARACTER, STRING,
@@ -128,6 +128,7 @@ FRAME_MAKE_PARAMETER     = 19
 FRAME_POP_HANDLER        = 20
 FRAME_REINSTALL_HANDLER  = 21
 FRAME_SHADOW_POP         = 23
+FRAME_TRACE_EXIT         = 24
 
 
 # Frames that are not single-value continuations: FRAME_CWV_CONSUMER
@@ -141,6 +142,7 @@ _MULTI_VALUES_OK_FRAMES = frozenset([
    FRAME_POP_HANDLER,
    FRAME_REINSTALL_HANDLER,
    FRAME_SHADOW_POP,
+   FRAME_TRACE_EXIT,
 ])
 
 # Shadow call stack for error backtraces.  Each entry is a mutable
@@ -185,6 +187,19 @@ def _shadow_push(K, app_node):
          return
    _shadow_stack.append([label, src, 1])
    K.append((FRAME_SHADOW_POP,))
+
+
+def _sorted_sym_list(fns):
+   """Build a Scheme proper list of symbols from a frozenset of name strings,
+   sorted lexicographically.  Used by (trace) and (untrace) return values."""
+   names = list(fns)
+   names.sort()
+   result = NIL_VALUE
+   i = len(names) - 1
+   while i >= 0:
+      result = alloc_cons(make_symbol(names[i], None), result, None)
+      i = i - 1
+   return result
 
 
 def isFalse(value):
@@ -1265,6 +1280,38 @@ def _cek_loop(expr, env, ctx):
                         E = new_env
                         continue
 
+                     if name == 'trace':
+                        tracer    = ctx.tracer
+                        args_cons = C.cdr
+                        if is_nil(args_cons):
+                           V = _sorted_sym_list(tracer.get_fns())
+                           break
+                        cur = args_cons
+                        while is_cons(cur):
+                           sym = cur.car
+                           if not is_symbol(sym):
+                              raise SchemeTypeError('trace: arguments must be symbols', C)
+                           tracer.add_fn(as_symbol(sym))
+                           cur = cur.cdr
+                        V = _sorted_sym_list(tracer.get_fns())
+                        break
+
+                     if name == 'untrace':
+                        tracer    = ctx.tracer
+                        args_cons = C.cdr
+                        if is_nil(args_cons):
+                           tracer.remove_all()
+                        else:
+                           cur = args_cons
+                           while is_cons(cur):
+                              sym = cur.car
+                              if not is_symbol(sym):
+                                 raise SchemeTypeError('untrace: arguments must be symbols', C)
+                              tracer.remove_fn(as_symbol(sym))
+                              cur = cur.cdr
+                        V = _sorted_sym_list(tracer.get_fns())
+                        break
+
                      # Symbol head but not a keyword - application.
                      # Walk arg cons chain into Python list.
                      args = _collect_cons_to_list(C.cdr)
@@ -1439,11 +1486,32 @@ def _cek_loop(expr, env, ctx):
                      if pv is not None:
                         V = pv
                         continue
+                     _trc_printed = False
+                     _trc_name    = None
+                     _trc_depth   = 0
+                     if ctx._instrumented:
+                        _trc = ctx.tracer
+                        if _trc._active:
+                           if is_symbol(app_node.car):
+                              _trc_name = as_symbol(app_node.car)
+                           if _trc_name is None and is_primitive(V):
+                              _trc_name = as_primitive_name(V)
+                           if _trc_name is not None and _trc_name in _trc._fns_to_trace:
+                              _trc_depth   = _trc._depth
+                              _trc_printed = _trc.trace_enter(_trc_name, [], _trc_depth, ctx.outStrm)
+                              if _trc_printed:
+                                 _trc._depth = _trc_depth + 1
                      if is_primitive(V):
-                        V = as_primitive_fn(V)(ctx, saved_env, [], app_node)
+                        result = as_primitive_fn(V)(ctx, saved_env, [], app_node)
+                        if _trc_printed:
+                           ctx.tracer._depth = _trc_depth
+                           ctx.tracer.trace_exit(_trc_name, result, _trc_depth, ctx.outStrm)
+                        V = result
                         continue
                      r = _apply_value(V, [], app_node)
                      _shadow_push(K, app_node)
+                     if _trc_printed:
+                        K.append((FRAME_TRACE_EXIT, _trc_name, _trc_depth))
                      E = r.new_env
                      C = r.body.car
                      if is_cons(r.body.cdr):
@@ -1730,12 +1798,32 @@ def _cek_loop(expr, env, ctx):
                         as_record_fields(rec)[as_record_mutator_index(fn_value)] = new_collected[1]
                         V = VOID_VALUE
                         continue
+                     _trc_printed = False
+                     _trc_name    = None
+                     _trc_depth   = 0
+                     if ctx._instrumented:
+                        _trc = ctx.tracer
+                        if _trc._active:
+                           if is_symbol(app_node.car):
+                              _trc_name = as_symbol(app_node.car)
+                           if _trc_name is None and is_primitive(fn_value):
+                              _trc_name = as_primitive_name(fn_value)
+                           if _trc_name is not None and _trc_name in _trc._fns_to_trace:
+                              _trc_depth   = _trc._depth
+                              _trc_printed = _trc.trace_enter(_trc_name, new_collected, _trc_depth, ctx.outStrm)
+                              if _trc_printed:
+                                 _trc._depth = _trc_depth + 1
                      if is_primitive(fn_value):
                         V = as_primitive_fn(fn_value)(ctx, saved_env, new_collected, app_node)
+                        if _trc_printed:
+                           ctx.tracer._depth = _trc_depth
+                           ctx.tracer.trace_exit(_trc_name, V, _trc_depth, ctx.outStrm)
                         continue
                      r = _apply_value(fn_value, new_collected, app_node)
                      if fn_value is original_fn:
                         _shadow_push(K, app_node)
+                     if _trc_printed:
+                        K.append((FRAME_TRACE_EXIT, _trc_name, _trc_depth))
                      E = r.new_env
                      C = r.body.car
                      if is_cons(r.body.cdr):
@@ -2028,6 +2116,14 @@ def _cek_loop(expr, env, ctx):
                if ftag == FRAME_SHADOW_POP:
                   if _shadow_stack:
                      _shadow_stack.pop()
+                  continue
+
+               if ftag == FRAME_TRACE_EXIT:
+                  fn_name = frame[1]
+                  depth   = frame[2]
+                  tracer  = ctx.tracer
+                  tracer._depth = depth
+                  tracer.trace_exit(fn_name, V, depth, ctx.outStrm)
                   continue
 
                raise RuntimeError("unknown frame tag: " + str(ftag))

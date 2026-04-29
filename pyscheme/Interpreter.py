@@ -31,6 +31,7 @@ from pyscheme.Environment   import Environment, SchemeRuntimeError
 from pyscheme.Context       import Context
 from pyscheme.Listener      import InterpreterBase
 from pyscheme.Debugger      import Debugger
+from pyscheme.Tracer        import Tracer
 from pyscheme.PrettyPrinter import pretty_print
 from pyscheme.library     import register_standard_libraries
 from pyscheme.Expander    import set_runtime_env
@@ -41,6 +42,9 @@ class Interpreter(InterpreterBase):
       self._env = None
       self._static_env = {}
       self._ctx = Context()
+      tracer = Tracer()
+      self._ctx.tracer = tracer
+      tracer._ctx = self._ctx
       self._wire_ctx_leval()
       self.reboot()
 
@@ -62,6 +66,7 @@ class Interpreter(InterpreterBase):
       if sys.getrecursionlimit() < 2000:
          sys.setrecursionlimit(2000)
       self._ctx.debugger = Debugger()
+      self._ctx.tracer.reset()
       self._env = Environment()
       install_primitives(self._env)
       # Populate the R7RS library registry from global env.  Must happen

@@ -373,6 +373,16 @@ def _run_inspect(val, out, input_fn=None):
       print('Enter a number, u (up), or q (quit)', file=out)
 
 
+# ── Tracer stubs (special forms implemented in Evaluator) ────────────────
+
+def _stub_trace(ctx, env, args, app_node):
+   raise Exception('trace: not callable as a procedure')
+
+
+def _stub_untrace(ctx, env, args, app_node):
+   raise Exception('untrace: not callable as a procedure')
+
+
 # ── Primitive functions ───────────────────────────────────────────────────
 
 def _prim_describe(ctx, env, args, app_node):
@@ -410,3 +420,13 @@ def register():
                       doc=_prim_inspect.__doc__, category='debug')
    register_primitive('debug',    (0, 0), _prim_debug,
                       doc=_prim_debug.__doc__,  category='debug')
+   register_primitive('trace',   (0, None), _stub_trace,
+                      usage='(trace . names)',
+                      doc='Enable call tracing for each named function.\n'
+                          'With no arguments, return the list of currently traced functions.',
+                      category='debug', kind='special')
+   register_primitive('untrace', (0, None), _stub_untrace,
+                      usage='(untrace . names)',
+                      doc='Disable call tracing for each named function.\n'
+                          'With no arguments, disable all tracing.',
+                      category='debug', kind='special')
