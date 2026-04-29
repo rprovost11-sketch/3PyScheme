@@ -95,6 +95,24 @@ class TestResult:
 # ---- module-level helpers ---------------------------------------------
 
 
+def _format_call_stack(call_stack):
+   """Render a shadow call-stack list as a backtrace string.
+   Each entry is [label, src, count]."""
+   from pyscheme.AST import format_with_caret
+   lines = []
+   i = 0
+   while i < len(call_stack):
+      entry = call_stack[i]
+      label = entry[0]
+      src   = entry[1]
+      count = entry[2]
+      if count > 1:
+         label = label + ' [x' + str(count) + ']'
+      lines.append('  at ' + format_with_caret(label, src))
+      i = i + 1
+   return '\n'.join(lines)
+
+
 def _format_error(exc):
    """Produce the user-visible text for an exception.  Same text at
    REPL and test harness so expected/actual error strings compare."""
@@ -105,7 +123,11 @@ def _format_error(exc):
                        ListenerCommandError)):
       return str(exc)
    if isinstance(exc, (SchemeArityError, SchemeTypeError, SchemeRaised)):
-      return type(exc).__name__ + ': ' + str(exc)
+      msg = type(exc).__name__ + ': ' + str(exc)
+      call_stack = getattr(exc, 'call_stack', None)
+      if call_stack:
+         msg = msg + '\n' + _format_call_stack(call_stack)
+      return msg
    msg = str(exc)
    if msg:
       return 'internal error: ' + msg
@@ -136,9 +158,9 @@ def _compute_indent(lines):
                in_string = True
             elif ch == ';':
                break
-            elif ch == '(':
+            elif ch == '(' or ch == '[':
                depth = depth + 1
-            elif ch == ')':
+            elif ch == ')' or ch == ']':
                if depth > 0:
                   depth = depth - 1
          j = j + 1
@@ -456,7 +478,8 @@ class Listener:
                else:
                   combined = '\n'.join(inputExprLineList)
                ps = paren_state(combined)
-               if ps.depth > 0 and not ps.in_string:
+               innermost_is_bracket = len(ps.stack) > 0 and ps.stack[len(ps.stack) - 1] == '['
+               if ps.depth > 0 and not ps.in_string and not innermost_is_bracket:
                   lineInput = tentative + ')' * ps.depth
                elif lineInput == ']' and ps.depth == 0 and not ps.in_string:
                   continue

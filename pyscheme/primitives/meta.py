@@ -399,18 +399,18 @@ def _prim_call_with_values_unreached(ctx, env, args, app_node):
 
 def _prim_null_environment(ctx, env, args, app_node):
    from pyscheme.Environment import Environment
-   if not is_integer(args[0]) or as_integer(args[0]) != 5:
+   if not is_integer(args[0]):
       raise SchemeTypeError(
-         'null-environment: version must be 5', src_of(app_node))
+         'null-environment: version must be an integer', src_of(app_node))
    e = Environment(parent=None)
    e.freeze()
    return make_environment(e)
 
 
 def _prim_scheme_report_environment(ctx, env, args, app_node):
-   if not is_integer(args[0]) or as_integer(args[0]) != 5:
+   if not is_integer(args[0]):
       raise SchemeTypeError(
-         'scheme-report-environment: version must be 5', src_of(app_node))
+         'scheme-report-environment: version must be an integer', src_of(app_node))
    return make_environment(env.getGlobalEnv())
 
 

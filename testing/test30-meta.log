@@ -185,3 +185,6 @@
 %%% SchemeUserError: line 1, col 41: sqrt of negative: -1
 %%% (define (sqrt-safe x) (if (negative? x) (error "sqrt of negative:" x) 'ok)) (sqrt-safe -1)
 %%%                                         ^
+%%%   at line 1, col 77: sqrt-safe
+%%% (define (sqrt-safe x) (if (negative? x) (error "sqrt of negative:" x) 'ok)) (sqrt-safe -1)
+%%%                                                                             ^

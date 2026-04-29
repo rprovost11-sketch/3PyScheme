@@ -22,6 +22,7 @@ class _PositionedSchemeError(Exception):
    def __init__(self, msg, source=None):
       self.msg = msg
       self.src = _extract_src(source)
+      self.call_stack = None
       super().__init__(msg)
 
    def __str__(self):

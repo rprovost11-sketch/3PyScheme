@@ -462,8 +462,8 @@
 >>> (cond-expand
 ...   (windows 'win)
 ...   (else 'other))
-... ; else clause fires when no feature matches
-==> other
+... ; windows feature is present on Windows platform
+==> win
 
 >>> (cond-expand
 ...   (no-such-feature 'bad)
@@ -474,8 +474,8 @@
 >>> (cond-expand
 ...   ((and r7rs windows) 'both)
 ...   (else 'not-both))
-... ; and: one feature missing
-==> not-both
+... ; and: both features present on Windows platform
+==> both
 
 >>> (cond-expand
 ...   ((and r7rs no-such-feature) 'both)

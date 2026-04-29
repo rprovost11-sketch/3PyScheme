@@ -127,6 +127,7 @@ FRAME_FORCE_RESULT       = 18
 FRAME_MAKE_PARAMETER     = 19
 FRAME_POP_HANDLER        = 20
 FRAME_REINSTALL_HANDLER  = 21
+FRAME_SHADOW_POP         = 23
 
 
 # Frames that are not single-value continuations: FRAME_CWV_CONSUMER
@@ -139,10 +140,52 @@ _MULTI_VALUES_OK_FRAMES = frozenset([
    FRAME_DYNAMIC_WIND_AFTER,
    FRAME_POP_HANDLER,
    FRAME_REINSTALL_HANDLER,
+   FRAME_SHADOW_POP,
 ])
+
+# Shadow call stack for error backtraces.  Each entry is a mutable
+# 3-list [label, src, count] where count > 1 means consecutive tail-replaced
+# or collapsed recursive calls.
+_shadow_stack = []
+_SHADOW_DEPTH_LIMIT = 50
 
 
 # -------- Helper functions ------------------------------------------
+
+def _shadow_label(app_node):
+   """Return the display label for a shadow-stack entry: the operator
+   symbol name if the call site is a symbol application, else '#<procedure>'."""
+   if app_node is not None and is_cons(app_node) and is_symbol(app_node.car):
+      return as_symbol(app_node.car)
+   return '#<procedure>'
+
+
+def _shadow_push(K, app_node):
+   """Push a shadow-stack entry for a closure entry.  If the top of K is
+   FRAME_SHADOW_POP this is a tail call: replace the current top entry
+   rather than pushing a new one (keeps the shadow stack bounded under TCO).
+   Otherwise push a new entry and a FRAME_SHADOW_POP return marker onto K."""
+   label = _shadow_label(app_node)
+   src   = src_of(app_node) if app_node is not None else None
+   if K and K[-1][0] == FRAME_SHADOW_POP:
+      if _shadow_stack:
+         top = _shadow_stack[-1]
+         if top[0] == label and top[1] is src:
+            top[2] = top[2] + 1
+            return
+         _shadow_stack[-1] = [label, src, 1]
+      return
+   if len(_shadow_stack) >= _SHADOW_DEPTH_LIMIT:
+      return
+   if _shadow_stack:
+      top = _shadow_stack[-1]
+      if top[0] == label and top[1] is src:
+         top[2] = top[2] + 1
+         K.append((FRAME_SHADOW_POP,))
+         return
+   _shadow_stack.append([label, src, 1])
+   K.append((FRAME_SHADOW_POP,))
+
 
 def isFalse(value):
    """Scheme falsity: only #f is false; everything else (including 0, '',
@@ -662,7 +705,7 @@ def cek_eval(expr, env, ctx=None):
                  SchemeUnboundError, SchemeSyntaxError)
    try:
       return _cek_loop(expr, env, ctx)
-   except _CATCHABLE:
+   except _CATCHABLE as e:
       # _cek_loop's in-loop exception dispatch already walked K for any
       # handler frame installed during this cek_eval call.  Reaching
       # here means no handler in scope caught the condition; clean up
@@ -674,11 +717,15 @@ def cek_eval(expr, env, ctx=None):
       _unwind_winds_on_error(ctx, wind_depth_entry)
       while len(_handler_stack) > handler_depth_entry:
          _handler_stack.pop()
+      if hasattr(e, 'call_stack') and e.call_stack is None and _shadow_stack:
+         e.call_stack = list(_shadow_stack)
+      _shadow_stack.clear()
       raise
    except BaseException:
       _unwind_winds_on_error(ctx, wind_depth_entry)
       while len(_handler_stack) > handler_depth_entry:
          _handler_stack.pop()
+      _shadow_stack.clear()
       raise
 
 
@@ -1392,6 +1439,7 @@ def _cek_loop(expr, env, ctx):
                         V = as_primitive_fn(V)(ctx, saved_env, [], app_node)
                         continue
                      r = _apply_value(V, [], app_node)
+                     _shadow_push(K, app_node)
                      E = r.new_env
                      C = r.body.car
                      if is_cons(r.body.cdr):
@@ -1415,6 +1463,7 @@ def _cek_loop(expr, env, ctx):
                   remaining     = frame[3]
                   saved_env     = frame[4]
                   app_node      = frame[5]
+                  original_fn   = fn_value
                   new_collected = list(collected)
                   new_collected.append(V)
                   if len(remaining) == 0:
@@ -1681,6 +1730,8 @@ def _cek_loop(expr, env, ctx):
                         V = as_primitive_fn(fn_value)(ctx, saved_env, new_collected, app_node)
                         continue
                      r = _apply_value(fn_value, new_collected, app_node)
+                     if fn_value is original_fn:
+                        _shadow_push(K, app_node)
                      E = r.new_env
                      C = r.body.car
                      if is_cons(r.body.cdr):
@@ -1969,6 +2020,11 @@ def _cek_loop(expr, env, ctx):
                   C = next_pair[1]
                   E = saved_env
                   break
+
+               if ftag == FRAME_SHADOW_POP:
+                  if _shadow_stack:
+                     _shadow_stack.pop()
+                  continue
 
                raise RuntimeError("unknown frame tag: " + str(ftag))
 
