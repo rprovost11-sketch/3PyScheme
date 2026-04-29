@@ -1032,6 +1032,10 @@ def _cek_loop(expr, env, ctx):
 
 
                if is_cons(C):
+                  if ctx._instrumented:
+                     if ctx._debugging:
+                        ctx.debugger.on_expr(C, E, K, ctx)
+
                   head = C.car
 
                   if is_symbol(head):

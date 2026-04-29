@@ -79,6 +79,10 @@ class InterpreterBase:
       """Read and evaluate an entire source file."""
       raise NotImplementedError
 
+   def set_debug_input_fn(self, fn, rl=None):
+      """Register the Listener's prompt function for debug REPLs.  No-op stub."""
+      pass
+
 
 class ListenerCommandError(Exception):
    """Raised by listener-command bodies to signal a user-level error."""
@@ -288,6 +292,9 @@ class Listener:
       self._author   = author
       self._project  = project
       self._init_readline()
+      # Wire the Listener's prompt function into the interpreter's debugger
+      # so debug> prompts use the same readline session as the REPL.
+      self._interp.set_debug_input_fn(self._prompt, Listener._rl)
       # Command dispatch table (replaces dir()/getattr() reflection).
       self._commands = {
          'help':     self._cmd_help,
@@ -304,6 +311,7 @@ class Listener:
          'cd':       self._cmd_cd,
          'pwd':      self._cmd_pwd,
          'lhistory': self._cmd_lhistory,
+         'debug':    self._cmd_debug,
       }
       self._banner()
 
@@ -1066,3 +1074,15 @@ class Listener:
       if Listener._rl is not None:
          Listener._rl.set_history_length(n)
       print('New history size: ' + str(n))
+
+   def _cmd_debug(self, args):
+      """Usage: ]debug
+      Open the interactive debugger.  Set breakpoints and watches, then
+      use rd to run expressions with debugging active.  Type h at the
+      debug> prompt for a full command reference.
+      """
+      if args:
+         raise ListenerCommandError('Usage: ]debug')
+      ctx = self._interp._ctx
+      env = self._interp._env
+      ctx.debugger.run_debugger_repl(ctx, env)

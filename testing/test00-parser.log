@@ -417,3 +417,57 @@
 %%% line 3, col 4: unbound variable: with-output-to-string
 %%%   (with-output-to-string (lambda () (write x))))
 %%%    ^
+
+... ; --- Square-bracket notation (R7RS §2.1) ---
+>>> '[1 2 3]
+... ; [] is equivalent to () for grouping
+==> (1 2 3)
+
+>>> '[]
+... ; empty bracket list
+==> ()
+
+>>> (let ([x 1]) x)
+... ; bracket binding form (common Scheme style)
+==> 1
+
+>>> (let ([x 1] [y 2]) (+ x y))
+... ; multiple bracket bindings
+==> 3
+
+>>> '[[1 2] [3 4]]
+... ; nested brackets
+==> ((1 2) (3 4))
+
+>>> '[1 . 2]
+... ; dotted pair with brackets
+==> (1 . 2)
+
+>>> '[1 2 . 3]
+==> (1 2 . 3)
+
+>>> (car '[a b])
+... ; bracket list in expression context
+==> a
+
+>>> (equal? '(1 2 3) '[1 2 3])
+... ; bracket and paren lists are equal
+==> #t
+
+>>> (read (open-input-string "]"))
+... ; stray ] is a syntax error
+%%% "<input-string>" line 1, col 1: unexpected ']'
+%%% ]
+%%% ^
+
+>>> (read (open-input-string "[1 2)"))
+... ; mismatched bracket: [ closed by )
+%%% "<input-string>" line 1, col 5: mismatched bracket: expected ']'
+%%% [1 2)
+%%%     ^
+
+>>> (read (open-input-string "(1 2]"))
+... ; mismatched bracket: ( closed by ]
+%%% "<input-string>" line 1, col 5: mismatched bracket: expected ')'
+%%% (1 2]
+%%%     ^

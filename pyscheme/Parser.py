@@ -80,6 +80,8 @@ from pyscheme.Environment import _PositionedSchemeError
 
 TOK_LPAREN            = 'LPAREN'
 TOK_RPAREN            = 'RPAREN'
+TOK_LBRACKET          = 'LBRACKET'
+TOK_RBRACKET          = 'RBRACKET'
 TOK_VECTOR_LPAREN     = 'VECTOR_LPAREN'
 TOK_QUOTE             = 'QUOTE'
 TOK_QUASIQUOTE        = 'QUASIQUOTE'
@@ -124,27 +126,29 @@ class SchemeSyntaxError(_PositionedSchemeError):
 # to IDENT, where the digit-prefix check rejects it.
 
 _TOKEN_RE = re.compile(r'''
-      [ \r\n]+                                                             # whitespace (tabs pre-expanded)
-    | ;[^\n]*                                                              # line comment
+      [ \r\n]+                                                                  # whitespace (tabs pre-expanded)
+    | ;[^\n]*                                                                   # line comment
     | (?P<LPAREN>\()
     | (?P<RPAREN>\))
+    | (?P<LBRACKET>\[)
+    | (?P<RBRACKET>\])
     | (?P<QUASIQUOTE>`)
     | (?P<UNQUOTE_SPLICING>,@)
     | (?P<UNQUOTE>,)
     | (?P<QUOTE>')
-    | (?P<DOT>\.(?=[\s()'"`,;]|$))                                         # lone . is the dotted-pair marker
+    | (?P<DOT>\.(?=[\s()\[\]'"`,;]|$))                                         # lone . is the dotted-pair marker
     | (?P<STRING>"(?:[^"\\]|\\[\s\S])*")
     | (?P<VECTOR_LPAREN>\#\()
     | (?P<CHAR>\#\\(?:x[0-9a-fA-F]+|[a-zA-Z]+|.))
     | (?P<TRUE>\#t(?:rue)?)
     | (?P<FALSE>\#f(?:alse)?)
-    | (?P<RATIONAL>[+-]?\d+/\d+(?=[\s()'"`,;]|$))
+    | (?P<RATIONAL>[+-]?\d+/\d+(?=[\s()\[\]'"`,;]|$))
     | (?P<REAL>
-          [+-]?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?(?=[\s()'"`,;]|$)
-        | [+-]?\d+[eE][+-]?\d+(?=[\s()'"`,;]|$)
+          [+-]?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?(?=[\s()\[\]'"`,;]|$)
+        | [+-]?\d+[eE][+-]?\d+(?=[\s()\[\]'"`,;]|$)
       )
-    | (?P<INT>[+-]?\d+(?=[\s()'"`,;]|$))
-    | (?P<IDENT>[^\s()'"`,;]+)
+    | (?P<INT>[+-]?\d+(?=[\s()\[\]'"`,;]|$))
+    | (?P<IDENT>[^\s()\[\]'"`,;]+)
 ''', re.VERBOSE)
 
 
@@ -326,6 +330,10 @@ def _build_token(kind, text, src):
       return Token(TOK_LPAREN, '(', src)
    if kind == 'RPAREN':
       return Token(TOK_RPAREN, ')', src)
+   if kind == 'LBRACKET':
+      return Token(TOK_LBRACKET, '[', src)
+   if kind == 'RBRACKET':
+      return Token(TOK_RBRACKET, ']', src)
    if kind == 'VECTOR_LPAREN':
       return Token(TOK_VECTOR_LPAREN, '#(', src)
    if kind == 'QUOTE':
@@ -697,7 +705,7 @@ class Parser:
          label_n = tok.value
          nxt = self._peek()
          # Pre-allocate a ConsCell stub for lists so forward #n# refs work.
-         if nxt.kind == TOK_LPAREN or nxt.kind == TOK_VECTOR_LPAREN:
+         if nxt.kind == TOK_LPAREN or nxt.kind == TOK_LBRACKET or nxt.kind == TOK_VECTOR_LPAREN:
             stub = alloc_cons(NIL_VALUE, NIL_VALUE, nxt.src)
             self.labels[label_n] = stub
             datum = self.parse_expr()
@@ -748,7 +756,7 @@ class Parser:
       if kind == TOK_IDENT:
          self._advance()
          return make_symbol(tok.value, tok.src)
-      if kind == TOK_LPAREN:
+      if kind == TOK_LPAREN or kind == TOK_LBRACKET:
          return self._read_list()
       if kind == TOK_VECTOR_LPAREN:
          return self._read_vector()
@@ -778,6 +786,8 @@ class Parser:
          return alloc_cons(us_sym, inner, us_tok.src)
       if kind == TOK_RPAREN:
          raise SchemeSyntaxError("unexpected ')'", tok.src)
+      if kind == TOK_RBRACKET:
+         raise SchemeSyntaxError("unexpected ']'", tok.src)
       if kind == TOK_DOT:
          raise SchemeSyntaxError("unexpected '.' outside of a list", tok.src)
       if kind == TOK_EOF:
@@ -798,34 +808,40 @@ class Parser:
          items.append(self.parse_expr())
 
    def _read_list(self):
-      lparen = self._advance()   # consume '('
+      lparen    = self._advance()   # consume '(' or '['
+      is_bracket = lparen.kind == TOK_LBRACKET
+      closer     = TOK_RBRACKET if is_bracket else TOK_RPAREN
+      closer_ch  = ']'           if is_bracket else ')'
       items  = []
       dotted_tail = None
       while True:
          self._skip_datum_comments()
          tok = self._peek()
-         if tok.kind == TOK_RPAREN:
+         if tok.kind == closer:
             self._advance()
             return _build_list(items, dotted_tail, lparen.src)
+         if tok.kind == TOK_RPAREN or tok.kind == TOK_RBRACKET:
+            raise SchemeSyntaxError(
+               "mismatched bracket: expected '%s'" % closer_ch, tok.src)
          if tok.kind == TOK_DOT:
             dot = self._advance()
             if not items:
                raise SchemeSyntaxError(
                   "dot must be preceded by at least one element", dot.src)
             nxt = self._peek()
-            if nxt.kind == TOK_RPAREN or nxt.kind == TOK_EOF or nxt.kind == TOK_DOT:
+            if nxt.kind in (TOK_RPAREN, TOK_RBRACKET, TOK_EOF, TOK_DOT):
                raise SchemeSyntaxError(
                   "dot must be followed by an expression", nxt.src)
             dotted_tail = self.parse_expr()
             closing = self._peek()
-            if closing.kind != TOK_RPAREN:
+            if closing.kind != closer:
                raise SchemeSyntaxError(
-                  "expected ')' after dotted tail", closing.src)
+                  "expected '%s' after dotted tail" % closer_ch, closing.src)
             self._advance()
             return _build_list(items, dotted_tail, lparen.src)
          if tok.kind == TOK_EOF:
             raise SchemeSyntaxError(
-               "unterminated list (missing ')')", lparen.src)
+               "unterminated list (missing '%s')" % closer_ch, lparen.src)
          items.append(self.parse_expr())
 
 

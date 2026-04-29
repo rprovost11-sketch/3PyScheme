@@ -124,13 +124,14 @@ CATEGORY_TITLES = {
    'logical':     'Logical',
    'meta':        'Meta',
    'help_sys':    'Help',
+   'debug':       'Debugging',
 }
 CATEGORY_ORDER = [
    'control',
    'lists', 'arithmetic', 'comparison', 'predicates',
    'equivalence', 'logical', 'meta', 'ports',
    'strings', 'chars', 'vectors', 'bytevectors',
-   'help_sys',
+   'help_sys', 'debug',
 ]
 
 
@@ -152,6 +153,7 @@ from pyscheme.primitives import chars
 from pyscheme.primitives import vectors
 from pyscheme.primitives import bytevectors
 from pyscheme.primitives import help_sys
+from pyscheme.primitives import debug
 
 control.register()
 lists.register()
@@ -167,6 +169,7 @@ chars.register()
 vectors.register()
 bytevectors.register()
 help_sys.register()
+debug.register()
 
 
 def install_primitives(env):

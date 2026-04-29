@@ -20,6 +20,14 @@ class Context:
          self.outStrm = sys.stdout
       else:
          self.outStrm = outStrm
+      self._debugging    = False   # True while rd is running
+      self._instrumented = False   # gate: any debug tooling active
+      self.debugger      = None    # Debugger instance; set by Interpreter
+      self.lEval         = None    # (env, expr) -> Value; set by Interpreter
+
+   def _update_instrumented(self):
+      """Recompute the single instrumentation gate after any flag change."""
+      self._instrumented = self._debugging
 
    def write(self, text):
       """Convenience: write raw text to the current output stream."""

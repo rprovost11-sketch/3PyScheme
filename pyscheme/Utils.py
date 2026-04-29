@@ -151,19 +151,23 @@ def columnize(lst, displayWidth=80, file=None, itemColor=None, itemColors=None):
 
 
 class ParenState:
-   """Net-paren-depth plus in-string flag after scanning a chunk of text."""
-   def __init__(self, depth, in_string):
+   """Net-paren-depth plus in-string flag after scanning a chunk of text.
+   stack holds each unclosed delimiter ('(' or '[') in open order so the
+   caller can inspect which kind is innermost."""
+   def __init__(self, depth, in_string, stack):
       self.depth     = depth
       self.in_string = in_string
+      self.stack     = stack
 
 
 def paren_state(text):
-   """Count net open parentheses in `text`, ignoring string contents and
-   `;` comments.  Returns a ParenState with depth and in_string fields;
-   in_string is True if the scan ended inside a string literal."""
-   depth = 0
+   """Scan `text`, ignoring string contents and `;` comments.  Returns a
+   ParenState whose depth is the number of unclosed delimiters, in_string
+   is True if the scan ended inside a string literal, and stack is the
+   list of unclosed delimiter characters ('(' or '[') in open order."""
+   stack     = []
    in_string = False
-   escape = False
+   escape    = False
    i = 0
    n = len(text)
    while i < n:
@@ -182,12 +186,13 @@ def paren_state(text):
             while i < n and text[i] != '\n':
                i = i + 1
             continue
-         elif ch == '(':
-            depth = depth + 1
-         elif ch == ')':
-            depth = depth - 1
+         elif ch == '(' or ch == '[':
+            stack.append(ch)
+         elif ch == ')' or ch == ']':
+            if len(stack) > 0:
+               stack.pop()
       i = i + 1
-   return ParenState(depth, in_string)
+   return ParenState(len(stack), in_string, stack)
 
 
 # --- writeln fan-out ---------------------------------------------------
