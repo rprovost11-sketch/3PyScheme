@@ -306,14 +306,11 @@
 ==> 21
 
 >>> #u8(0 1 255)
-%%% line 1, col 1: unknown #-syntax: '#u8'
-%%% #u8(0 1 255)
-%%% ^
+==> #u8(0 1 255)
+
 >>> #u8()
 ... ; --- make-bytevector ---
-%%% line 1, col 1: unknown #-syntax: '#u8'
-%%% #u8()
-%%% ^
+==> #u8()
 >>> (let ((bv (make-bytevector 3 0)))
 ...   (bytevector-u8-set! bv 1 42)
 ...   bv)
@@ -325,9 +322,7 @@
 ...   (bytevector-copy! bv 1 #u8(9 8) 0 2)
 ...   bv)
 ... ; --- bytevector-append ---
-%%% line 2, col 26: unknown #-syntax: '#u8'
-%%%   (bytevector-copy! bv 1 #u8(9 8) 0 2)
-%%%                          ^
+==> #u8(1 9 8 4 5)
 >>> (let ((bv (make-bytevector 4 0)))
 ...   (bytevector-u8-set! bv 0 255)
 ...   (bytevector-s8-ref bv 0))
@@ -464,19 +459,15 @@
 ...   (read-bytevector! bv (open-input-bytevector #u8(9 8 7)))
 ...   bv)
 ... ; returns number of bytes read
-%%% line 2, col 47: unknown #-syntax: '#u8'
-%%%   (read-bytevector! bv (open-input-bytevector #u8(9 8 7)))
-%%%                                               ^
+==> #u8(9 8 7 0 0)
+
 >>> (let ((bv (make-bytevector 5 0)))
 ...   (read-bytevector! bv (open-input-bytevector #u8(1 2 3))))
 ... ; with start/end arguments
-%%% line 2, col 47: unknown #-syntax: '#u8'
-%%%   (read-bytevector! bv (open-input-bytevector #u8(1 2 3))))
-%%%                                               ^
+==> 3
+
 >>> (let ((bv (make-bytevector 5 0)))
 ...   (read-bytevector! bv (open-input-bytevector #u8(1 2 3)) 1 4)
 ...   bv)
 ... ; returns eof when port is empty
-%%% line 2, col 47: unknown #-syntax: '#u8'
-%%%   (read-bytevector! bv (open-input-bytevector #u8(1 2 3)) 1 4)
-%%%                                               ^
+==> #u8(0 1 2 3 0)

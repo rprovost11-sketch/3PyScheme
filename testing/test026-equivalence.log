@@ -263,22 +263,18 @@
 %%%          ^
 >>> (equal? (u8-list->bytevector (bytevector->u8-list #u8(5 10 15))) #u8(5 10 15))
 ... ; arity error
-%%% line 1, col 51: unknown #-syntax: '#u8'
+%%% line 1, col 10: unbound variable: u8-list->bytevector
 %%% (equal? (u8-list->bytevector (bytevector->u8-list #u8(5 10 15))) #u8(5 10 15))
-%%%                                                   ^
+%%%          ^
 >>> (equal? #u8(1 2 3) #u8(1 2 3))
-%%% line 1, col 9: unknown #-syntax: '#u8'
-%%% (equal? #u8(1 2 3) #u8(1 2 3))
-%%%         ^
+==> #t
+
 >>> (equal? #u8(1 2 3) #u8(1 2 4))
-%%% line 1, col 9: unknown #-syntax: '#u8'
-%%% (equal? #u8(1 2 3) #u8(1 2 4))
-%%%         ^
+==> #f
+
 >>> (equal? #u8() #u8())
 ... ; === 19. string->utf8, utf8->string ===
-%%% line 1, col 9: unknown #-syntax: '#u8'
-%%% (equal? #u8() #u8())
-%%%         ^
+==> #t
 >>> (eq? (eof-object) (eof-object))
 ==> #t
 

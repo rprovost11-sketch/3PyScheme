@@ -5,13 +5,12 @@
 
 >>> (read-bytevector! (make-bytevector 3) (open-input-bytevector #u8()))
 ... ; out of range
-%%% line 1, col 62: unknown #-syntax: '#u8'
-%%% (read-bytevector! (make-bytevector 3) (open-input-bytevector #u8()))
-%%%                                                              ^
+==> #<eof>
+
 >>> (read-bytevector! (make-bytevector 3) (open-input-bytevector #u8(1 2)) 2 5)
-%%% line 1, col 62: unknown #-syntax: '#u8'
+%%% SchemeTypeError: line 1, col 1: read-bytevector!: range out of bounds
 %%% (read-bytevector! (make-bytevector 3) (open-input-bytevector #u8(1 2)) 2 5)
-%%%                                                              ^
+%%% ^
 >>> (display 42)
 42
 ==> #<void>
@@ -347,9 +346,7 @@ a
 ... ; 15. File ports: open-input-file, open-output-file
 ... ; ==========================================================
 ... ; open-input-file on nonexistent file raises file-error
-%%% line 1, col 33: unknown #-syntax: '#u8'
-%%% (let ((p (open-input-bytevector #u8(1 2 3))))
-%%%                                 ^
+==> (1 2 3 #<eof>)
 >>> (let* ((fname "/tmp/scheme_bin_test.txt")
 ...        (op (open-binary-output-file fname)))
 ...   (display "hello" op)
@@ -518,47 +515,40 @@ a
 >>> (let ((p (open-input-bytevector #u8(1 2 3))))
 ...   (list (read-u8 p) (read-u8 p) (read-u8 p) (read-u8 p)))
 ... ; --- peek-u8 ---
-%%% line 1, col 33: unknown #-syntax: '#u8'
-%%% (let ((p (open-input-bytevector #u8(1 2 3))))
-%%%                                 ^
+==> (1 2 3 #<eof>)
+
 >>> (let ((p (open-input-bytevector #u8(42 43))))
 ...   (list (peek-u8 p) (read-u8 p) (peek-u8 p)))
 ... ; --- u8-ready? ---
-%%% line 1, col 33: unknown #-syntax: '#u8'
-%%% (let ((p (open-input-bytevector #u8(42 43))))
-%%%                                 ^
+==> (42 42 43)
+
 >>> (let ((p (open-input-bytevector #u8(7))))
 ...   (u8-ready? p))
 ... ; ==========================================================
 ... ; 25. read-bytevector, write-bytevector, write-string
 ... ; ==========================================================
 ... ; --- write-bytevector / read-bytevector roundtrip ---
-%%% line 1, col 33: unknown #-syntax: '#u8'
-%%% (let ((p (open-input-bytevector #u8(7))))
-%%%                                 ^
+==> #t
+
 >>> (let* ((out (open-output-bytevector))
 ...        (_ (write-bytevector #u8(10 20 30) out))
 ...        (bv (get-output-bytevector out))
 ...        (in (open-input-bytevector bv)))
 ...   (read-bytevector 3 in))
 ... ; write-bytevector with start/end slice
-%%% line 2, col 29: unknown #-syntax: '#u8'
-%%%        (_ (write-bytevector #u8(10 20 30) out))
-%%%                             ^
+==> #u8(10 20 30)
+
 >>> (let* ((out (open-output-bytevector))
 ...        (_ (write-bytevector #u8(1 2 3 4 5) out 1 4)))
 ...   (get-output-bytevector out))
 ... ; read-bytevector returning eof on empty port
-%%% line 2, col 29: unknown #-syntax: '#u8'
-%%%        (_ (write-bytevector #u8(1 2 3 4 5) out 1 4)))
-%%%                             ^
+==> #u8(2 3 4)
+
 >>> (read-bytevector 5 (open-input-bytevector #u8()))
 ... ; ==========================================================
 ... ; 26. flush-output-port
 ... ; ==========================================================
-%%% line 1, col 43: unknown #-syntax: '#u8'
-%%% (read-bytevector 5 (open-input-bytevector #u8()))
-%%%                                           ^
+==> #<eof>
 >>> (let ((p (open-output-string)))
 ...   (display "x" p)
 ...   (flush-output-port p)

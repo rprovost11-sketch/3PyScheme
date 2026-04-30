@@ -295,23 +295,18 @@
 ==> #t
 
 >>> (read (open-input-string "#u8(1 2 3)"))
-%%% "<input-string>" line 1, col 1: unknown #-syntax: '#u8'
-%%% #u8(1 2 3)
-%%% ^
+==> #u8(1 2 3)
+
 >>> (read (open-input-string "#u8()"))
-%%% "<input-string>" line 1, col 1: unknown #-syntax: '#u8'
-%%% #u8()
-%%% ^
+==> #u8()
+
 >>> (bytevector? (read (open-input-string "#u8(10 20 30)")))
-%%% "<input-string>" line 1, col 1: unknown #-syntax: '#u8'
-%%% #u8(10 20 30)
-%%% ^
+==> #t
+
 >>> (bytevector-u8-ref (read (open-input-string "#u8(5 10 15)")) 1)
 ... ; --- Radix prefixes ---
 ... ; #x hexadecimal
-%%% "<input-string>" line 1, col 1: unknown #-syntax: '#u8'
-%%% #u8(5 10 15)
-%%% ^
+==> 10
 >>> (+ #xFF 1)
 ==> 256
 
