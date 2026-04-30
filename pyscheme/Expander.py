@@ -36,6 +36,7 @@ import os
 from pyscheme.AST import (
    alloc_cons, NIL_VALUE, VOID_VALUE, list_from_items,
    is_cons, is_nil, is_symbol, is_string, is_syntax_transformer,
+   is_vector, as_vector_items,
    as_symbol, as_string, src_of,
    make_symbol, ConsCell, REPL_FILENAME,
    SYMBOL, VOID,
@@ -134,7 +135,8 @@ def _current_macro_env():
    i = len(chain) - 1
    while i >= 0:
       for k in chain[i]._bindings:
-         merged[k] = chain[i].lookup(k)
+         entries = chain[i]._bindings[k]
+         merged[k] = entries[len(entries) - 1][1]
       i = i - 1
    return merged
 
@@ -351,39 +353,84 @@ def _is_head(form, name):
            and as_symbol(form.car) == name)
 
 
-def _collect_body_forms(body_cons, local_env_ref):
-   """Walk a body cons chain.  Expand each form (except define-values and
-   define-syntax, which _expand_body handles specially).  If the expanded
-   result is a (begin ...), splice its children into the surrounding sequence.
-   Return a Python list of body forms.
+def _ensure_local_env(local_env_ref):
+   """Create a child env for internal define-syntax if not yet created.
+   Saves the outer env in local_env_ref[0] for _expand_body to restore."""
+   if local_env_ref[0] is None:
+      from pyscheme.Environment import Environment
+      outer = _runtime_env_ref[0]
+      child = Environment(parent=outer) if outer is not None else Environment()
+      local_env_ref[0] = outer
+      _runtime_env_ref[0] = child
 
-   local_env_ref is a 1-element list.  Initially [None].  When the first
-   internal define-syntax is encountered a child env is created, installed
-   as the active macro env, and the outer env is saved in local_env_ref[0]
-   so _expand_body can restore it in its finally block."""
-   out = []
+
+def _prescan_syntax(raw_forms, local_env_ref):
+   """Pass 1 of body scanning: install all define-syntax transformers before
+   any other forms are expanded (R7RS §5.3.2 - all definitions visible
+   throughout the body).  Handles define-syntax directly; recurses into begin
+   forms; expands macro calls one level and recurses into begin results."""
+   i = 0
+   while i < len(raw_forms):
+      raw = raw_forms[i]
+      if _is_head(raw, 'define-syntax'):
+         _ensure_local_env(local_env_ref)
+         expand(raw)
+      elif _is_head(raw, 'begin'):
+         sub = []
+         cur = raw.cdr
+         while is_cons(cur):
+            sub.append(cur.car)
+            cur = cur.cdr
+         _prescan_syntax(sub, local_env_ref)
+      elif is_cons(raw) and is_symbol(raw.car) and _lookup_macro(raw.car) is not None:
+         try:
+            expanded = expand(raw)
+         except Exception:
+            i = i + 1
+            continue
+         if _is_head(expanded, 'begin'):
+            sub = []
+            cur = expanded.cdr
+            while is_cons(cur):
+               sub.append(cur.car)
+               cur = cur.cdr
+            _prescan_syntax(sub, local_env_ref)
+         elif _is_head(expanded, 'define-syntax'):
+            _ensure_local_env(local_env_ref)
+            expand(expanded)
+      i = i + 1
+
+
+def _collect_body_forms(body_cons, local_env_ref):
+   """Walk a body cons chain with two-pass syntax scanning.
+
+   Pass 1 (_prescan_syntax): install all define-syntax before expanding
+   anything so every transformer is visible throughout the body.
+   Pass 2: expand remaining forms; splice begin results recursively.
+
+   local_env_ref is a 1-element list [None] shared with _expand_body,
+   which restores the outer env in its finally block."""
+   raw_forms = []
    cur = body_cons
    while is_cons(cur):
-      raw = cur.car
-      if _is_head(raw, 'define-values'):
+      raw_forms.append(cur.car)
+      cur = cur.cdr
+   _prescan_syntax(raw_forms, local_env_ref)
+   out = []
+   i = 0
+   while i < len(raw_forms):
+      raw = raw_forms[i]
+      if _is_head(raw, 'define-syntax'):
+         pass
+      elif _is_head(raw, 'define-values'):
          out.append(raw)
-      elif _is_head(raw, 'define-syntax'):
-         # Internal syntax definition (R7RS §5.3.2): install in a local env
-         # that shadows the outer env for the rest of this body only.
-         if local_env_ref[0] is None:
-            from pyscheme.Environment import Environment
-            outer = _runtime_env_ref[0]
-            child = Environment(parent=outer) if outer is not None else Environment()
-            local_env_ref[0] = outer   # save outer for restore by _expand_body
-            _runtime_env_ref[0] = child
-         expand(raw)   # installs transformer in child env; returns VOID (discarded)
       else:
          form = expand(raw)
          if _is_head(form, 'begin'):
             out.extend(_collect_body_forms(form.cdr, local_env_ref))
          else:
             out.append(form)
-      cur = cur.cdr
+      i = i + 1
    return out
 
 
@@ -1073,6 +1120,13 @@ def _qq_walk(x, level, default_src):
          _qq_walk(x.car, level, src),
          _qq_walk(x.cdr, level, src),
          src)
+   # Vector template: process elements as a list template, then convert.
+   if is_vector(x):
+      items = as_vector_items(x)
+      list_chain = list_from_items(items, default_src)
+      list_expr = _qq_walk(list_chain, level, default_src)
+      return list_from_items(
+         [make_symbol('list->vector', default_src), list_expr], default_src)
    # Atom, NIL, or any other value - emit as literal.
    return _qq_quote(x, default_src)
 

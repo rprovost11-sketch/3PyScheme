@@ -789,7 +789,7 @@
 ...      (bar (syntax-rules () ((bar x y) (+ x y)))))
 ...     (foo 5)))
 ... ; nested macros preserve definition-time bindings
-%%% unbound variable: foo
+==> 10
 >>> (let ((+ *)) (double-inc 5))
 ... ; ================================================================
 ... ; 16. QUOTED DATA IN TEMPLATES NOT RENAMED
@@ -1012,3 +1012,49 @@
 %%% line 1, col 66: set! requires a name and a value (got 1 arguments)
 %%% (define-syntax bad-set (syntax-rules () ((bad-set x) (set! x)))) (bad-set 5)
 %%%                                                                  ^
+
+;;; ================================================================
+;;; Two-pass body syntax scan: define-syntax visible throughout body
+;;; ================================================================
+
+>>> (let ()
+...   (define (f x) (g x))
+...   (define-syntax g (syntax-rules () ((_ x) (+ x 1))))
+...   (f 5))
+... ; define-syntax after define: macro visible to earlier define
+==> 6
+
+>>> (let ()
+...   (define-syntax add1 (syntax-rules () ((_ e) (+ e 1))))
+...   (define x (add1 5))
+...   x)
+... ; define-syntax before define (already worked)
+==> 6
+
+>>> (let ()
+...   (define x (add1 5))
+...   (define-syntax add1 (syntax-rules () ((_ e) (+ e 1))))
+...   x)
+... ; define-syntax after use in define init (two-pass)
+==> 6
+
+>>> (define-syntax multi-define-syntax
+...   (syntax-rules ()
+...     [(_ (var expr) ...)
+...      (begin
+...        (define-syntax var expr)
+...        ...)]))
+==> #<void>
+
+>>> (let ()
+...   (define plus
+...     (lambda (x y)
+...       (if (zero? x)
+...           y
+...           (plus (sub1 x) (add1 y)))))
+...   (multi-define-syntax
+...     (add1 (syntax-rules () [(_ e) (+ e 1)]))
+...     (sub1 (syntax-rules () [(_ e) (- e 1)])))
+...   (plus 7 8))
+... ; macro expanding to begin+define-syntax visible to earlier define (two-pass)
+==> 15
