@@ -37,6 +37,9 @@ def _scheme_type_name(val):
       return 'null'
    if val is VOID_VALUE:
       return 'void'
+   from pyscheme.AST import is_string
+   if is_string(val):
+      return 'string'
    if isinstance(val, tuple):
       tag = val[0]
       if tag == BOOLEAN:
@@ -51,8 +54,6 @@ def _scheme_type_name(val):
          return 'complex'
       if tag == CHARACTER:
          return 'character'
-      if tag == STRING:
-         return 'string'
       if tag == SYMBOL:
          return 'symbol'
       if tag == CLOSURE:
@@ -114,6 +115,12 @@ def _describe_object(val, out):
       else:
          print(preview + ' is an improper pair', file=out)
       return
+   from pyscheme.AST import is_string, as_string
+   if is_string(val):
+      s = as_string(val)
+      print(pretty_print(val) + ' is a string', file=out)
+      print('  Length: ' + str(len(s)), file=out)
+      return
    if not isinstance(val, tuple):
       print(pretty_print(val) + ' is of unknown type', file=out)
       return
@@ -138,11 +145,6 @@ def _describe_object(val, out):
       return
    if tag == CHARACTER:
       print(pretty_print(val) + ' is a character', file=out)
-      return
-   if tag == STRING:
-      s = val[1]
-      print(pretty_print(val) + ' is a string', file=out)
-      print('  Length: ' + str(len(s)), file=out)
       return
    if tag == SYMBOL:
       print(val[1] + ' is a symbol', file=out)

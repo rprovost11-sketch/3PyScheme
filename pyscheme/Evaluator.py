@@ -72,7 +72,7 @@ from __future__ import annotations
 from pyscheme.Environment import (
    Environment,
    SchemeArityError, SchemeUnboundError, SchemeTypeError,
-   SchemeUserError, SchemeRaised,
+   SchemeUserError, SchemeRaised, SchemeFileError,
    arity_mismatch_msg,
 )
 from pyscheme.AST import (
@@ -96,6 +96,7 @@ from pyscheme.AST import (
    as_parameter_converter,
    make_boolean, make_closure, make_case_closure, make_promise_lazy,
    make_continuation, make_multi_values, make_primitive, make_parameter, make_symbol,
+   make_read_error_object,
    eqv_atom,
    src_of,
    VOID, BOOLEAN, COMPLEX, REAL, RATIONAL, INTEGER, CHARACTER, STRING,
@@ -2234,6 +2235,8 @@ def _cek_loop(expr, env, ctx):
             raise
          if isinstance(e, SchemeRaised):
             raised_value = e.value
+         elif isinstance(e, SchemeSyntaxError):
+            raised_value = make_read_error_object(e.msg, [])
          else:
             raised_value = make_error_object(e.msg, [])
          result = _enter_proc(handler, [raised_value], ctx, E, None)
@@ -2281,6 +2284,7 @@ if __name__ == '__main__':
          if is_nil(cur):
             return '(' + ' '.join(items) + ')'
          return '(' + ' '.join(items) + ' . ' + _to_text(cur) + ')'
+      if is_string(v):    return '"' + as_string(v) + '"'
       if not isinstance(v, tuple) or len(v) == 0:
          return repr(v)
       tag = v[0]
@@ -2289,7 +2293,6 @@ if __name__ == '__main__':
       if tag == INTEGER:  return str(v[1])
       if tag == REAL:     return repr(v[1])
       if tag == BOOLEAN:  return '#t' if v[1] else '#f'
-      if tag == STRING:   return '"' + v[1] + '"'
       if tag == CHARACTER: return '#\\' + v[1]
       if tag == SYMBOL:   return v[1]
       if tag == CLOSURE:  return '#<closure>'

@@ -33,6 +33,7 @@ from pyscheme.AST import (
    as_record_type_name,
    as_parameter_value, as_parameter_converter, set_parameter_value,
    as_error_object_message, as_error_object_irritants,
+   is_file_error_object, is_read_error_object,
    alloc_cons, make_symbol, make_promise_done, make_multi_values,
    make_record_type, make_record, make_parameter, make_string,
    make_environment, make_record_accessor, make_record_mutator,
@@ -96,19 +97,15 @@ def _prim_dynamic_wind_unreached(ctx, env, args, app_node):
 
 
 def _prim_file_error_p(ctx, env, args, app_node):
-   # R7RS allows always returning #f when the impl does not distinguish
-   # file errors from other errors.  pyScheme does not tag SchemeUserError
-   # objects by source (yet); a future enhancement could mark file-related
-   # errors at construction time.
-   from pyscheme.AST import make_boolean
-   return make_boolean(False)
+   from pyscheme.AST import make_boolean, is_error_object
+   obj = args[0]
+   return make_boolean(is_error_object(obj) and is_file_error_object(obj))
 
 
 def _prim_read_error_p(ctx, env, args, app_node):
-   # Same caveat as file-error?: SchemeSyntaxError raised from read
-   # propagates as an error-object but is not tagged distinctly.
-   from pyscheme.AST import make_boolean
-   return make_boolean(False)
+   from pyscheme.AST import make_boolean, is_error_object
+   obj = args[0]
+   return make_boolean(is_error_object(obj) and is_read_error_object(obj))
 
 
 def _prim_error_object_message(ctx, env, args, app_node):

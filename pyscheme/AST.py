@@ -112,13 +112,28 @@ class Parameter:
       self.converter = converter
 
 
+class SchemeString:
+   """Mutable string value.  Wraps a Python str; mutation replaces _s in
+   place so all references to the same instance see the update.
+   C port: struct SchemeString { GcHeader h; char* s; size_t len; };"""
+   def __init__(self, s, src=None):
+      self._s   = s
+      self._src = src
+   def __eq__(self, other):
+      return isinstance(other, SchemeString) and self._s == other._s
+   def __hash__(self):
+      raise TypeError('SchemeString is not hashable')
+
+
 class ErrorObject:
    """R7RS error object (6.11): carries a message string and a Python list
    of irritants.  Produced by the `error` primitive; retrieved by
-   error-object-message and error-object-irritants."""
-   def __init__(self, message, irritants):
-      self.message = message
+   error-object-message and error-object-irritants.
+   kind: 0=generic  1=file-error  2=read-error"""
+   def __init__(self, message, irritants, kind=0):
+      self.message   = message
       self.irritants = irritants
+      self.kind      = kind
 
 
 class Continuation:
@@ -251,7 +266,7 @@ def make_character(c, src=None):
    return (CHARACTER, c, src)
 
 def make_string(s, src=None):
-   return (STRING, s, src)
+   return SchemeString(s, src)
 
 def make_symbol(name, src=None):
    return (SYMBOL, name, frozenset(), src)
@@ -475,7 +490,7 @@ def is_character(val):
    return isinstance(val, tuple) and len(val) >= 2 and val[0] == CHARACTER
 
 def is_string(val):
-   return isinstance(val, tuple) and len(val) >= 2 and val[0] == STRING
+   return isinstance(val, SchemeString)
 
 def is_symbol(val):
    return isinstance(val, tuple) and len(val) >= 2 and val[0] == SYMBOL
@@ -550,6 +565,8 @@ def src_of(val):
    runtime NIL_VALUE singleton and other payload-free arms return None."""
    if isinstance(val, ConsCell):
       return val.src
+   if isinstance(val, SchemeString):
+      return val._src
    if isinstance(val, Promise):
       return None
    if isinstance(val, RecordType):
@@ -578,8 +595,6 @@ def src_of(val):
    if tag == EXACT_COMPLEX:
       return val[3]
    if tag == CHARACTER:
-      return val[2]
-   if tag == STRING:
       return val[2]
    if tag == BOOLEAN:
       return val[2]
@@ -626,7 +641,7 @@ def as_character(val):
    return val[1]
 
 def as_string(val):
-   return val[1]
+   return val._s
 
 def as_symbol(val):
    return val[1]
@@ -715,6 +730,21 @@ def as_error_object_message(e):
 
 def as_error_object_irritants(e):
    return e.irritants
+
+def as_error_object_kind(e):
+   return e.kind
+
+def make_file_error_object(message, irritants):
+   return ErrorObject(message, irritants, kind=1)
+
+def make_read_error_object(message, irritants):
+   return ErrorObject(message, irritants, kind=2)
+
+def is_file_error_object(val):
+   return isinstance(val, ErrorObject) and val.kind == 1
+
+def is_read_error_object(val):
+   return isinstance(val, ErrorObject) and val.kind == 2
 
 def as_continuation_k(c):
    return c.k_snapshot
@@ -925,6 +955,11 @@ if __name__ == '__main__':
    check('is_string',         is_string(s))
    check('as_string',         as_string(s) == 'hi')
    check('src_of string',     src_of(s) is si)
+   s2 = make_string('hi')
+   check('string eq same content', s == s2)
+   s._s = 'ho'
+   check('string mutation visible', as_string(s) == 'ho')
+   check('string eq after mutation', s != s2)
 
    sym = make_symbol('x', None)
    check('is_symbol',        is_symbol(sym))

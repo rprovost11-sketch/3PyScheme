@@ -1,14 +1,14 @@
 """String primitives.
 
-R7RS 6.7.  Strings are immutable in our impl beyond what the underlying
-Python str supports; we don't expose string-set! / string-fill! / string-
-copy! mutation forms (R7RS strings are sometimes mutable, sometimes
-immutable, depending on the impl - we choose the immutable side).
+R7RS 6.7.  Strings are mutable via a SchemeString wrapper that holds a Python
+str internally and rebuilds it on mutation; all references to the same
+SchemeString instance see the change.
 
 Covers: string-length, string-ref, string=?, string<?, string<=?,
 string>?, string>=?, substring, string-append, string->list,
-list->string, string-copy, make-string, string, string->symbol,
-symbol->string, string-upcase, string-downcase.
+list->string, string-copy, string-copy!, string-set!, string-fill!,
+make-string, string, string->symbol, symbol->string,
+string-upcase, string-downcase.
 """
 
 from pyscheme.primitives import register_primitive
@@ -299,20 +299,76 @@ def _prim_string_map(ctx, env, args, app_node):
 
 
 def _prim_string_set_bang(ctx, env, args, app_node):
-   raise SchemeTypeError(
-      'string-set!: pyScheme strings are immutable - this primitive is '
-      'present so (help string-set!) works, but cannot mutate.  R7RS '
-      'allows impls to make strings immutable.', src_of(app_node))
+   from pyscheme.AST import VOID_VALUE, is_character, as_character
+   s = args[0]
+   _check_string(s, 'string-set!', app_node, 1)
+   if not is_integer(args[1]):
+      raise SchemeTypeError('string-set!: index must be an integer', src_of(app_node))
+   k = as_integer(args[1])
+   if not is_character(args[2]):
+      raise SchemeTypeError('string-set!: third argument must be a character', src_of(app_node))
+   ch = as_character(args[2])
+   n = len(s._s)
+   if k < 0 or k >= n:
+      raise SchemeTypeError(
+         'string-set!: index ' + str(k) + ' out of range for string of length ' + str(n),
+         src_of(app_node))
+   s._s = s._s[:k] + ch + s._s[k + 1:]
+   return VOID_VALUE
 
 
 def _prim_string_fill_bang(ctx, env, args, app_node):
-   raise SchemeTypeError(
-      'string-fill!: pyScheme strings are immutable.', src_of(app_node))
+   from pyscheme.AST import VOID_VALUE, is_character, as_character
+   s = args[0]
+   _check_string(s, 'string-fill!', app_node, 1)
+   if not is_character(args[1]):
+      raise SchemeTypeError('string-fill!: second argument must be a character', src_of(app_node))
+   ch = as_character(args[1])
+   n = len(s._s)
+   start = 0
+   end   = n
+   if len(args) >= 3:
+      if not is_integer(args[2]):
+         raise SchemeTypeError('string-fill!: start must be an integer', src_of(app_node))
+      start = as_integer(args[2])
+   if len(args) >= 4:
+      if not is_integer(args[3]):
+         raise SchemeTypeError('string-fill!: end must be an integer', src_of(app_node))
+      end = as_integer(args[3])
+   if start < 0 or end > n or start > end:
+      raise SchemeTypeError('string-fill!: range out of bounds', src_of(app_node))
+   s._s = s._s[:start] + ch * (end - start) + s._s[end:]
+   return VOID_VALUE
 
 
 def _prim_string_copy_bang(ctx, env, args, app_node):
-   raise SchemeTypeError(
-      'string-copy!: pyScheme strings are immutable.', src_of(app_node))
+   from pyscheme.AST import VOID_VALUE
+   to = args[0]
+   _check_string(to, 'string-copy!', app_node, 1)
+   if not is_integer(args[1]):
+      raise SchemeTypeError('string-copy!: at must be an integer', src_of(app_node))
+   at = as_integer(args[1])
+   frm = args[2]
+   _check_string(frm, 'string-copy!', app_node, 3)
+   n_from = len(frm._s)
+   start  = 0
+   end    = n_from
+   if len(args) >= 4:
+      if not is_integer(args[3]):
+         raise SchemeTypeError('string-copy!: start must be an integer', src_of(app_node))
+      start = as_integer(args[3])
+   if len(args) >= 5:
+      if not is_integer(args[4]):
+         raise SchemeTypeError('string-copy!: end must be an integer', src_of(app_node))
+      end = as_integer(args[4])
+   if start < 0 or end > n_from or start > end:
+      raise SchemeTypeError('string-copy!: source range out of bounds', src_of(app_node))
+   chunk = frm._s[start:end]
+   n_to  = len(to._s)
+   if at < 0 or at + len(chunk) > n_to:
+      raise SchemeTypeError('string-copy!: destination range out of bounds', src_of(app_node))
+   to._s = to._s[:at] + chunk + to._s[at + len(chunk):]
+   return VOID_VALUE
 
 
 def _prim_string_for_each(ctx, env, args, app_node):
@@ -423,19 +479,15 @@ def register():
       doc=('(string-for-each proc str1 str2 ...) applies proc element-'
            'wise for effect; returns an unspecified value.  R7RS 6.7.'),
       category=CATEGORY)
-   # The following three are part of R7RS 6.7 (mutable strings) but
-   # pyScheme strings wrap an immutable Python str.  We register
-   # erroring stubs so these names exist (for help, for portability
-   # checks via procedure?) rather than producing a confusing
-   # "unbound variable" error at use sites.
    register_primitive('string-set!', (3, 3), _prim_string_set_bang,
-      doc=('(string-set! string k char) - pyScheme strings are immutable, '
-           'so this primitive raises an error if invoked.  R7RS 6.7 '
-           'allows immutable string implementations.'),
+      doc=('(string-set! string k char) sets character k of string to char in place.  '
+           'All references to the string see the change.  R7RS 6.7.'),
       category=CATEGORY)
    register_primitive('string-fill!', (2, 4), _prim_string_fill_bang,
-      doc='(string-fill! string char [start [end]]) - immutable in pyScheme.',
+      doc=('(string-fill! string char [start [end]]) fills string[start..end) with char.  '
+           'R7RS 6.7.'),
       category=CATEGORY)
    register_primitive('string-copy!', (3, 5), _prim_string_copy_bang,
-      doc='(string-copy! to at from [start [end]]) - immutable in pyScheme.',
+      doc=('(string-copy! to at from [start [end]]) copies from[start..end) into to '
+           'starting at index at.  R7RS 6.7.'),
       category=CATEGORY)

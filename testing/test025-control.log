@@ -573,7 +573,7 @@ caught
 ...   (guard (e (#t e))
 ...     (read (open-input-string "("))))
 ... ; --- guard with file-error? ---
-==> #f
+==> #t
 
 >>> (file-error?
 ...   (guard (e (#t e))
@@ -581,7 +581,7 @@ caught
 ... ; ==========================================================
 ... ; 11. error-object?, error-object-message, error-object-irritants
 ... ; ==========================================================
-==> #f
+==> #t
 
 >>> (guard (e (#t (error-object? e)))
 ...   (error "test"))
@@ -613,7 +613,7 @@ caught
 ...   (guard (e (#t e))
 ...     (read (open-input-string "("))))
 ... ; read-error? on a non-read-error
-==> #f
+==> #t
 
 >>> (read-error? 42)
 ... ; file-error? on a file-not-found error
@@ -623,7 +623,7 @@ caught
 ...   (guard (e (#t e))
 ...     (open-input-file "no_such_scheme_file_xyz.txt")))
 ... ; file-error? on a non-file-error
-==> #f
+==> #t
 
 >>> (file-error? 42)
 ... ; ==========================================================

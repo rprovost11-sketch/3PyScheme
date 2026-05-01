@@ -123,16 +123,13 @@
 >>> (let ((s (string-copy "hello")))
 ...   (string-set! s 0 #\H)
 ...   s)
-%%% SchemeTypeError: line 2, col 3: string-set!: pyScheme strings are immutable - this primitive is present so (help string-set!) works, but cannot mutate.  R7RS allows impls to make strings immutable.
-%%%   (string-set! s 0 #\H)
-%%%   ^
+==> "Hello"
+
 >>> (let ((s (make-string 3 #\A)))
 ...   (string-set! s 1 #\B)
 ...   (string-set! s 2 #\C)
 ...   s)
-%%% SchemeTypeError: line 2, col 3: string-set!: pyScheme strings are immutable - this primitive is present so (help string-set!) works, but cannot mutate.  R7RS allows impls to make strings immutable.
-%%%   (string-set! s 1 #\B)
-%%%   ^
+==> "ABC"
 >>> (string-set!)
 %%% SchemeArityError: line 1, col 1: string-set!: 0 arguments provided; 3 expected
 %%% (string-set!)
@@ -182,15 +179,12 @@
 ...   (string-copy! s 1 "ab")
 ...   s)
 ... ; with start/end
-%%% SchemeTypeError: line 2, col 3: string-copy!: pyScheme strings are immutable.
-%%%   (string-copy! s 1 "ab")
-%%%   ^
+==> "XabX"
+
 >>> (let ((s (string-copy "hello")))
 ...   (string-copy! s 1 "ABCDE" 1 3)
 ...   s)
-%%% SchemeTypeError: line 2, col 3: string-copy!: pyScheme strings are immutable.
-%%%   (string-copy! s 1 "ABCDE" 1 3)
-%%%   ^
+==> "hBClo"
 >>> (string-copy!)
 %%% SchemeArityError: line 1, col 1: string-copy!: 0 arguments provided; 3 to 5 expected
 %%% (string-copy!)
@@ -199,28 +193,22 @@
 ...   (string-fill! s #\B)
 ...   s)
 ... ; string-fill! returns unspecified
-%%% SchemeTypeError: line 2, col 3: string-fill!: pyScheme strings are immutable.
-%%%   (string-fill! s #\B)
-%%%   ^
+==> "BBB"
+
 >>> (string-fill! (make-string 1 #\A) #\B)
-%%% SchemeTypeError: line 1, col 1: string-fill!: pyScheme strings are immutable.
-%%% (string-fill! (make-string 1 #\A) #\B)
-%%% ^
+==> #<void>
 >>> (string-fill!)
 %%% SchemeArityError: line 1, col 1: string-fill!: 0 arguments provided; 2 to 4 expected
 %%% (string-fill!)
 %%% ^
 >>> (let ((s (string-copy "hello"))) (string-fill! s #\* 1 3) s)
-%%% SchemeTypeError: line 1, col 34: string-fill!: pyScheme strings are immutable.
-%%% (let ((s (string-copy "hello"))) (string-fill! s #\* 1 3) s)
-%%%                                  ^
+==> "h**lo"
+
 >>> (let ((s (string-copy "hello"))) (string-fill! s #\x) s)
 ... ; ============================================================
 ... ; 10. string-append
 ... ; ============================================================
-%%% SchemeTypeError: line 1, col 34: string-fill!: pyScheme strings are immutable.
-%%% (let ((s (string-copy "hello"))) (string-fill! s #\x) s)
-%%%                                  ^
+==> "xxxxx"
 >>> (string-append)
 ==> ""
 

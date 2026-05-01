@@ -70,7 +70,7 @@
 ... ; 16. Binary file ports: open-binary-input-file,
 ... ;                        open-binary-output-file
 ... ; ==========================================================
-==> #f
+==> #t
 
 >>> (file-error?
 ...   (guard (e (#t e))
@@ -78,20 +78,20 @@
 ... ; ==========================================================
 ... ; 17. close-port, close-input-port, close-output-port
 ... ; ==========================================================
-==> #f
+==> #t
 
 >>> (file-error?
 ...   (guard (e (#t e))
 ...     (delete-file "no_such_scheme_file_xyz.txt")))
 ... ; --- rename-file ---
 ... ; rename a file and verify old is gone, new exists
-==> #f
+==> #t
 
 >>> (file-error?
 ...   (guard (e (#t e))
 ...     (rename-file "no_such_file_xyz.txt" "other.txt")))
 ... ; arity error
-==> #f
+==> #t
 
 >>> (define f (case-lambda ((x) (list 'one x)) ((x y) (list 'two x y)) ((x y . rest) (list 'many x y rest)))) (f 1)
 ==> (one 1)

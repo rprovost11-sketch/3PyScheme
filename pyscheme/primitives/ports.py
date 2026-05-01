@@ -35,7 +35,7 @@ from pyscheme.AST import (
    Port,
    src_of,
 )
-from pyscheme.Environment import SchemeTypeError
+from pyscheme.Environment import SchemeTypeError, SchemeFileError
 
 
 CATEGORY = 'ports'
@@ -213,7 +213,7 @@ def _prim_open_input_file(ctx, env, args, app_node):
    try:
       f = open(path, 'r', encoding='utf-8')
    except OSError as e:
-      raise SchemeTypeError(
+      raise SchemeFileError(
          'open-input-file: cannot open %s: %s' % (path, str(e)),
          src_of(app_node))
    buf = f.read()
@@ -229,7 +229,7 @@ def _prim_open_output_file(ctx, env, args, app_node):
    try:
       f = open(path, 'w', encoding='utf-8')
    except OSError as e:
-      raise SchemeTypeError(
+      raise SchemeFileError(
          'open-output-file: cannot open %s: %s' % (path, str(e)),
          src_of(app_node))
    p = Port([], is_input=False, is_text=True, file_h=f, name=path)
@@ -295,7 +295,7 @@ def _prim_open_binary_input_file(ctx, env, args, app_node):
    try:
       f = open(path, 'rb')
    except OSError as e:
-      raise SchemeTypeError(
+      raise SchemeFileError(
          'open-binary-input-file: cannot open %s: %s' % (path, str(e)),
          src_of(app_node))
    data = bytearray(f.read())
@@ -312,7 +312,7 @@ def _prim_open_binary_output_file(ctx, env, args, app_node):
    try:
       f = open(path, 'wb')
    except OSError as e:
-      raise SchemeTypeError(
+      raise SchemeFileError(
          'open-binary-output-file: cannot open %s: %s' % (path, str(e)),
          src_of(app_node))
    p = Port(bytearray(), is_input=False, is_text=False,
@@ -800,7 +800,7 @@ def _prim_delete_file(ctx, env, args, app_node):
    try:
       _os.remove(path)
    except OSError as e:
-      raise SchemeTypeError('delete-file: ' + str(e), src_of(app_node))
+      raise SchemeFileError('delete-file: ' + str(e), src_of(app_node))
    return VOID_VALUE
 
 
@@ -815,7 +815,7 @@ def _prim_rename_file(ctx, env, args, app_node):
    try:
       _os.rename(as_string(args[0]), as_string(args[1]))
    except OSError as e:
-      raise SchemeTypeError('rename-file: ' + str(e), src_of(app_node))
+      raise SchemeFileError('rename-file: ' + str(e), src_of(app_node))
    return VOID_VALUE
 
 

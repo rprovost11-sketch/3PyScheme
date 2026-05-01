@@ -6,7 +6,10 @@ to raise SchemeUnboundError directly, and Evaluator already imports
 from Environment - putting the errors here avoids a circular import.
 """
 
-from pyscheme.AST import SourceInfo, ConsCell, format_with_caret, make_error_object
+from pyscheme.AST import (
+   SourceInfo, ConsCell, format_with_caret,
+   make_error_object, make_file_error_object,
+)
 
 
 # --- Scheme runtime error hierarchy ------------------------------------
@@ -75,6 +78,17 @@ class SchemeRuntimeError(_PositionedSchemeError):
    """Raised when a Python-level runtime error (e.g. RecursionError) occurs
    inside the interpreter pipeline.  Carries no source position."""
    pass
+
+
+class SchemeFileError(SchemeRaised):
+   """Raised by file I/O primitives when an OS-level error occurs (file not
+   found, permission denied, etc.).  Value is a file-kind ErrorObject so
+   (file-error? obj) returns #t when caught by with-exception-handler."""
+   def __init__(self, message, src=None):
+      error_obj = make_file_error_object(message, [])
+      _PositionedSchemeError.__init__(self, message, src)
+      self.value = error_obj
+      self.continuable = False
 
 
 class SchemeUserError(SchemeRaised):

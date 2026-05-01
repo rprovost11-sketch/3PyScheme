@@ -934,7 +934,7 @@ def _strip_src(v):
    if is_integer(v):     return (INTEGER,   as_integer(v))
    if is_real(v):        return (REAL,      as_real(v))
    if is_rational(v):    return (RATIONAL,  as_rational_num(v), as_rational_den(v))
-   if is_string(v):      return (STRING,    as_string(v))
+   if is_string(v):      return make_string(as_string(v))
    if is_character(v):   return (CHARACTER, as_character(v))
    if is_boolean(v):     return (BOOLEAN,   as_boolean(v))
    if is_symbol(v):      return (SYMBOL,    as_symbol(v))
@@ -955,7 +955,7 @@ if __name__ == '__main__':
       ('#f',                  (BOOLEAN, False)),
       ('#\\a',                (CHARACTER, 'a')),
       ('#\\space',            (CHARACTER, ' ')),
-      ('"hello"',             (STRING, 'hello')),
+      ('"hello"',             make_string('hello')),
 
       # identifiers
       ('x',                   (SYMBOL, 'x')),
