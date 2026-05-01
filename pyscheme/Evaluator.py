@@ -711,17 +711,36 @@ def _apply_value(V, arg_values, app_node):
    return _beta_reduce(V, arg_values, app_node)
 
 
-def _classify_cond_clause(clause):
+def _is_aux_keyword(sym, name, env):
+   """R7RS auxiliary syntax recognition: a symbol matches the auxiliary
+   keyword `name` only when it is not bound to a user value visible at
+   its scope-set context.  This is what makes (let ([else #f]) (cond
+   [else 1])) treat `else` as a regular variable rather than the cond
+   else marker."""
+   if not is_symbol(sym) or as_symbol(sym) != name:
+      return False
+   if env is None:
+      return True
+   try:
+      env.lookup(name, as_symbol_scopes(sym))
+   except SchemeUnboundError:
+      return True
+   return False
+
+
+def _classify_cond_clause(clause, env=None):
    """Return ('else', body_cons) | ('arrow', test, proc) |
    ('test-only', test) | ('body', test, body_cons).  Caller has
-   already verified clause is a non-nil cons (Analyzer validated)."""
+   already verified clause is a non-nil cons (Analyzer validated).
+   `env` enables hygienic recognition of auxiliary keywords `else`
+   and `=>`: shadowing them in scope reverts to a normal test."""
    head = clause.car
-   if is_symbol(head) and as_symbol(head) == 'else':
+   if _is_aux_keyword(head, 'else', env):
       return ('else', clause.cdr)
    if is_nil(clause.cdr):
       return ('test-only', head)
-   if (is_cons(clause.cdr) and is_symbol(clause.cdr.car)
-         and as_symbol(clause.cdr.car) == '=>'
+   if (is_cons(clause.cdr)
+         and _is_aux_keyword(clause.cdr.car, '=>', env)
          and is_cons(clause.cdr.cdr) and is_nil(clause.cdr.cdr.cdr)):
       return ('arrow', head, clause.cdr.cdr.car)
    return ('body', head, clause.cdr)
@@ -1186,7 +1205,7 @@ def _cek_loop(expr, env, ctx):
                         clauses = C.cdr
                         first   = clauses.car
                         rest    = clauses.cdr
-                        kind = _classify_cond_clause(first)
+                        kind = _classify_cond_clause(first, E)
                         if kind[0] == 'else':
                            body = kind[1]
                            C = body.car
@@ -1951,7 +1970,7 @@ def _cek_loop(expr, env, ctx):
                         continue
                      nxt  = remaining.car
                      rest = remaining.cdr
-                     kind = _classify_cond_clause(nxt)
+                     kind = _classify_cond_clause(nxt, saved_env)
                      E = saved_env
                      if kind[0] == 'else':
                         body = kind[1]
@@ -1963,7 +1982,7 @@ def _cek_loop(expr, env, ctx):
                      C = kind[1]
                      break
                   # Test truthy - dispatch on clause kind.
-                  kind = _classify_cond_clause(current)
+                  kind = _classify_cond_clause(current, saved_env)
                   if kind[0] == 'test-only':
                      continue   # V stays as the test value
                   if kind[0] == 'body':
@@ -2037,7 +2056,7 @@ def _cek_loop(expr, env, ctx):
                   # retry by re-pushing FRAME_CASE frames that carry the key
                   # alongside the remaining clauses.  Walk the current clause.
                   head = current_clause.car
-                  if is_symbol(head) and as_symbol(head) == 'else':
+                  if _is_aux_keyword(head, 'else', saved_env):
                      body = current_clause.cdr
                      E = saved_env
                      if is_cons(body) and is_symbol(body.car) and as_symbol(body.car) == '=>':

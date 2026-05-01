@@ -461,6 +461,22 @@ def _analyze_begin(sexpr, static_env):
       cur = cur.cdr
 
 
+def _check_unique_let_names(pairs, form_name, sexpr):
+   """Raise SchemeAnalysisError if any binding name appears twice.
+   R7RS 4.2.2: let, letrec, letrec* all require distinct binding names.
+   let* explicitly allows duplicates and so should not call this."""
+   seen = set()
+   i = 0
+   while i < len(pairs):
+      n = pairs[i][0]
+      if n in seen:
+         raise SchemeAnalysisError(
+            "duplicate variable name in " + form_name + " bindings: " + n,
+            src_of(sexpr))
+      seen.add(n)
+      i = i + 1
+
+
 def _parse_let_bindings(bindings_sexpr, form_name):
    """Validate a let-family binding list and return a list of
    (var_name, value_sexpr) pairs.  Does NOT analyze value_sexprs - the
@@ -497,6 +513,8 @@ def _analyze_let(sexpr, static_env):
       _analyze_named_let(sexpr, static_env)
       return
    pairs = _parse_let_bindings(sexpr.cdr.car, 'let')
+   # R7RS 4.2.2: a binding name must not appear twice.
+   _check_unique_let_names(pairs, 'let', sexpr)
    # All val_exprs evaluated in the enclosing env.
    i = 0
    while i < len(pairs):
@@ -554,6 +572,8 @@ def _analyze_letrec_family(sexpr, static_env, name):
          name + " requires a binding list and at least one body expression",
          src_of(sexpr))
    pairs = _parse_let_bindings(sexpr.cdr.car, name)
+   # R7RS 4.2.2: a binding name must not appear twice in letrec / letrec*.
+   _check_unique_let_names(pairs, name, sexpr)
    names = []
    i = 0
    while i < len(pairs):
@@ -634,7 +654,15 @@ def _analyze_cond(sexpr, static_env):
             "cond clause must be a non-empty list, got " + _render(clause),
             src_of(clause))
       head = clause.car
-      if _is_symbol_named(head, 'else'):
+      # Auxiliary keywords `else` and `=>` are recognized only when not
+      # shadowed by a lexical binding (R7RS hygiene).  static_env tracks
+      # in-scope names; if `else`/`=>` appears there, it's a user variable
+      # and the clause is treated as a regular test.
+      head_is_else = (_is_symbol_named(head, 'else')
+                      and 'else' not in static_env)
+      head_is_arrow = (clen == 3 and _is_symbol_named(clause.cdr.car, '=>')
+                       and '=>' not in static_env)
+      if head_is_else:
          if i != total - 1:
             raise SchemeAnalysisError(
                "cond 'else' clause must be the last clause", src_of(clause))
@@ -647,7 +675,7 @@ def _analyze_cond(sexpr, static_env):
          while is_cons(cur):
             analyze(cur.car, static_env)
             cur = cur.cdr
-      elif (clen == 3 and _is_symbol_named(clause.cdr.car, '=>')):
+      elif head_is_arrow:
          analyze(clause.car,             static_env)   # test
          analyze(clause.cdr.cdr.car,     static_env)   # proc
       elif clen == 1:
@@ -682,12 +710,15 @@ def _analyze_case(sexpr, static_env):
             + _render(clause),
             src_of(clause))
       head = clause.car
-      if _is_symbol_named(head, 'else'):
+      # case `else` recognized only when not shadowed (R7RS hygiene).
+      if _is_symbol_named(head, 'else') and 'else' not in static_env:
          if i != total - 1:
             raise SchemeAnalysisError(
                "case 'else' clause must be the last clause", src_of(clause))
          body_cons = clause.cdr
-         if (is_cons(body_cons) and _is_symbol_named(body_cons.car, '=>')):
+         if (is_cons(body_cons)
+               and _is_symbol_named(body_cons.car, '=>')
+               and '=>' not in static_env):
             # (else => proc-expr)
             if not (is_cons(body_cons.cdr) and is_nil(body_cons.cdr.cdr)):
                raise SchemeAnalysisError(

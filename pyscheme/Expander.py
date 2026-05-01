@@ -250,12 +250,17 @@ def _expand_let_syntax(sexpr, is_letrec):
       child_env = Environment()
    else:
       child_env = Environment(parent=outer_env)
-   # For letrec-syntax, swap to child_env so siblings are visible at
-   # macro expansion time via the runtime-env transformer lookup.  For
-   # let-syntax, leave the outer env active so siblings are not visible.
-   # With sets-of-scopes hygiene, def-time bindings are resolved via
-   # Environment scope-set lookup at expansion time, so we no longer
-   # need to snapshot a def_env per transformer.
+   # Sets-of-scopes distinction:
+   # - sc is a fresh scope shared by the body and (for letrec-syntax only)
+   #   each transformer's syntax-rules tail.  Transformers are bound at
+   #   scope_set ∪ {sc}.
+   # - For let-syntax, transformer tails are NOT tagged with sc, so a
+   #   sibling binding (at scope_set ∪ {sc}) is not a subset of any
+   #   transformer's template scopes -> siblings invisible.
+   # - For letrec-syntax, tagging tails with sc before parsing makes
+   #   sibling visibility natural via the same subset lookup.
+   src = sexpr.src
+   sc = new_scope()
    if is_letrec:
       _runtime_env_ref[0] = child_env
    try:
@@ -273,15 +278,17 @@ def _expand_let_syntax(sexpr, is_letrec):
             raise SchemeSyntaxError(
                'let-syntax: transformer must be (syntax-rules ...)',
                src_of(tr_expr))
-         t = parse_syntax_rules(tr_expr.cdr, None, bname)
-         child_env.bind(bname, t, as_symbol_scopes(bsym))
+         tail = tr_expr.cdr
+         if is_letrec:
+            tail = _add_scope_to_form(tail, sc)
+         t = parse_syntax_rules(tail, None, bname)
+         bind_scope = as_symbol_scopes(bsym) | frozenset([sc])
+         child_env.bind(bname, t, bind_scope)
          cur = cur.cdr
       # Now expand the body with the child env active (for both let and
-      # letrec variants).  Add a fresh scope to the body so its identifiers
-      # are distinguished from same-named identifiers at the use site.
+      # letrec variants).  Adding sc to the body lets it see the local
+      # transformers via scope-set lookup.
       _runtime_env_ref[0] = child_env
-      src = sexpr.src
-      sc = new_scope()
       if is_cons(body.cdr):
          body_items = [make_symbol('begin', src)]
          bcur = body

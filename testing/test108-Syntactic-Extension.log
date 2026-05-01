@@ -30,8 +30,8 @@
 ...   x)
 ==> 0
 
-;;; let-syntax: g's (f x) should call the outer lambda f (not the syntax f)
-;;; book: (1 2); pyscheme: (1 1) -- let-syntax does not distinguish outer f from syntax f
+;;; let-syntax: g's (f x) reaches the outer lambda f because let-syntax
+;;; siblings are NOT visible to each other (R7RS 4.3.1).
 
 >>> (let ([f (lambda (x) (+ x 1))])
 ...   (let-syntax ([f (syntax-rules ()
@@ -39,7 +39,7 @@
 ...                [g (syntax-rules ()
 ...                        [(_ x) (f x)])])
 ...     (list (f 1) (g 1))))
-==> (1 1)
+==> (1 2)
 
 ;;; letrec-syntax: g sees the syntax f from the same binding block
 
@@ -94,18 +94,20 @@
 %%% (define-syntax my-or (lambda (x) #'x))
 %%%                                  ^
 
-;;; pyscheme's built-in cond matches else by symbol name, not identifier binding
-;;; book: does not write "oops"; pyscheme: writes "oops" (non-hygienic else check)
+;;; R7RS hygienic cond: when 'else' is lexically shadowed, the cond clause
+;;; treats it as a regular test expression -- the value #f is falsy, so
+;;; the body does NOT run.
 
 >>> (let ([else #f])
 ...   (cond [else (write "oops")]))
-"oops"
 ==> #<void>
 
-;;; pyscheme does not detect duplicate let binding -- book: syntax violation
+;;; R7RS 4.2.2: a let binding name must not appear twice (syntax violation).
 
 >>> (let ([a 3] [a 4]) (+ a a))
-==> 8
+%%% line 1, col 1: duplicate variable name in let bindings: a
+%%% (let ([a 3] [a 4]) (+ a a))
+%%% ^
 
 ;;; pcar: syntax-case with fender -- #' not supported
 
