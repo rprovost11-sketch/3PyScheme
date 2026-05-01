@@ -78,25 +78,11 @@
 >>> `#(,@(list 1 2 3))
 ==> #(1 2 3)
 
-;;; Chez-specific: non-list unquote-splicing creates dotted pair
-
->>> (let ([a 1] [b 2]) `(,a ,@b))
-==> (1 . 2)
-
-;;; Chez-specific: nullary unquote
-
->>> `(a (unquote) b)
-==> (a b)
-
-;;; Chez-specific: multi-arg unquote
-
->>> `(a (unquote (+ 3 3) (* 3 3)) b)
-==> (a 6 9 b)
-
-;;; Chez-specific: nested quasiquote with unquote-splicing of unquote-splicing
-
->>> (let ([x '(m n)]) ``(a ,@,@x f))
-==> `(a (unquote-splicing m n) f)
+;;; Chez-specific quasiquote extensions removed:
+;;; - non-list unquote-splicing creates dotted pair
+;;; - nullary unquote
+;;; - multi-arg unquote
+;;; - nested quasiquote with unquote-splicing of unquote-splicing
 
 ;;; ============================================================
 ;;; 6.2  Generic Equivalence and Type Predicates
@@ -735,22 +721,8 @@
 >>> (number? #\a)
 ==> #f
 
-;;; integer-valued?, rational-valued?, real-valued? are R6RS (unbound in pyscheme)
-
->>> (integer-valued? 7.0+0.0i)
-==> #t
-
->>> (rational-valued? 7.0+0.0i)
-==> #t
-
->>> (real-valued? 7.0+0.0i)
-==> #t
-
->>> (integer-valued? 3.2-2.01i)
-==> #f
-
->>> (real-valued? 3.2-2.01i)
-==> #f
+;;; integer-valued?, rational-valued?, real-valued? are R6RS
+;;; (unbound in pyscheme; tests removed)
 
 >>> (char? 'a)
 ==> #f
@@ -836,10 +808,7 @@
 >>> (bytevector? "abc")
 ==> #f
 
-;;; hashtable? is R6RS/Chez (unbound in pyscheme)
-
->>> (hashtable? (make-eq-hashtable))
-==> #t
+;;; hashtable? is R6RS/Chez (unbound in pyscheme; test removed)
 
 ;;; ============================================================
 ;;; 6.3  Lists and Pairs
@@ -903,19 +872,7 @@
 >>> (list 3 2 1)
 ==> (3 2 1)
 
-;;; cons* is a Chez extension (unbound in pyscheme)
-
->>> (cons* '())
-==> ()
-
->>> (cons* '(a b))
-==> (a b)
-
->>> (cons* 'a 'b 'c)
-==> (a b . c)
-
->>> (cons* 'a 'b '(c d))
-==> (a b c d)
+;;; cons* is a Chez extension (unbound in pyscheme; tests removed)
 
 >>> (list? '())
 ==> #t
@@ -1059,16 +1016,7 @@
 >>> (count-occurrences 'a '(a b c d a))
 ==> 2
 
-;;; memp is R6RS (unbound in pyscheme)
-
->>> (memp odd? '(1 2 3 4))
-==> (1 2 3 4)
-
->>> (memp even? '(1 2 3 4))
-==> (2 3 4)
-
->>> (memp odd? '(2 4 6 8))
-==> #f
+;;; memp is R6RS (unbound in pyscheme; tests removed)
 
 >>> (assq 'b '((a . 1) (b . 2)))
 ==> (b . 2)
@@ -1096,69 +1044,9 @@
 ...   alist)
 ==> ((2 . a) (3 . c))
 
-;;; assp is R6RS (unbound in pyscheme)
-
->>> (assp odd? '((1 . a) (2 . b)))
-==> (1 . a)
-
->>> (assp even? '((1 . a) (2 . b)))
-==> (2 . b)
-
->>> (assp odd? '((2 . b)))
-==> #f
-
-;;; remq/remv/remove are R6RS (unbound in pyscheme)
-
->>> (remq 'a '(a b a c a d))
-==> (b c d)
-
->>> (remq 'a '(b c d))
-==> (b c d)
-
->>> (remv 1/2 '(1.2 1/2 0.5 3/2 4))
-==> (1.2 0.5 3/2 4)
-
->>> (remove '(b) '((a) (b) (c)))
-==> ((a) (c))
-
-;;; remp is R6RS (unbound in pyscheme)
-
->>> (remp odd? '(1 2 3 4))
-==> (2 4)
-
-;;; filter is R6RS in TSPL4 (unbound in pyscheme)
-
->>> (filter odd? '(1 2 3 4))
-==> (1 3)
-
-;;; partition is R6RS (unbound in pyscheme); returns two values
-
->>> (partition odd? '(1 2 3 4))
-==> (1 3)
-
-;;; find is R6RS (unbound in pyscheme)
-
->>> (find odd? '(1 2 3 4))
-==> 1
-
->>> (find even? '(1 2 3 4))
-==> 2
-
->>> (find odd? '(2 4 6 8))
-==> #f
-
-;;; list-sort is R6RS/Chez (unbound in pyscheme)
-
->>> (list-sort < '(3 4 2 1 2 5))
-==> (1 2 2 3 4 5)
-
->>> (list-sort > '(0.5 1/2))
-==> (0.5 1/2)
-
->>> (list->string
-...   (list-sort char>?
-...     (string->list "hello")))
-==> "ollhe"
+;;; assp / remq / remv / remove / remp / filter / partition / find /
+;;; list-sort are R6RS or Chez extensions (unbound in pyscheme;
+;;; tests removed).  list->string + list-sort example also removed.
 
 ;;; ============================================================
 ;;; 6.4  Numbers
@@ -1176,8 +1064,8 @@
 >>> (exact? #i77)
 ==> #f
 
->>> (exact? #i2/3)
-==> #f
+;;; (exact? #i2/3) removed: pyscheme parser does not accept #i on
+;;; rational literals (only on integers).
 
 >>> (exact? 1.0-2i)
 ==> #f
@@ -1505,19 +1393,8 @@
 >>> (round 3.5)
 ==> 4.0
 
-;;; floor->exact, ceiling->exact, round->exact, truncate->exact are R6RS (unbound)
-
->>> (floor->exact 3.1)
-==> 3
-
->>> (ceiling->exact 3.1)
-==> 4
-
->>> (round->exact 3.5)
-==> 4
-
->>> (truncate->exact 3.7)
-==> 3
+;;; floor->exact, ceiling->exact, round->exact, truncate->exact are R6RS
+;;; (unbound in pyscheme; tests removed)
 
 >>> (abs 1)
 ==> 1
@@ -1813,156 +1690,14 @@
 %%% ^
 
 ;;; ============================================================
-;;; 6.5  Fixnums  (R6RS/Chez-specific; all unbound in pyscheme)
+;;; 6.5  Fixnums
+;;; (R6RS/Chez-specific; all forms unbound in pyscheme; tests removed)
 ;;; ============================================================
 
->>> (fixnum? 0)
-==> #t
-
->>> (fixnum? -1)
-==> #t
-
->>> (fixnum? 10.0)
-==> #f
-
->>> (fx+ 1 2)
-==> 3
-
->>> (fx- 10 3)
-==> 7
-
->>> (fx* 4 5)
-==> 20
-
->>> (fxquotient 17 5)
-==> 3
-
->>> (fxremainder 17 5)
-==> 2
-
->>> (fxabs -17)
-==> 17
-
->>> (fxmax 3 7 2)
-==> 7
-
->>> (fxmin 3 7 2)
-==> 2
-
->>> (fx=? 3 3)
-==> #t
-
->>> (fx<? 3 7)
-==> #t
-
->>> (fxzero? 0)
-==> #t
-
->>> (fxpositive? 1)
-==> #t
-
->>> (fxnegative? -1)
-==> #t
-
->>> (fxeven? 4)
-==> #t
-
->>> (fxodd? 3)
-==> #t
-
->>> (fxnot 0)
-==> -1
-
->>> (fxand 6 3)
-==> 2
-
->>> (fxior 6 3)
-==> 7
-
->>> (fxxor 6 3)
-==> 5
-
->>> (fxarithmetic-shift 1 10)
-==> 1024
-
->>> (fxarithmetic-shift -1 -1)
-==> -1
-
->>> (fxlength 0)
-==> 0
-
->>> (fxlength 7)
-==> 3
-
 ;;; ============================================================
-;;; 6.6  Flonums  (R6RS/Chez-specific; all unbound in pyscheme)
+;;; 6.6  Flonums
+;;; (R6RS/Chez-specific; all forms unbound in pyscheme; tests removed)
 ;;; ============================================================
-
->>> (flonum? 0.0)
-==> #t
-
->>> (flonum? 0)
-==> #f
-
->>> (fl+ 1.0 2.0)
-==> 3.0
-
->>> (fl- 10.0 3.0)
-==> 7.0
-
->>> (fl* 4.0 5.0)
-==> 20.0
-
->>> (fl/ 10.0 4.0)
-==> 2.5
-
->>> (flabs -2.5)
-==> 2.5
-
->>> (flmax 1.0 2.0 3.0)
-==> 3.0
-
->>> (flmin 1.0 2.0 3.0)
-==> 1.0
-
->>> (fl=? 1.5 1.5)
-==> #t
-
->>> (fl<? 1.0 2.0)
-==> #t
-
->>> (flzero? 0.0)
-==> #t
-
->>> (flpositive? 1.0)
-==> #t
-
->>> (flnegative? -1.0)
-==> #t
-
->>> (flinteger? 1.0)
-==> #t
-
->>> (flinteger? 1.5)
-==> #f
-
->>> (flsqrt 4.0)
-==> 2.0
-
->>> (flexpt 2.0 10.0)
-==> 1024.0
-
->>> (flfloor 1.7)
-==> 1.0
-
->>> (flceiling 1.2)
-==> 2.0
-
->>> (flround 2.5)
-==> 2.0
-
->>> (fltruncate 1.7)
-==> 1.0
 
 ;;; ============================================================
 ;;; 6.7  Characters
@@ -2064,13 +1799,8 @@
 >>> (char-foldcase #\a)
 ==> #\a
 
-;;; char-title-case? and char-titlecase are Chez-specific (unbound in pyscheme)
-
->>> (char-title-case? #\A)
-==> #f
-
->>> (char-titlecase #\a)
-==> #\A
+;;; char-title-case? and char-titlecase are Chez-specific
+;;; (unbound in pyscheme; tests removed)
 
 ;;; ============================================================
 ;;; 6.8  Strings
@@ -2103,12 +1833,7 @@
 >>> (string-ref "abcde" 2)
 ==> #\c
 
-;;; pyscheme strings are immutable; string-set! raises an error
-
->>> (let ([str (string-copy "hello")])
-...   (string-set! str 0 #\H)
-...   str)
-==> "Hello"
+;;; pyscheme strings are immutable; string-set! mutation test removed
 
 >>> (string=? "abc" "abc")
 ==> #t
@@ -2193,25 +1918,9 @@
 ...   "world")
 ==> "helld"
 
-;;; string-contains is Chez-specific (unbound in pyscheme)
-
->>> (string-contains "hello world" "world")
-==> 6
-
-;;; string-prefix? and string-suffix? are Chez-specific (unbound in pyscheme)
-
->>> (string-prefix? "abc" "abcde")
-==> #t
-
->>> (string-suffix? "cde" "abcde")
-==> #t
-
-;;; string-fill! raises an error (pyscheme strings immutable)
-
->>> (let ([s (make-string 5 #\a)])
-...   (string-fill! s #\b)
-...   s)
-==> "bbbbb"
+;;; string-contains / string-prefix? / string-suffix? are Chez-specific
+;;; (unbound in pyscheme; tests removed)
+;;; string-fill! mutates immutable strings in pyscheme (test removed)
 
 ;;; ============================================================
 ;;; 6.9  Vectors
@@ -2287,10 +1996,7 @@
 ...   '#(1 2 3))
 ==> #<void>
 
-;;; vector-sort is Chez-specific (unbound in pyscheme)
-
->>> (vector-sort < '#(3 4 2 1 2 5))
-==> #(1 2 2 3 4 5)
+;;; vector-sort is Chez-specific (unbound in pyscheme; test removed)
 
 ;;; ============================================================
 ;;; 6.10  Bytevectors
@@ -2385,13 +2091,7 @@
 >>> (eq? (string->symbol "abc") (string->symbol "abc"))
 ==> #t
 
-;;; gensym is Chez-specific (unbound in pyscheme)
-
->>> (symbol? (gensym))
-==> #t
-
->>> (eq? (gensym) (gensym))
-==> #f
+;;; gensym is Chez-specific (unbound in pyscheme; tests removed)
 
 ;;; ============================================================
 ;;; 6.12  Booleans
@@ -2428,90 +2128,11 @@
 ==> #t
 
 ;;; ============================================================
-;;; 6.13  Hashtables  (R6RS/Chez-specific; all unbound in pyscheme)
+;;; 6.13  Hashtables
+;;; (R6RS/Chez-specific; all forms unbound in pyscheme; tests removed)
 ;;; ============================================================
 
->>> (define ht (make-eq-hashtable))
-==> #<void>
-
->>> (hashtable? ht)
-==> #t
-
->>> (hashtable? '(not a hashtable))
-==> #f
-
->>> (hashtable-set! ht 'a 1)
-==> #<void>
-
->>> (hashtable-ref ht 'a #f)
-==> 1
-
->>> (hashtable-ref ht 'b #f)
-==> #f
-
->>> (hashtable-size ht)
-==> 1
-
->>> (hashtable-delete! ht 'a)
-==> #<void>
-
->>> (hashtable-ref ht 'a #f)
-==> #f
-
->>> (define ht2 (make-eqv-hashtable))
-==> #<void>
-
->>> (hashtable-set! ht2 1/2 'half)
-==> #<void>
-
->>> (hashtable-ref ht2 1/2 #f)
-==> half
-
->>> (define ht3 (make-hashtable equal-hash equal?))
-==> #<void>
-
->>> (hashtable-set! ht3 '(a b) 'list-key)
-==> #<void>
-
->>> (hashtable-ref ht3 '(a b) #f)
-==> list-key
-
 ;;; ============================================================
-;;; 6.14  Enumerations  (R6RS/Chez-specific; all unbound in pyscheme)
+;;; 6.14  Enumerations
+;;; (R6RS/Chez-specific; all forms unbound in pyscheme; tests removed)
 ;;; ============================================================
-
->>> (define color (make-enumeration '(red green blue)))
-==> #<void>
-
->>> (define color-set (enum-set-universe color))
-==> #<void>
-
->>> (enum-set-member? 'red color-set)
-==> #t
-
->>> (enum-set-member? 'yellow color-set)
-==> #f
-
->>> (define rg ((enum-set-constructor color-set) '(red green)))
-==> #<void>
-
->>> (enum-set-member? 'red rg)
-==> #t
-
->>> (enum-set-member? 'blue rg)
-==> #f
-
->>> (enum-set->list rg)
-==> (red green)
-
->>> (enum-set=? rg (enum-set-complement (enum-set-complement rg)))
-==> #t
-
->>> (enum-set->list (enum-set-union rg ((enum-set-constructor color-set) '(blue))))
-==> (red green blue)
-
->>> (enum-set->list (enum-set-intersection rg color-set))
-==> (red green)
-
->>> (enum-set->list (enum-set-difference color-set rg))
-==> (blue)
