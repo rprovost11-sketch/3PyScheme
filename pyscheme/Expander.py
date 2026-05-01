@@ -219,7 +219,7 @@ def _expand_define_syntax(sexpr):
       raise SchemeSyntaxError(
          'define-syntax: transformer must be (syntax-rules ...)',
          src_of(tr_expr))
-   t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), macro_name)
+   t = parse_syntax_rules(tr_expr.cdr, None, macro_name)
    env = _runtime_env_ref[0]
    if env is not None:
       env.bind(macro_name, t, as_symbol_scopes(macro_sym))
@@ -250,13 +250,15 @@ def _expand_let_syntax(sexpr, is_letrec):
       child_env = Environment()
    else:
       child_env = Environment(parent=outer_env)
-   # For letrec-syntax, transformer's def_env includes siblings (we
-   # temporarily swap to child_env BEFORE parsing so siblings get folded
-   # in).  For let-syntax, def_env is the outer env.
+   # For letrec-syntax, swap to child_env so siblings are visible at
+   # macro expansion time via the runtime-env transformer lookup.  For
+   # let-syntax, leave the outer env active so siblings are not visible.
+   # With sets-of-scopes hygiene, def-time bindings are resolved via
+   # Environment scope-set lookup at expansion time, so we no longer
+   # need to snapshot a def_env per transformer.
    if is_letrec:
       _runtime_env_ref[0] = child_env
    try:
-      bound_transformers = []
       cur = bindings
       while is_cons(cur):
          b = cur.car
@@ -271,19 +273,9 @@ def _expand_let_syntax(sexpr, is_letrec):
             raise SchemeSyntaxError(
                'let-syntax: transformer must be (syntax-rules ...)',
                src_of(tr_expr))
-         t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), bname)
+         t = parse_syntax_rules(tr_expr.cdr, None, bname)
          child_env.bind(bname, t, as_symbol_scopes(bsym))
-         if is_letrec:
-            bound_transformers.append(t)
          cur = cur.cdr
-      # letrec-syntax two-pass: update every transformer's def_env to the
-      # final snapshot so all siblings are mutually visible (R7RS §4.3.1).
-      if is_letrec and bound_transformers:
-         final_env = _current_macro_env()
-         i = 0
-         while i < len(bound_transformers):
-            bound_transformers[i].def_env = dict(final_env)
-            i = i + 1
       # Now expand the body with the child env active (for both let and
       # letrec variants).  Add a fresh scope to the body so its identifiers
       # are distinguished from same-named identifiers at the use site.

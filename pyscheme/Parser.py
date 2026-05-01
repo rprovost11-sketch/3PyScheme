@@ -70,7 +70,7 @@ from pyscheme.AST import (
    as_rational_num, as_rational_den,
    make_integer, make_real, make_rational, make_complex, make_exact_complex,
    make_string, make_character,
-   make_boolean, make_symbol, make_vector,
+   make_boolean, make_symbol, make_vector, make_bytevector,
    REAL, RATIONAL, INTEGER, CHARACTER, BOOLEAN, STRING, SYMBOL, NIL,
 )
 from pyscheme.Environment import _PositionedSchemeError
@@ -83,6 +83,7 @@ TOK_RPAREN            = 'RPAREN'
 TOK_LBRACKET          = 'LBRACKET'
 TOK_RBRACKET          = 'RBRACKET'
 TOK_VECTOR_LPAREN     = 'VECTOR_LPAREN'
+TOK_BYTEVECTOR_LPAREN = 'BYTEVECTOR_LPAREN'
 TOK_QUOTE             = 'QUOTE'
 TOK_QUASIQUOTE        = 'QUASIQUOTE'
 TOK_UNQUOTE           = 'UNQUOTE'
@@ -138,6 +139,7 @@ _TOKEN_RE = re.compile(r'''
     | (?P<QUOTE>')
     | (?P<DOT>\.(?=[\s()\[\]'"`,;]|$))                                         # lone . is the dotted-pair marker
     | (?P<STRING>"(?:[^"\\]|\\[\s\S])*")
+    | (?P<BYTEVECTOR_LPAREN>\#(?:vu8|u8)\()
     | (?P<VECTOR_LPAREN>\#\()
     | (?P<CHAR>\#\\(?:x[0-9a-fA-F]+|[a-zA-Z]+|.))
     | (?P<TRUE>\#t(?:rue)?)
@@ -334,6 +336,8 @@ def _build_token(kind, text, src):
       return Token(TOK_LBRACKET, '[', src)
    if kind == 'RBRACKET':
       return Token(TOK_RBRACKET, ']', src)
+   if kind == 'BYTEVECTOR_LPAREN':
+      return Token(TOK_BYTEVECTOR_LPAREN, text, src)
    if kind == 'VECTOR_LPAREN':
       return Token(TOK_VECTOR_LPAREN, '#(', src)
    if kind == 'QUOTE':
@@ -758,6 +762,8 @@ class Parser:
          return make_symbol(tok.value, tok.src)
       if kind == TOK_LPAREN or kind == TOK_LBRACKET:
          return self._read_list()
+      if kind == TOK_BYTEVECTOR_LPAREN:
+         return self._read_bytevector()
       if kind == TOK_VECTOR_LPAREN:
          return self._read_vector()
       if kind == TOK_QUOTE:
@@ -793,6 +799,27 @@ class Parser:
       if kind == TOK_EOF:
          raise SchemeSyntaxError("unexpected end of input", tok.src)
       raise SchemeSyntaxError("unexpected token %s" % kind, tok.src)
+
+   def _read_bytevector(self):
+      bv_tok = self._advance()   # consume '#u8(' or '#vu8('
+      items = []
+      while True:
+         self._skip_datum_comments()
+         tok = self._peek()
+         if tok.kind == TOK_RPAREN:
+            self._advance()
+            return make_bytevector(bytearray(items))
+         if tok.kind == TOK_EOF:
+            raise SchemeSyntaxError('unterminated bytevector literal', bv_tok.src)
+         elem = self.parse_expr()
+         if not is_integer(elem):
+            raise SchemeSyntaxError(
+               'bytevector element must be an exact integer in 0-255', bv_tok.src)
+         n = as_integer(elem)
+         if n < 0 or n > 255:
+            raise SchemeSyntaxError(
+               'bytevector element out of range 0-255: %d' % n, bv_tok.src)
+         items.append(n)
 
    def _read_vector(self):
       vec_tok = self._advance()   # consume '#('

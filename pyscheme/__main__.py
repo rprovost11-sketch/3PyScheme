@@ -42,18 +42,11 @@ def main():
                file=sys.stderr)
          sys.exit(1)
 
-   _rc = os.path.expanduser('~/.pyschemerc')
-   if os.path.isfile(_rc):
-      try:
-         interp.evalFile(_rc)
-      except Exception as e:
-         print('pyscheme: error loading ~/.pyschemerc: ' + str(e), file=sys.stderr)
-
    listener = Listener(
       interp,
       testdir='testing',
       language='pyscheme',
-      version='0.3.2',
+      version='0.3.3',
       author='Ron Provost/Longo',
       project='https://github.com/rprovost11/pyscheme',
    )

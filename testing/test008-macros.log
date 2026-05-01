@@ -147,10 +147,10 @@
 ==> #<void>
 
 >>> (let ((sct 42)) (scm sct))
-... ;;; -------- internal define-syntax in lambda body (R7RS §5.3.2) --------
-... ;;; define-syntax is valid as an internal definition; it must be
-... ;;; visible for the rest of the body but must not leak out.
-==> 99
+... ;;; R7RS hygiene: the inner (let ((sct 99)) x) does NOT capture the
+... ;;; user's sct.  x resolves to the user's sct (= 42).  The macro's
+... ;;; introduced sct binding shadows nothing visible to x.
+==> 42
 
 >>> (define (ids-sq x)
 ...   (define-syntax ids-square (syntax-rules () ((_ n) (* n n))))
@@ -738,7 +738,9 @@
 ...   (swap! tmp x)
 ...   (list tmp x))
 ... ; --- my-or: template 't' must not capture user's 't' ---
-==> (1 2)
+... ;;; R7RS hygiene: the macro's introduced tmp does not capture user's tmp,
+... ;;; so the swap proceeds normally and tmp/x are exchanged.
+==> (2 1)
 
 >>> (define-syntax my-or
 ...   (syntax-rules ()
@@ -749,7 +751,10 @@
 >>> (let ((t 5))
 ...   (my-or #f t))
 ... ; --- my-and2: template 'v' must not capture user's 'v' ---
-==> #f
+... ;;; R7RS hygiene: my-or's introduced t does NOT capture user's t.
+... ;;; (my-or #f user-t) -> (let ((t_intro #f)) (if t_intro t_intro user-t))
+... ;;; -> user-t = 5.
+==> 5
 
 >>> (define-syntax my-and2
 ...   (syntax-rules ()
@@ -762,7 +767,10 @@
 ... ; ================================================================
 ... ; 15. BOUND IDENTIFIERS STILL WORK (inc2 uses +)
 ... ; ================================================================
-==> #t
+... ;;; R7RS hygiene: my-and2's introduced v does NOT capture user's v.
+... ;;; (my-and2 #t user-v) -> (let ((v_intro #t)) (if v_intro user-v #f))
+... ;;; -> user-v = 10.
+==> 10
 
 >>> (define-syntax inc2
 ...   (syntax-rules ()
@@ -789,7 +797,9 @@
 ...      (bar (syntax-rules () ((bar x y) (+ x y)))))
 ...     (foo 5)))
 ... ; nested macros preserve definition-time bindings
-==> 10
+... ;;; R7RS hygiene: bar is defined inside (let ((+ *)) ...), so bar's
+... ;;; def-time + IS the let's binding (= *).  (bar 5 5) -> (* 5 5) = 25.
+==> 25
 >>> (let ((+ *)) (double-inc 5))
 ... ; ================================================================
 ... ; 16. QUOTED DATA IN TEMPLATES NOT RENAMED

@@ -164,20 +164,25 @@ class Port:
 
 class SyntaxTransformer:
    """syntax-rules transformer (R7RS 4.3).  POD; immutable after parse.
-      name      - str, used in diagnostics only
-      literals  - list of str, literal identifiers in patterns
-      ellipsis  - str, the ellipsis identifier (default '...')
-      rules     - list of (pattern_sexpr, template_sexpr) pairs
-      def_env   - dict: macro definition-time env (for hygiene lookup)
-      is a regular-Python dict mapping name -> SyntaxTransformer; non-macro
-      references fall through to the runtime env at evaluation."""
-   def __init__(self, name, literals, ellipsis, rules, def_env, literal_bindings=None):
+      name             - str, used in diagnostics only
+      literals         - list of str, literal identifiers in patterns
+      ellipsis         - str, the ellipsis identifier (default '...')
+      rules            - list of (pattern_sexpr, template_sexpr) pairs
+      def_scope        - int, scope id allocated at parse time and added to
+                         every template/pattern symbol; lets def-time bindings
+                         resolve via scope-set lookup at the use site.
+      literal_bindings - dict name -> frozenset, def-time scope_set per literal
+                         (for free-identifier=? matching)
+      def_env          - LEGACY, retained for compat; no longer consulted."""
+   def __init__(self, name, literals, ellipsis, rules, def_env,
+                literal_bindings=None, def_scope=0):
       self.name = name
       self.literals = literals
       self.ellipsis = ellipsis
       self.rules = rules
       self.def_env = def_env
       self.literal_bindings = literal_bindings if literal_bindings is not None else {}
+      self.def_scope = def_scope
 
 
 # --- Singletons --------------------------------------------------------
@@ -251,8 +256,22 @@ def make_string(s, src=None):
 def make_symbol(name, src=None):
    return (SYMBOL, name, frozenset(), src)
 
-def make_closure(params, body, env, rest_name, docstring):
-   return (CLOSURE, params, body, env, rest_name, docstring)
+def make_closure(params, body, env, rest_name, docstring,
+                 param_scopes=None, rest_scope=frozenset()):
+   """Build a CLOSURE value.
+      params         - tuple of name strings (positional)
+      body           - cons chain of body expressions
+      env            - definition-time environment (lexical capture)
+      rest_name      - str or None, name for the rest-parameter (variadic)
+      docstring      - str
+      param_scopes   - tuple of frozensets parallel to params, or None
+                       (None means treat all scope sets as empty); set by
+                       _make_closure_from_lambda from the param symbol nodes
+                       so that hygienic macro expansion binds parameters at
+                       their correct scope-set context.
+      rest_scope     - frozenset, scope_set for the rest parameter."""
+   return (CLOSURE, params, body, env, rest_name, docstring,
+           param_scopes, rest_scope)
 
 def make_primitive(name, fn):
    return (PRIMITIVE, name, fn)
@@ -289,9 +308,9 @@ def make_continuation(k_snapshot, wind_snapshot, handler_snapshot):
    return Continuation(k_snapshot, wind_snapshot, handler_snapshot)
 
 def make_syntax_transformer(name, literals, ellipsis, rules, def_env,
-                            literal_bindings=None):
+                            literal_bindings=None, def_scope=0):
    return SyntaxTransformer(name, literals, ellipsis, rules, def_env,
-                            literal_bindings)
+                            literal_bindings, def_scope)
 
 def make_environment(env):
    return (ENVIRONMENT, env)
@@ -629,6 +648,14 @@ def as_closure_rest_name(val):
 
 def as_closure_docstring(val):
    return val[5]
+
+def as_closure_param_scopes(val):
+   """Tuple of frozensets parallel to params, or None if not tracked."""
+   return val[6] if len(val) > 6 else None
+
+def as_closure_rest_scope(val):
+   """Frozenset scope_set for the rest parameter, or empty if untracked."""
+   return val[7] if len(val) > 7 else frozenset()
 
 def as_primitive_name(val):
    return val[1]

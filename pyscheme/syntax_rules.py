@@ -23,6 +23,7 @@ from pyscheme.AST import (
    as_vector_items, as_symbol_scopes,
    alloc_cons, make_symbol, make_vector, list_from_items, src_of, eqv_atom,
    make_syntax_transformer, is_syntax_transformer,
+   is_closure, is_primitive,
    NIL_VALUE, SYMBOL,
    new_scope, symbol_flip_scope, add_scope_to_form, strip_scope_from_form,
 )
@@ -82,17 +83,13 @@ def hygiene_gensym(base):
 
 class _SyntaxMatch:
    """Bindings from one pattern-match attempt.
-      scalars     - dict: name -> Scheme value (depth 0 pattern vars)
-      ellipsis    - dict: name -> Python list of values (depth >= 1 pvars)
-      ell_depth   - dict: name -> int, the ellipsis depth
-      renames     - dict: free id name -> gensym name (legacy, unused)
-      intro_scopes - dict: free id name -> scope_id (sets-of-scopes hygiene)"""
+      scalars   - dict: name -> Scheme value (depth 0 pattern vars)
+      ellipsis  - dict: name -> Python list of values (depth >= 1 pvars)
+      ell_depth - dict: name -> int, the ellipsis depth"""
    def __init__(self):
       self.scalars = {}
       self.ellipsis = {}
       self.ell_depth = {}
-      self.renames = {}
-      self.intro_scopes = {}
 
 
 def _is_ellipsis(form, ellipsis_sym):
@@ -417,13 +414,13 @@ def _instantiate(tmpl, match, ellipsis_sym, use_src):
    """Expand a template sub-expression against match bindings.  use_src
    is the macro use-site source position; new cons cells synthesized
    from the template carry this src so downstream errors point at the
-   user's macro call rather than nowhere."""
+   user's macro call rather than nowhere.  Free template ids retain
+   their parse-time scope set (which includes def_scope), so they
+   resolve to def-time bindings via Environment scope-set lookup."""
    if is_symbol(tmpl):
       s = as_symbol(tmpl)
       if s in match.scalars:
          return match.scalars[s]
-      if s in match.intro_scopes:
-         return symbol_flip_scope(tmpl, match.intro_scopes[s])
       return tmpl
    if is_cons(tmpl):
       # R7RS §4.3.2 escape: (ellipsis inner) disables ellipsis inside inner.
@@ -456,10 +453,6 @@ def _instantiate_vector(tmpl_items, match, ellipsis_sym, use_src):
                sub = _SyntaxMatch()
                for key in match.scalars:
                   sub.scalars[key] = match.scalars[key]
-               for key in match.renames:
-                  sub.renames[key] = match.renames[key]
-               for key in match.intro_scopes:
-                  sub.intro_scopes[key] = match.intro_scopes[key]
                for key in match.ellipsis:
                   sub.ellipsis[key]  = match.ellipsis[key]
                   sub.ell_depth[key] = match.ell_depth.get(key, 0)
@@ -504,10 +497,6 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src):
                sub = _SyntaxMatch()
                for k in match.scalars:
                   sub.scalars[k] = match.scalars[k]
-               for k in match.renames:
-                  sub.renames[k] = match.renames[k]
-               for k in match.intro_scopes:
-                  sub.intro_scopes[k] = match.intro_scopes[k]
                # Copy ellipsis bindings, peeling one layer for ell_syms.
                for k in match.ellipsis:
                   sub.ellipsis[k] = match.ellipsis[k]
@@ -541,8 +530,6 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src):
       s = as_symbol(cur)
       if s in match.scalars:
          tail = match.scalars[s]
-      elif s in match.intro_scopes:
-         tail = symbol_flip_scope(cur, match.intro_scopes[s])
       else:
          tail = cur
    else:
@@ -558,10 +545,17 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src):
 # ── Transformer application ─────────────────────────────────────────────────
 
 def apply_syntax_transformer(t, form, bound_index=None):
-   """Try each rule in order; on match, instantiate the template with
-   sets-of-scopes hygiene.  Raises SchemeSyntaxError if no pattern matches.
-   bound_index, when supplied by the Expander, is the binding database used
-   for free-identifier=? literal matching."""
+   """Try each rule in order; on match, instantiate the template.
+   Raises SchemeSyntaxError if no pattern matches.  bound_index, when
+   supplied by the Expander, is the binding database used for
+   free-identifier=? literal matching.
+
+   Hygiene model (sets-of-scopes, R7RS 4.3 / Flatt 2016):
+   parse_syntax_rules has already tagged every template/literal symbol
+   with t.def_scope, so def-time references resolve to def-time bindings
+   via Environment scope-set lookup.  sc_use is a fresh scope added to
+   the input form; pattern variable captures strip it so they carry
+   use-site scopes only.  No eager def_env substitution is performed."""
    global _active_bound_index
    _active_bound_index = bound_index
    from pyscheme.Parser import SchemeSyntaxError
@@ -570,7 +564,6 @@ def apply_syntax_transformer(t, form, bound_index=None):
    ellipsis_sym = t.ellipsis
    use_src      = src_of(form)
    sc_use       = new_scope()
-   sc_intro     = new_scope()
    scoped_form  = add_scope_to_form(form, sc_use)
    i = 0
    while i < len(t.rules):
@@ -581,38 +574,25 @@ def apply_syntax_transformer(t, form, bound_index=None):
          form_tail = scoped_form.cdr if is_cons(scoped_form) else NIL_VALUE
          if _match_list_pattern(pattern.cdr, form_tail, literals, lit_scopes,
                                 sc_use, ellipsis_sym, match):
-            _apply_hygiene(t, pattern, template, match, literals, ellipsis_sym,
-                           sc_intro)
             return _instantiate(template, match, ellipsis_sym, use_src)
       i = i + 1
    raise SchemeSyntaxError(
       "syntax-rules: no matching pattern for '" + t.name + "'", use_src)
 
 
-def _apply_hygiene(t, pattern, template, match, literals, ellipsis_sym, sc_intro):
-   """Populate match bindings for free ids in the template.
-   Ids bound at the macro's def site get their value substituted directly.
-   All other free ids get sc_intro flipped into their scope_set so they
-   are distinguishable from same-named use-site identifiers."""
-   pvars = set()
-   collect_pvars(pattern, literals, ellipsis_sym, pvars)
-   free_ids = set()
-   collect_free_ids(template, pvars, literals, ellipsis_sym, free_ids)
-   for fid in free_ids:
-      if fid in t.def_env:
-         match.scalars[fid] = t.def_env[fid]
-         continue
-      match.intro_scopes[fid] = sc_intro
-
-
 # ── Parse (syntax-rules [ellipsis] (literals) rules...) ─────────────────────
 
 def parse_syntax_rules(tail, def_env, name):
    """Parse a syntax-rules body into a SyntaxTransformer.  `tail` is the
-   cdr of the (syntax-rules ...) form."""
+   cdr of the (syntax-rules ...) form.  Allocates a fresh def_scope and
+   tags every symbol in tail with it; this is the sets-of-scopes hygiene
+   marker that lets def-time bindings be found at the use site via
+   scope-set lookup, replacing the older eager def_env substitution."""
    from pyscheme.Parser import SchemeSyntaxError
    if not is_cons(tail):
       raise SchemeSyntaxError('syntax-rules: malformed', src_of(tail))
+   def_scope = new_scope()
+   tail = add_scope_to_form(tail, def_scope)
    ellipsis_sym = '...'
    first = tail.car
    rest = tail.cdr
@@ -668,10 +648,11 @@ def parse_syntax_rules(tail, def_env, name):
       template = rule.cdr.car
       rules.append((pattern, template))
       cur = cur.cdr
-   # Copy def_env so later mutations don't affect this transformer's view.
+   # def_env retained for backward-compat only; sets-of-scopes hygiene now
+   # uses def_scope to resolve def-time bindings via Environment lookup.
    return make_syntax_transformer(name, literals, ellipsis_sym, rules,
                                   dict(def_env) if def_env is not None else {},
-                                  lit_scope_map)
+                                  lit_scope_map, def_scope)
 
 
 # ── Self-test ──────────────────────────────────────────────────────────────

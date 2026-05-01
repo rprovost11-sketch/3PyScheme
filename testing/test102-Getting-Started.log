@@ -379,14 +379,19 @@
 >>> (define double (doubler +))
 ==> #<void>
 
+>>> (double 13/2)
+==> 13
+
 >>> (define double-cons (doubler cons))
 ==> #<void>
 
->>> (double 5)
-==> 10
-
 >>> (double-cons 'a)
 ==> (a . a)
+
+>>> (define double-any
+...   (lambda (f x)
+...     ((doubler f) x)))
+==> #<void>
 
 >>> (define proc1
 ...   (lambda (x y)
@@ -473,13 +478,6 @@
 >>> (reciprocal 0)
 ==> #f
 
->>> (define lisp-cdr
-...   (lambda (x)
-...     (if (null? x)
-...         '()
-...         (cdr x))))
-==> #<void>
-
 >>> (null? '())
 ==> #t
 
@@ -491,6 +489,13 @@
 
 >>> (null? (cdddr '(x y z)))
 ==> #t
+
+>>> (define lisp-cdr
+...   (lambda (x)
+...     (if (null? x)
+...         '()
+...         (cdr x))))
+==> #<void>
 
 >>> (lisp-cdr '(a b c))
 ==> (b c)
@@ -549,23 +554,6 @@
 >>> (pair? 1234567890)
 ==> #f
 
->>> (define sign
-...   (lambda (n)
-...     (cond
-...       [(< n 0) -1]
-...       [(> n 0) +1]
-...       [else 0])))
-==> #<void>
-
->>> (define income-tax
-...   (lambda (income)
-...     (cond
-...       [(<= income 10000) (* income .05)]
-...       [(<= income 20000) (+ (* (- income 10000) .08) 500.00)]
-...       [(<= income 30000) (+ (* (- income 20000) .13) 1300.00)]
-...       [else (+ (* (- income 30000) .21) 2600.00)])))
-==> #<void>
-
 >>> (define reciprocal
 ...   (lambda (n)
 ...     (if (and (number? n) (not (= n 0)))
@@ -579,8 +567,24 @@
 >>> (reciprocal 'a)
 ==> "oops!"
 
+>>> (define reciprocal
+...   (lambda (n)
+...     (if (and (number? n) (not (= n 0)))
+...         (/ 1 n)
+...         (assertion-violation 'reciprocal "improper argument" n))))
+==> #<void>
+
 >>> (reciprocal .25)
 ==> 4.0
+
+>>> (define sign
+...   (lambda (n)
+...     (if (< n 0)
+...         -1
+...         (if (> n 0)
+...             +1
+...             0))))
+==> #<void>
 
 >>> (sign -88.3)
 ==> -1
@@ -594,6 +598,31 @@
 >>> (* (sign -88.3) (abs -88.3))
 ==> -88.3
 
+>>> (define sign
+...   (lambda (n)
+...     (cond
+...       [(< n 0) -1]
+...       [(> n 0) +1]
+...       [else 0])))
+==> #<void>
+
+>>> (define sign
+...   (lambda (n)
+...     (cond
+...       [(< n 0) -1]
+...       [(> n 0) +1]
+...       [(= n 0) 0])))
+==> #<void>
+
+>>> (define income-tax
+...   (lambda (income)
+...     (cond
+...       [(<= income 10000) (* income .05)]
+...       [(<= income 20000) (+ (* (- income 10000) .08) 500.00)]
+...       [(<= income 30000) (+ (* (- income 20000) .13) 1300.00)]
+...       [else (+ (* (- income 30000) .21) 2600.00)])))
+==> #<void>
+
 >>> (income-tax 5000)
 ==> 250.0
 
@@ -605,6 +634,11 @@
 
 >>> (income-tax 50000)
 ==> 6800.0
+
+>>> (define goodbye
+...   (lambda ()
+...     (goodbye)))
+==> #<void>
 
 ;;; ============================================================
 ;;; 2.8  Simple Recursion
@@ -705,6 +739,11 @@
 >>> (abs-all '(1 -2 3 -4 5 -6))
 ==> (1 2 3 4 5 6)
 
+>>> (define abs-all
+...   (lambda (ls)
+...     (map abs ls)))
+==> #<void>
+
 >>> (map abs '(1 -2 3 -4 5 -6))
 ==> (1 2 3 4 5 6)
 
@@ -713,14 +752,6 @@
 
 >>> (map cons '(a b c) '(1 2 3))
 ==> ((a . 1) (b . 2) (c . 3))
-
->>> (define abs-all
-...   (lambda (ls)
-...     (map abs ls)))
-==> #<void>
-
->>> (abs-all '(1 -2 3 -4 5 -6))
-==> (1 2 3 4 5 6)
 
 >>> (define map1
 ...   (lambda (p ls)
@@ -754,7 +785,6 @@
 ...   abcde)
 ==> (e d c b a)
 
-;;; First version of quadratic-formula using set! assignments:
 >>> (define quadratic-formula
 ...   (lambda (a b c)
 ...     (let ([root1 0] [root2 0] [minusb 0] [radical 0] [divisor 0])
@@ -766,7 +796,9 @@
 ...       (cons root1 root2))))
 ==> #<void>
 
-;;; Cleaner version using nested let:
+>>> (quadratic-formula 2 -4 -6)
+==> (3 . -1)
+
 >>> (define quadratic-formula
 ...   (lambda (a b c)
 ...     (let ([minusb (- 0 b)]
@@ -776,9 +808,6 @@
 ...             [root2 (/ (- minusb radical) divisor)])
 ...         (cons root1 root2)))))
 ==> #<void>
-
->>> (quadratic-formula 2 -4 -6)
-==> (3 . -1)
 
 >>> (define kons-count 0)
 ==> #<void>
@@ -801,7 +830,6 @@
 >>> kons-count
 ==> 4
 
-;;; count using top-level next variable:
 >>> (define next 0)
 ==> #<void>
 
@@ -818,7 +846,6 @@
 >>> (count)
 ==> 1
 
-;;; count using closure to encapsulate next:
 >>> (define count
 ...   (let ([next 0])
 ...     (lambda ()
@@ -839,11 +866,11 @@
 >>> (define count1 (make-counter))
 ==> #<void>
 
->>> (count1)
-==> 0
-
 >>> (define count2 (make-counter))
 ==> #<void>
+
+>>> (count1)
+==> 0
 
 >>> (count2)
 ==> 0
@@ -874,83 +901,22 @@
 >>> (tell)
 ==> "sally likes harry"
 
->>> (define p (list 1 2 3))
+>>> secret
+%%% line 1, col 1: unbound variable: secret
+%%% secret
+%%% ^
+
+>>> (define lazy
+...   (lambda (t)
+...     (let ([val #f] [flag #f])
+...       (lambda ()
+...         (if (not flag)
+...             (begin (set! val (t)) (set! flag #t)))
+...         val))))
 ==> #<void>
 
->>> (set-car! (cdr p) 'two)
+>>> (define p (lazy (lambda () (display "Ouch!") (newline) "got me")))
 ==> #<void>
-
->>> p
-==> (1 two 3)
-
->>> (set-cdr! p '())
-==> #<void>
-
->>> p
-==> (1)
-
->>> (define make-queue
-...   (lambda ()
-...     (let ([end (cons 'ignored '())])
-...       (cons end end))))
-==> #<void>
-
->>> (define putq!
-...   (lambda (q v)
-...     (let ([end (cons 'ignored '())])
-...       (set-car! (cdr q) v)
-...       (set-cdr! (cdr q) end)
-...       (set-cdr! q end))))
-==> #<void>
-
->>> (define getq
-...   (lambda (q)
-...     (car (car q))))
-==> #<void>
-
->>> (define delq!
-...   (lambda (q)
-...     (set-car! q (cdr (car q)))))
-==> #<void>
-
->>> (define myq (make-queue))
-==> #<void>
-
->>> (putq! myq 'a)
-==> #<void>
-
->>> (getq myq)
-==> a
-
->>> (putq! myq 'b)
-==> #<void>
-
->>> (getq myq)
-==> a
-
->>> (delq! myq)
-==> #<void>
-
->>> (getq myq)
-==> b
-
->>> (delq! myq)
-==> #<void>
-
->>> (putq! myq 'c)
-==> #<void>
-
->>> (getq myq)
-==> c
-
->>> (putq! myq 'd)
-==> #<void>
-
->>> (delq! myq)
-==> #<void>
-
->>> (getq myq)
-==> d
 
 >>> (define make-stack
 ...   (lambda ()
@@ -1006,11 +972,77 @@
 >>> (list (stack1 'empty?) (stack2 'empty?))
 ==> (#t #f)
 
->>> (list? '())
-==> #t
+>>> (define p (list 1 2 3))
+==> #<void>
 
->>> (list? '(1 2 3))
-==> #t
+>>> (set-car! (cdr p) 'two)
+==> #<void>
 
->>> (list? '(a . b))
-==> #f
+>>> p
+==> (1 two 3)
+
+>>> (set-cdr! p '())
+==> #<void>
+
+>>> p
+==> (1)
+
+>>> (define make-queue
+...   (lambda ()
+...     (let ([end (cons 'ignored '())])
+...       (cons end end))))
+==> #<void>
+
+>>> (define putq!
+...   (lambda (q v)
+...     (let ([end (cons 'ignored '())])
+...       (set-car! (cdr q) v)
+...       (set-cdr! (cdr q) end)
+...       (set-cdr! q end))))
+==> #<void>
+
+>>> (define getq
+...   (lambda (q)
+...     (car (car q))))
+==> #<void>
+
+>>> (define delq!
+...   (lambda (q)
+...     (set-car! q (cdr (car q)))))
+==> #<void>
+
+>>> (define myq (make-queue))
+==> #<void>
+
+>>> (putq! myq 'a)
+==> #<void>
+
+>>> (putq! myq 'b)
+==> #<void>
+
+>>> (getq myq)
+==> a
+
+>>> (delq! myq)
+==> #<void>
+
+>>> (getq myq)
+==> b
+
+>>> (delq! myq)
+==> #<void>
+
+>>> (putq! myq 'c)
+==> #<void>
+
+>>> (putq! myq 'd)
+==> #<void>
+
+>>> (getq myq)
+==> c
+
+>>> (delq! myq)
+==> #<void>
+
+>>> (getq myq)
+==> d
