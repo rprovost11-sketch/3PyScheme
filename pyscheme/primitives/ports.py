@@ -42,11 +42,28 @@ CATEGORY = 'ports'
 
 
 # Module-level handles to the current input / output / error parameters.
-# Initialised lazily on first use; the Listener may replace these via
-# (parameterize ...) for capture during testing.
-_current_input_param  = [None]
-_current_output_param = [None]
-_current_error_param  = [None]
+# Initialised lazily on first use.  _current_*_default holds the initial
+# default port value so _get_current_output can detect whether the parameter
+# has been overridden by user code (parameterize) without depending on
+# sys.stdout identity, which changes when the test runner redirects stdout.
+_current_input_param   = [None]
+_current_output_param  = [None]
+_current_error_param   = [None]
+_current_input_default  = [None]
+_current_output_default = [None]
+_current_error_default  = [None]
+
+
+def reset_current_port_params():
+   """Reset all three current-port parameters to uninitialized.  Called by
+   Interpreter.reboot() so each fresh session reinitializes from the real
+   sys.stdout/stdin/stderr rather than a file that may have been closed."""
+   _current_input_param[0]   = None
+   _current_output_param[0]  = None
+   _current_error_param[0]   = None
+   _current_input_default[0]  = None
+   _current_output_default[0] = None
+   _current_error_default[0]  = None
 
 
 def _stdin_port():
@@ -75,14 +92,14 @@ def _get_current_input(ctx):
 
 
 def _get_current_output(ctx):
-   import sys as _sys
    if _current_output_param[0] is None:
-      _current_output_param[0] = make_parameter(_stdout_port(), None)
+      default_port = _stdout_port()
+      _current_output_default[0] = default_port
+      _current_output_param[0] = make_parameter(default_port, None)
    from pyscheme.AST import as_parameter_value
    p = as_parameter_value(_current_output_param[0])
    if ctx is not None and ctx.outStrm is not None:
-      port_obj = as_port(p)
-      if port_obj.file_h is _sys.stdout:
+      if p is _current_output_default[0]:
          cap = Port([], is_input=False, is_text=True, file_h=ctx.outStrm, name='<capture>')
          return make_port(cap)
    return p

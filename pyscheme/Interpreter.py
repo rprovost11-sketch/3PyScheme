@@ -25,7 +25,8 @@ from pyscheme.Expander      import expand
 from pyscheme.Analyzer      import (
    analyze, SchemeAnalysisError, extend_static_env_with_define,
 )
-from pyscheme.Evaluator     import cek_eval, _shadow_stack, set_global_env
+from pyscheme.Evaluator          import cek_eval, _shadow_stack, set_global_env
+from pyscheme.primitives.ports   import reset_current_port_params
 from pyscheme.primitives    import install_primitives, PRIMITIVE_ARITIES
 from pyscheme.Environment   import Environment, SchemeRuntimeError
 from pyscheme.Context       import Context
@@ -67,6 +68,7 @@ class Interpreter(InterpreterBase):
          sys.setrecursionlimit(2000)
       self._ctx.debugger = Debugger()
       self._ctx.tracer.reset()
+      reset_current_port_params()
       self._env = Environment()
       install_primitives(self._env)
       # Populate the R7RS library registry from global env.  Must happen
