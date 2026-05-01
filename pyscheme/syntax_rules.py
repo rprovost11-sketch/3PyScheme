@@ -11,9 +11,16 @@ Public API:
         Run transformer t against form; return the expanded s-expression.
         Raises SchemeSyntaxError if no pattern matches.
 
-Hygiene approach matches the C++ reference: gensym unbound free ids in
-the template, substitute def-env VALUES directly for bound free ids.
-Full syntactic-closure hygiene is a documented follow-up limitation.
+Hygiene model: sets-of-scopes per Flatt 2016 with two scopes per macro
+application -- a use-site scope sc_use added to the input form (and
+stripped from pattern-variable captures) and a fresh introduction
+scope sc_intro added to template-original identifiers at instantiation
+time.  Combined with a per-definition def_scope baked in at
+parse_syntax_rules time, this gives full R7RS 4.3 hygiene: free
+template ids resolve at the def site, template-introduced bindings
+do not capture use-site references of the same name, and distinct
+applications of the same template produce distinct introduced
+identifiers.
 """
 
 from pyscheme.AST import (
@@ -25,7 +32,8 @@ from pyscheme.AST import (
    make_syntax_transformer, is_syntax_transformer,
    is_closure, is_primitive,
    NIL_VALUE, SYMBOL,
-   new_scope, symbol_flip_scope, add_scope_to_form, strip_scope_from_form,
+   new_scope, symbol_flip_scope, symbol_add_scope,
+   add_scope_to_form, strip_scope_from_form,
 )
 
 # Active binding database for the current apply_syntax_transformer call.
@@ -410,31 +418,66 @@ def _collect_ell_refs(tmpl, match, out):
          _collect_ell_refs(item, match, out)
 
 
-def _instantiate(tmpl, match, ellipsis_sym, use_src):
+def _instantiate(tmpl, match, ellipsis_sym, use_src, sc_intro):
    """Expand a template sub-expression against match bindings.  use_src
    is the macro use-site source position; new cons cells synthesized
    from the template carry this src so downstream errors point at the
-   user's macro call rather than nowhere.  Free template ids retain
-   their parse-time scope set (which includes def_scope), so they
-   resolve to def-time bindings via Environment scope-set lookup."""
+   user's macro call rather than nowhere.  sc_intro is the per-application
+   introduction scope (R7RS / Flatt 2016): every template-original
+   identifier is tagged with sc_intro at emission time, distinguishing
+   this application's introduced ids from any other application's.
+   Pattern-variable substitutions pass through untouched -- they
+   already carry the user's scope sets."""
    if is_symbol(tmpl):
       s = as_symbol(tmpl)
       if s in match.scalars:
          return match.scalars[s]
-      return tmpl
+      return symbol_add_scope(tmpl, sc_intro)
    if is_cons(tmpl):
       # R7RS §4.3.2 escape: (ellipsis inner) disables ellipsis inside inner.
       # Expand inner substituting pvars normally but treating ... as a datum.
       if (_is_ellipsis(tmpl.car, ellipsis_sym)
             and is_cons(tmpl.cdr) and is_nil(tmpl.cdr.cdr)):
-         return _instantiate(tmpl.cdr.car, match, '\x00no-ellipsis\x00', use_src)
-      return _instantiate_list(tmpl, match, ellipsis_sym, use_src)
+         return _instantiate(tmpl.cdr.car, match,
+                             '\x00no-ellipsis\x00', use_src, sc_intro)
+      # R7RS §4.3.2 syntax-error: instantiate args, raise at expansion time.
+      if is_symbol(tmpl.car) and as_symbol(tmpl.car) == 'syntax-error':
+         _raise_syntax_error(tmpl.cdr, match, ellipsis_sym, use_src, sc_intro)
+      return _instantiate_list(tmpl, match, ellipsis_sym, use_src, sc_intro)
    if is_vector(tmpl):
-      return _instantiate_vector(as_vector_items(tmpl), match, ellipsis_sym, use_src)
+      return _instantiate_vector(as_vector_items(tmpl), match,
+                                 ellipsis_sym, use_src, sc_intro)
    return tmpl
 
 
-def _instantiate_vector(tmpl_items, match, ellipsis_sym, use_src):
+def _raise_syntax_error(args_tail, match, ellipsis_sym, use_src, sc_intro):
+   """Implement R7RS 4.3.2 (syntax-error <message> <args>...).
+   First arg must be a literal string after instantiation; remaining
+   args (if any) are appended to the message in their datum form."""
+   from pyscheme.Parser import SchemeSyntaxError
+   from pyscheme.PrettyPrinter import pretty_print
+   args = []
+   cur = args_tail
+   while is_cons(cur):
+      args.append(_instantiate(cur.car, match, ellipsis_sym, use_src, sc_intro))
+      cur = cur.cdr
+   if args and is_string(args[0]):
+      msg = as_string(args[0])
+      datums = args[1:]
+   else:
+      msg = 'syntax-error'
+      datums = args
+   if datums:
+      parts = []
+      i = 0
+      while i < len(datums):
+         parts.append(pretty_print(datums[i]))
+         i = i + 1
+      msg = msg + ': ' + ' '.join(parts)
+   raise SchemeSyntaxError(msg, use_src)
+
+
+def _instantiate_vector(tmpl_items, match, ellipsis_sym, use_src, sc_intro):
    """Instantiate a vector template; returns a fresh vector value."""
    output = []
    i = 0
@@ -471,16 +514,17 @@ def _instantiate_vector(tmpl_items, match, ellipsis_sym, use_src):
                      sub.ellipsis[sv]  = peeled
                      sub.ell_depth[sv] = d - 1
                   j = j + 1
-               output.append(_instantiate(elem, sub, ellipsis_sym, use_src))
+               output.append(_instantiate(elem, sub, ellipsis_sym,
+                                          use_src, sc_intro))
                k = k + 1
          i = i + 2
          continue
-      output.append(_instantiate(elem, match, ellipsis_sym, use_src))
+      output.append(_instantiate(elem, match, ellipsis_sym, use_src, sc_intro))
       i = i + 1
    return make_vector(output)
 
 
-def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src):
+def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src, sc_intro):
    output = []
    cur = tmpl_list
    while is_cons(cur):
@@ -516,12 +560,13 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src):
                      sub.ellipsis[sv] = peeled
                      sub.ell_depth[sv] = d - 1
                   j = j + 1
-               output.append(_instantiate(elem, sub, ellipsis_sym, use_src))
+               output.append(_instantiate(elem, sub, ellipsis_sym,
+                                          use_src, sc_intro))
                i = i + 1
          # Zero ellipsis-bound pvars under elem -> zero repetitions.
          cur = rest.cdr
          continue
-      output.append(_instantiate(elem, match, ellipsis_sym, use_src))
+      output.append(_instantiate(elem, match, ellipsis_sym, use_src, sc_intro))
       cur = rest
    # Handle tail (nil or rest pvar).
    if is_nil(cur):
@@ -531,9 +576,9 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src):
       if s in match.scalars:
          tail = match.scalars[s]
       else:
-         tail = cur
+         tail = symbol_add_scope(cur, sc_intro)
    else:
-      tail = _instantiate(cur, match, ellipsis_sym, use_src)
+      tail = _instantiate(cur, match, ellipsis_sym, use_src, sc_intro)
    result = tail
    i = len(output) - 1
    while i >= 0:
@@ -550,12 +595,20 @@ def apply_syntax_transformer(t, form, bound_index=None):
    supplied by the Expander, is the binding database used for
    free-identifier=? literal matching.
 
-   Hygiene model (sets-of-scopes, R7RS 4.3 / Flatt 2016):
-   parse_syntax_rules has already tagged every template/literal symbol
-   with t.def_scope, so def-time references resolve to def-time bindings
-   via Environment scope-set lookup.  sc_use is a fresh scope added to
-   the input form; pattern variable captures strip it so they carry
-   use-site scopes only.  No eager def_env substitution is performed."""
+   Hygiene model (sets-of-scopes, R7RS 4.3 / Flatt 2016, two scopes
+   per use):
+     - parse_syntax_rules tagged every template/literal symbol with
+       t.def_scope at definition time, so def-time free references
+       resolve to def-time bindings via Environment scope-set lookup.
+     - sc_use is a fresh use-site scope added to the input form;
+       pattern variable captures strip it so they carry use-site
+       scopes only.
+     - sc_intro is a fresh introduction scope added to template-
+       original identifiers at instantiation time (in _instantiate).
+       This distinguishes this application's introduced ids from any
+       other application's, so e.g. two same-macro applications
+       introducing the same name produce distinct bindings.
+   No eager def_env substitution is performed."""
    global _active_bound_index
    _active_bound_index = bound_index
    from pyscheme.Parser import SchemeSyntaxError
@@ -564,6 +617,7 @@ def apply_syntax_transformer(t, form, bound_index=None):
    ellipsis_sym = t.ellipsis
    use_src      = src_of(form)
    sc_use       = new_scope()
+   sc_intro     = new_scope()
    scoped_form  = add_scope_to_form(form, sc_use)
    i = 0
    while i < len(t.rules):
@@ -574,7 +628,7 @@ def apply_syntax_transformer(t, form, bound_index=None):
          form_tail = scoped_form.cdr if is_cons(scoped_form) else NIL_VALUE
          if _match_list_pattern(pattern.cdr, form_tail, literals, lit_scopes,
                                 sc_use, ellipsis_sym, match):
-            return _instantiate(template, match, ellipsis_sym, use_src)
+            return _instantiate(template, match, ellipsis_sym, use_src, sc_intro)
       i = i + 1
    raise SchemeSyntaxError(
       "syntax-rules: no matching pattern for '" + t.name + "'", use_src)
