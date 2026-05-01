@@ -153,6 +153,14 @@ _MULTI_VALUES_OK_FRAMES = frozenset([
 _shadow_stack = []
 _SHADOW_DEPTH_LIMIT = 50
 
+# Global environment reference for the .py extension loader.  Set by
+# Interpreter.reboot() via set_global_env(); mirrors the pattern used
+# by Expander._runtime_env_ref.
+_global_env_ref = [None]
+
+def set_global_env(env):
+   _global_env_ref[0] = env
+
 
 # -------- Helper functions ------------------------------------------
 
@@ -804,12 +812,30 @@ def _library_load_path():
    return ['.'] + parts
 
 
+def _load_py_extension(path):
+   """Import a .py extension file and call its register(env) entry point.
+   The module receives the global environment so it can install new
+   primitives with env.bind(name, make_primitive(name, fn)).  It may
+   also call library_register directly if it is a standalone module
+   without a companion .sld file."""
+   import importlib.util
+   import sys
+   import os
+   key = os.path.splitext(os.path.basename(path))[0]
+   mod_name = 'pyscheme_ext.' + key
+   spec = importlib.util.spec_from_file_location(mod_name, path)
+   module = importlib.util.module_from_spec(spec)
+   sys.modules[mod_name] = module
+   spec.loader.exec_module(module)
+   if hasattr(module, 'register'):
+      module.register(_global_env_ref[0])
+
+
 def _try_load_library_file(name_sexpr, ctx):
-   """Try to find name_sexpr as a .sld file under the load path and
-   load it; the file is expected to contain a top-level (define-library
-   ...) form that registers the library.  Returns True if the library
-   ended up registered, False otherwise.  No exceptions on file-not-
-   found; an unknown library remains unresolvable."""
+   """Try to load a library from the search path.  For each directory
+   on SCHEME_LIBRARY_PATH, looks for <name>.py and <name>.sld (both
+   optional; .py is loaded first so its primitives are available to
+   the .sld).  Returns True if the library ended up registered."""
    import os
    from pyscheme.library import library_name_to_key, library_registered_p
    from pyscheme.Parser   import parse
@@ -820,22 +846,29 @@ def _try_load_library_file(name_sexpr, ctx):
    if library_registered_p(key):
       return True
    parts = key.split('.')
-   relative = os.path.join(*parts) + '.sld'
+   base_path = os.path.join(*parts)
    for base in _library_load_path():
-      candidate = os.path.join(base, relative) if base else relative
-      try:
-         f = open(candidate, 'r')
-      except FileNotFoundError:
-         continue
-      source = f.read()
-      f.close()
-      forms = parse(source, candidate)
-      for form in forms:
-         from pyscheme.Expander import expand
-         cek_eval(expand(form), Environment(parent=None), ctx)
-      if library_registered_p(key):
+      prefix   = os.path.join(base, base_path) if base else base_path
+      py_path  = prefix + '.py'
+      sld_path = prefix + '.sld'
+      found = False
+      if os.path.isfile(py_path):
+         found = True
+         _load_py_extension(py_path)
+      if os.path.isfile(sld_path):
+         found = True
+         f = open(sld_path, 'r')
+         source = f.read()
+         f.close()
+         forms = parse(source, sld_path)
+         i = 0
+         while i < len(forms):
+            from pyscheme.Expander import expand
+            cek_eval(expand(forms[i]), Environment(parent=None), ctx)
+            i = i + 1
+      if found and library_registered_p(key):
          return True
-   return False
+   return library_registered_p(key)
 
 
 def _process_import(sets_cons, env, ctx=None):

@@ -199,7 +199,8 @@ def register_standard_libraries(global_env):
        'get-environment-variable', 'get-environment-variables'])
    _register_filtered(global_env, 'scheme.time',
       ['current-jiffy', 'current-second', 'jiffies-per-second'])
-   _register_filtered(global_env, 'scheme.cxr', _SCHEME_CXR_NAMES)
+   _register_filtered(global_env, 'scheme.cxr',  _SCHEME_CXR_NAMES)
+   _register_filtered(global_env, 'srfi.39',     _SRFI_39_NAMES)
 
 
 def _register_filtered(global_env, key, names):
@@ -259,7 +260,7 @@ _SCHEME_BASE_NAMES = [
    # Predicates
    'procedure?',
    # Parameters
-   'make-parameter', 'parameter?',
+   'make-parameter',
    # Equality
    'eq?', 'equal?', 'eqv?',
    # Errors and exceptions
@@ -273,6 +274,7 @@ _SCHEME_R5RS_NAMES = [
    '*', '+', '-', '/', '<', '<=', '=', '>', '>=',
    'abs', 'append', 'apply', 'assoc', 'assq', 'assv',
    'boolean?', 'caar', 'cadr', 'cdar', 'cddr',
+   'exact->inexact', 'inexact->exact',
    'car', 'cdr', 'cons',
    'denominator', 'dynamic-wind',
    'eq?', 'equal?', 'eqv?',
@@ -323,6 +325,10 @@ _SCHEME_FILE_NAMES = [
    'open-binary-input-file', 'open-binary-output-file',
    'open-input-file', 'open-output-file',
    'with-input-from-file', 'with-output-to-file',
+]
+
+_SRFI_39_NAMES = [
+   'make-parameter', 'parameter?',
 ]
 
 _SCHEME_CXR_NAMES = [

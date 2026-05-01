@@ -25,7 +25,7 @@ from pyscheme.Expander      import expand
 from pyscheme.Analyzer      import (
    analyze, SchemeAnalysisError, extend_static_env_with_define,
 )
-from pyscheme.Evaluator     import cek_eval, _shadow_stack
+from pyscheme.Evaluator     import cek_eval, _shadow_stack, set_global_env
 from pyscheme.primitives    import install_primitives, PRIMITIVE_ARITIES
 from pyscheme.Environment   import Environment, SchemeRuntimeError
 from pyscheme.Context       import Context
@@ -75,6 +75,9 @@ class Interpreter(InterpreterBase):
       # Expander's hygiene needs access to the runtime env to resolve
       # free identifiers in macro templates.
       set_runtime_env(self._env)
+      # Extension loader needs the global env to install new primitives
+      # from .py extension files at import time.
+      set_global_env(self._env)
       # Parallel static env: maps name -> (min, max) arity signature
       # for statically-known operators (primitives, top-level lambda
       # defines).  Seeded with primitives; extended per top-level
