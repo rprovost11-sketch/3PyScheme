@@ -31,6 +31,17 @@ from pyscheme.Environment import SchemeTypeError
 CATEGORY = 'arithmetic'
 
 
+class NumResult:
+   """Return struct for _extract_complex, _check_int_x, _complex_div.
+   re=None signals an error (non-numeric input or division by zero).
+   For _check_int_x callers: re holds the int value; exact=False means
+   the original was an inexact integer-valued real."""
+   def __init__(self, re=None, im=None, exact=True):
+      self.re    = re
+      self.im    = im
+      self.exact = exact
+
+
 def _num(v, name, app_node, i):
    """Extract a Python real-numeric value (int, Fraction, float).
    Raises for non-numeric or complex (complex not valid for ordering ops)."""
@@ -82,22 +93,23 @@ def _wrap_component(py_val):
 
 
 def _extract_complex(v):
-   """Decompose any Scheme number into (re, im, is_exact).
+   """Decompose any Scheme number into a NumResult(re, im, exact).
    re and im are Python int/Fraction for exact, float for inexact.
-   Non-complex numbers get im = 0 (exact) or 0.0 (inexact)."""
+   Non-complex numbers get im = 0 (exact) or 0.0 (inexact).
+   Returns NumResult with re=None for non-numeric input."""
    if is_exact_complex(v):
-      return (_as_exact_component(as_exact_complex_real(v)),
-              _as_exact_component(as_exact_complex_imag(v)),
-              True)
+      return NumResult(_as_exact_component(as_exact_complex_real(v)),
+                       _as_exact_component(as_exact_complex_imag(v)),
+                       True)
    if is_complex(v):
-      return as_complex_real(v), as_complex_imag(v), False
+      return NumResult(as_complex_real(v), as_complex_imag(v), False)
    if is_integer(v):
-      return as_integer(v), 0, True
+      return NumResult(as_integer(v), 0, True)
    if is_rational(v):
-      return Fraction(as_rational_num(v), as_rational_den(v)), 0, True
+      return NumResult(Fraction(as_rational_num(v), as_rational_den(v)), 0, True)
    if is_real(v):
-      return as_real(v), 0.0, False
-   return None, None, None
+      return NumResult(as_real(v), 0.0, False)
+   return NumResult()
 
 
 def _wrap_complex_result(re, im, exact):
@@ -123,13 +135,13 @@ def _check_int(v, name, app_node, i):
 
 def _check_int_x(v, name, app_node, i):
    """Like _check_int but accepts inexact integer-valued reals.
-   Returns (int_value, is_inexact)."""
+   Returns NumResult with re=int_value, im=0, exact=(not is_inexact)."""
    if is_integer(v):
-      return as_integer(v), False
+      return NumResult(as_integer(v), 0, True)
    if is_real(v):
       fv = as_real(v)
       if math.isfinite(fv) and fv == math.trunc(fv):
-         return int(fv), True
+         return NumResult(int(fv), 0, False)
    raise SchemeTypeError(
       '%s: argument %d is not an integer' % (name, i),
       app_node)
@@ -165,18 +177,20 @@ def _has_any_complex(args):
 
 def _prim_add(ctx, env, args, app_node):
    if _has_any_complex(args):
-      re, im, exact = 0, 0, True
+      acc_re    = 0
+      acc_im    = 0
+      acc_exact = True
       i = 0
       while i < len(args):
-         are, aim, aex = _extract_complex(args[i])
-         if are is None:
+         a = _extract_complex(args[i])
+         if a.re is None:
             raise SchemeTypeError('+: argument %d is not a number' % (i + 1), app_node)
-         if not aex:
-            exact = False
-         re = re + are
-         im = im + aim
+         if not a.exact:
+            acc_exact = False
+         acc_re = acc_re + a.re
+         acc_im = acc_im + a.im
          i = i + 1
-      return _wrap_complex_result(re, im, exact)
+      return _wrap_complex_result(acc_re, acc_im, acc_exact)
    total = 0
    i = 0
    while i < len(args):
@@ -187,22 +201,22 @@ def _prim_add(ctx, env, args, app_node):
 
 def _prim_sub(ctx, env, args, app_node):
    if _has_any_complex(args):
-      re, im, exact = _extract_complex(args[0])
-      if re is None:
+      acc = _extract_complex(args[0])
+      if acc.re is None:
          raise SchemeTypeError('-: argument 1 is not a number', app_node)
       if len(args) == 1:
-         return _wrap_complex_result(-re, -im, exact)
+         return _wrap_complex_result(-acc.re, -acc.im, acc.exact)
       i = 1
       while i < len(args):
-         are, aim, aex = _extract_complex(args[i])
-         if are is None:
+         a = _extract_complex(args[i])
+         if a.re is None:
             raise SchemeTypeError('-: argument %d is not a number' % (i + 1), app_node)
-         if not aex:
-            exact = False
-         re = re - are
-         im = im - aim
+         if not a.exact:
+            acc.exact = False
+         acc.re = acc.re - a.re
+         acc.im = acc.im - a.im
          i = i + 1
-      return _wrap_complex_result(re, im, exact)
+      return _wrap_complex_result(acc.re, acc.im, acc.exact)
    if len(args) == 1:
       return _wrap(-_any_num(args[0], '-', app_node, 1))
    result = _any_num(args[0], '-', app_node, 1)
@@ -215,20 +229,20 @@ def _prim_sub(ctx, env, args, app_node):
 
 def _prim_mul(ctx, env, args, app_node):
    if _has_any_complex(args):
-      re, im, exact = 1, 0, True
+      acc = NumResult(1, 0, True)
       i = 0
       while i < len(args):
-         are, aim, aex = _extract_complex(args[i])
-         if are is None:
+         a = _extract_complex(args[i])
+         if a.re is None:
             raise SchemeTypeError('*: argument %d is not a number' % (i + 1), app_node)
-         if not aex:
-            exact = False
-         new_re = re * are - im * aim
-         new_im = re * aim + im * are
-         re = new_re
-         im = new_im
+         if not a.exact:
+            acc.exact = False
+         new_re = acc.re * a.re - acc.im * a.im
+         new_im = acc.re * a.im + acc.im * a.re
+         acc.re = new_re
+         acc.im = new_im
          i = i + 1
-      return _wrap_complex_result(re, im, exact)
+      return _wrap_complex_result(acc.re, acc.im, acc.exact)
    result = 1
    i = 0
    while i < len(args):
@@ -261,9 +275,13 @@ def _exact_div(a, b):
    return Fraction(a) / Fraction(b)
 
 
-def _complex_div(are, aim, aex, bre, bim, bex):
-   """Exact-aware complex division: (are+aim*i) / (bre+bim*i)."""
-   exact = aex and bex
+def _complex_div(a, b):
+   """Exact-aware complex division: a / b. Returns NumResult; re=None signals division by zero."""
+   exact = a.exact and b.exact
+   are = a.re
+   aim = a.im
+   bre = b.re
+   bim = b.im
    if exact:
       are = Fraction(are)
       aim = Fraction(aim)
@@ -271,37 +289,32 @@ def _complex_div(are, aim, aex, bre, bim, bex):
       bim = Fraction(bim)
    denom = bre * bre + bim * bim
    if denom == 0:
-      return None, None, None   # division by zero signal
+      return NumResult()
    re = (are * bre + aim * bim) / denom
    im = (aim * bre - are * bim) / denom
-   return re, im, exact
+   return NumResult(re, im, exact)
 
 
 def _prim_div(ctx, env, args, app_node):
    if _has_any_complex(args):
-      re, im, exact = _extract_complex(args[0])
-      if re is None:
+      acc = _extract_complex(args[0])
+      if acc.re is None:
          raise SchemeTypeError('/: argument 1 is not a number', app_node)
       if len(args) == 1:
-         # Reciprocal: 1 / (re+im*i)
-         bre, bim, bex = re, im, exact
-         re, im, exact = _complex_div(1, 0, True, bre, bim, bex)
-         if re is None:
+         acc = _complex_div(NumResult(1, 0, True), acc)
+         if acc.re is None:
             raise SchemeTypeError('/: division by zero', app_node)
-         return _wrap_complex_result(re, im, exact)
+         return _wrap_complex_result(acc.re, acc.im, acc.exact)
       i = 1
       while i < len(args):
-         bre, bim, bex = _extract_complex(args[i])
-         if bre is None:
+         b = _extract_complex(args[i])
+         if b.re is None:
             raise SchemeTypeError('/: argument %d is not a number' % (i + 1), app_node)
-         if not bex:
-            exact = False
-         nr, ni, nex = _complex_div(re, im, exact, bre, bim, bex)
-         if nr is None:
+         acc = _complex_div(acc, b)
+         if acc.re is None:
             raise SchemeTypeError('/: division by zero', app_node)
-         re, im, exact = nr, ni, nex
          i = i + 1
-      return _wrap_complex_result(re, im, exact)
+      return _wrap_complex_result(acc.re, acc.im, acc.exact)
    if len(args) == 1:
       n = _any_num(args[0], '/', app_node, 1)
       if isinstance(n, int) and n == 0:
@@ -337,30 +350,30 @@ def _trunc_div(n, d):
 
 
 def _prim_quotient(ctx, env, args, app_node):
-   n, ni = _check_int_x(args[0], 'quotient', app_node, 1)
-   d, di = _check_int_x(args[1], 'quotient', app_node, 2)
-   if d == 0:
+   n = _check_int_x(args[0], 'quotient', app_node, 1)
+   d = _check_int_x(args[1], 'quotient', app_node, 2)
+   if d.re == 0:
       raise SchemeTypeError('quotient: division by zero', app_node)
-   r = _trunc_div(n, d)
-   return make_real(float(r)) if ni or di else make_integer(r)
+   r = _trunc_div(n.re, d.re)
+   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_remainder(ctx, env, args, app_node):
-   n, ni = _check_int_x(args[0], 'remainder', app_node, 1)
-   d, di = _check_int_x(args[1], 'remainder', app_node, 2)
-   if d == 0:
+   n = _check_int_x(args[0], 'remainder', app_node, 1)
+   d = _check_int_x(args[1], 'remainder', app_node, 2)
+   if d.re == 0:
       raise SchemeTypeError('remainder: division by zero', app_node)
-   r = n - d * _trunc_div(n, d)
-   return make_real(float(r)) if ni or di else make_integer(r)
+   r = n.re - d.re * _trunc_div(n.re, d.re)
+   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_modulo(ctx, env, args, app_node):
-   n, ni = _check_int_x(args[0], 'modulo', app_node, 1)
-   d, di = _check_int_x(args[1], 'modulo', app_node, 2)
-   if d == 0:
+   n = _check_int_x(args[0], 'modulo', app_node, 1)
+   d = _check_int_x(args[1], 'modulo', app_node, 2)
+   if d.re == 0:
       raise SchemeTypeError('modulo: division by zero', app_node)
-   r = n % d
-   return make_real(float(r)) if ni or di else make_integer(r)
+   r = n.re % d.re
+   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_min(ctx, env, args, app_node):
@@ -404,32 +417,36 @@ def _prim_max(ctx, env, args, app_node):
 def _prim_gcd(ctx, env, args, app_node):
    if len(args) == 0:
       return make_integer(0)
-   first, inexact = _check_int_x(args[0], 'gcd', app_node, 1)
-   result = abs(first)
+   a = _check_int_x(args[0], 'gcd', app_node, 1)
+   any_inexact = not a.exact
+   result = abs(a.re)
    i = 1
    while i < len(args):
-      v, vi = _check_int_x(args[i], 'gcd', app_node, i + 1)
-      inexact = inexact or vi
-      result = math.gcd(result, abs(v))
+      v = _check_int_x(args[i], 'gcd', app_node, i + 1)
+      if not v.exact:
+         any_inexact = True
+      result = math.gcd(result, abs(v.re))
       i = i + 1
-   return make_real(float(result)) if inexact else make_integer(result)
+   return make_real(float(result)) if any_inexact else make_integer(result)
 
 
 def _prim_lcm(ctx, env, args, app_node):
    if len(args) == 0:
       return make_integer(1)
-   first, inexact = _check_int_x(args[0], 'lcm', app_node, 1)
-   result = abs(first)
+   a = _check_int_x(args[0], 'lcm', app_node, 1)
+   any_inexact = not a.exact
+   result = abs(a.re)
    i = 1
    while i < len(args):
-      v, vi = _check_int_x(args[i], 'lcm', app_node, i + 1)
-      inexact = inexact or vi
-      if result == 0 or v == 0:
+      v = _check_int_x(args[i], 'lcm', app_node, i + 1)
+      if not v.exact:
+         any_inexact = True
+      if result == 0 or v.re == 0:
          result = 0
       else:
-         result = result * abs(v) // math.gcd(result, abs(v))
+         result = result * abs(v.re) // math.gcd(result, abs(v.re))
       i = i + 1
-   return make_real(float(result)) if inexact else make_integer(result)
+   return make_real(float(result)) if any_inexact else make_integer(result)
 
 
 _MACH_EPS = 2.2204460492503131e-16
@@ -793,65 +810,61 @@ def _floor_mod(n, d):
 
 
 def _prim_floor_quotient(ctx, env, args, app_node):
-   n, ni = _check_int_x(args[0], 'floor-quotient', app_node, 1)
-   d, di = _check_int_x(args[1], 'floor-quotient', app_node, 2)
-   if d == 0:
-      raise SchemeTypeError(
-         'floor-quotient: divide by zero', app_node)
-   r = n // d
-   return make_real(float(r)) if ni or di else make_integer(r)
+   n = _check_int_x(args[0], 'floor-quotient', app_node, 1)
+   d = _check_int_x(args[1], 'floor-quotient', app_node, 2)
+   if d.re == 0:
+      raise SchemeTypeError('floor-quotient: divide by zero', app_node)
+   r = n.re // d.re
+   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_floor_remainder(ctx, env, args, app_node):
-   n, ni = _check_int_x(args[0], 'floor-remainder', app_node, 1)
-   d, di = _check_int_x(args[1], 'floor-remainder', app_node, 2)
-   if d == 0:
-      raise SchemeTypeError(
-         'floor-remainder: divide by zero', app_node)
-   r = n % d
-   return make_real(float(r)) if ni or di else make_integer(r)
+   n = _check_int_x(args[0], 'floor-remainder', app_node, 1)
+   d = _check_int_x(args[1], 'floor-remainder', app_node, 2)
+   if d.re == 0:
+      raise SchemeTypeError('floor-remainder: divide by zero', app_node)
+   r = n.re % d.re
+   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_floor_div(ctx, env, args, app_node):
-   n, ni = _check_int_x(args[0], 'floor/', app_node, 1)
-   d, di = _check_int_x(args[1], 'floor/', app_node, 2)
-   if d == 0:
+   n = _check_int_x(args[0], 'floor/', app_node, 1)
+   d = _check_int_x(args[1], 'floor/', app_node, 2)
+   if d.re == 0:
       raise SchemeTypeError('floor/: divide by zero', app_node)
-   q = n // d
-   r = n % d
-   if ni or di:
+   q = n.re // d.re
+   r = n.re % d.re
+   if not n.exact or not d.exact:
       return make_multi_values([make_real(float(q)), make_real(float(r))])
    return make_multi_values([make_integer(q), make_integer(r)])
 
 
 def _prim_truncate_quotient(ctx, env, args, app_node):
-   n, ni = _check_int_x(args[0], 'truncate-quotient', app_node, 1)
-   d, di = _check_int_x(args[1], 'truncate-quotient', app_node, 2)
-   if d == 0:
-      raise SchemeTypeError(
-         'truncate-quotient: divide by zero', app_node)
-   r = _trunc_div(n, d)
-   return make_real(float(r)) if ni or di else make_integer(r)
+   n = _check_int_x(args[0], 'truncate-quotient', app_node, 1)
+   d = _check_int_x(args[1], 'truncate-quotient', app_node, 2)
+   if d.re == 0:
+      raise SchemeTypeError('truncate-quotient: divide by zero', app_node)
+   r = _trunc_div(n.re, d.re)
+   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_truncate_remainder(ctx, env, args, app_node):
-   n, ni = _check_int_x(args[0], 'truncate-remainder', app_node, 1)
-   d, di = _check_int_x(args[1], 'truncate-remainder', app_node, 2)
-   if d == 0:
-      raise SchemeTypeError(
-         'truncate-remainder: divide by zero', app_node)
-   r = n - _trunc_div(n, d) * d
-   return make_real(float(r)) if ni or di else make_integer(r)
+   n = _check_int_x(args[0], 'truncate-remainder', app_node, 1)
+   d = _check_int_x(args[1], 'truncate-remainder', app_node, 2)
+   if d.re == 0:
+      raise SchemeTypeError('truncate-remainder: divide by zero', app_node)
+   r = n.re - _trunc_div(n.re, d.re) * d.re
+   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_truncate_div(ctx, env, args, app_node):
-   n, ni = _check_int_x(args[0], 'truncate/', app_node, 1)
-   d, di = _check_int_x(args[1], 'truncate/', app_node, 2)
-   if d == 0:
+   n = _check_int_x(args[0], 'truncate/', app_node, 1)
+   d = _check_int_x(args[1], 'truncate/', app_node, 2)
+   if d.re == 0:
       raise SchemeTypeError('truncate/: divide by zero', app_node)
-   q = _trunc_div(n, d)
-   r = n - q * d
-   if ni or di:
+   q = _trunc_div(n.re, d.re)
+   r = n.re - q * d.re
+   if not n.exact or not d.exact:
       return make_multi_values([make_real(float(q)), make_real(float(r))])
    return make_multi_values([make_integer(q), make_integer(r)])
 
@@ -951,7 +964,8 @@ def _prim_string_to_number(ctx, env, args, app_node):
    if radix == 10 and s.endswith('i') and len(s) >= 2:
       tup = _parse_complex_for_stn(s)
       if tup is not None:
-         re_f, im_f = tup[0], tup[1]
+         re_f = tup[0]
+         im_f = tup[1]
          if exact == 1:
             re_v = _float_to_exact(re_f, 'string->number', None)
             im_v = _float_to_exact(im_f, 'string->number', None)

@@ -1647,10 +1647,10 @@
 >>> (magnitude 3+4i)
 ==> 5.0
 
-;;; pyscheme: fp noise from make-polar
+;;; pyscheme: polar literal at theta=0 has no FP noise (cos(0)=1, sin(0)=0)
 
->>> (magnitude 7.25@1.5708)
-==> 7.249999999999999
+>>> (magnitude 7.25@0)
+==> 7.25
 
 >>> (string->number "0")
 ==> 0

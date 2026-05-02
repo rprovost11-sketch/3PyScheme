@@ -238,7 +238,9 @@ def make_real(x, src=None):
 
 def _gcd(a, b):
    while b:
-      a, b = b, a % b
+      tmp = a % b
+      a = b
+      b = tmp
    return a
 
 

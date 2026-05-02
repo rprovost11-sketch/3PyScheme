@@ -461,7 +461,9 @@ def _expand_body(body_cons, src):
                break
             formals_sexpr = f.cdr.car
             expr          = f.cdr.cdr.car
-            fixed, rest = _mv_collect_formals(formals_sexpr)
+            _mv = _mv_collect_formals(formals_sexpr)
+            fixed = _mv[0]
+            rest  = _mv[1]
             if fixed is None:
                break
             fsrc = f.src
@@ -482,11 +484,21 @@ def _expand_body(body_cons, src):
             result = alloc_cons(forms[j], result, src)
             j = j - 1
          return result
-      rest_forms = body_prefix + forms[i:]
+      rest_forms = []
+      _ri = 0
+      while _ri < len(body_prefix):
+         rest_forms.append(body_prefix[_ri])
+         _ri = _ri + 1
+      _ri = i
+      while _ri < len(forms):
+         rest_forms.append(forms[_ri])
+         _ri = _ri + 1
       bindings_chain = NIL_VALUE
       j = len(bindings) - 1
       while j >= 0:
-         name_sym, init, fsrc = bindings[j]
+         name_sym = bindings[j][0]
+         init     = bindings[j][1]
+         fsrc     = bindings[j][2]
          pair = list_from_items([name_sym, init], fsrc)
          bindings_chain = alloc_cons(pair, bindings_chain, src)
          j = j - 1
@@ -1320,7 +1332,9 @@ def _expand_let_values(sexpr):
    i = 0
    while i < len(clauses):
       formals = clauses[i][0]
-      fixed, rest = _mv_collect_formals(formals)
+      _mv = _mv_collect_formals(formals)
+      fixed = _mv[0]
+      rest  = _mv[1]
       if fixed is None:
          return _expand_list(sexpr)
       tmp_sym = tmp_syms[i]
@@ -1634,7 +1648,9 @@ def _expand_define_record_type(sexpr):
    from pyscheme.AST import make_integer
    i = 0
    while i < len(field_entries):
-      fname, accessor, mutator = field_entries[i]
+      fname    = field_entries[i][0]
+      accessor = field_entries[i][1]
+      mutator  = field_entries[i][2]
       idx_val = make_integer(i, src)
       acc_init = list_from_items(
          [mk_sym('%make-record-accessor'), rt_sym, idx_val,
@@ -1698,7 +1714,9 @@ def _expand_define_values(sexpr):
       return _expand_list(sexpr)
    formals_sexpr = sexpr.cdr.car
    expr          = sexpr.cdr.cdr.car
-   fixed, rest = _mv_collect_formals(formals_sexpr)
+   _mv = _mv_collect_formals(formals_sexpr)
+   fixed = _mv[0]
+   rest  = _mv[1]
    if fixed is None:
       return _expand_list(sexpr)
    src = sexpr.src

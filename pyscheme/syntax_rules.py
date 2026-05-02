@@ -463,7 +463,11 @@ def _raise_syntax_error(args_tail, match, ellipsis_sym, use_src, sc_intro):
       cur = cur.cdr
    if args and is_string(args[0]):
       msg = as_string(args[0])
-      datums = args[1:]
+      datums = []
+      _di = 1
+      while _di < len(args):
+         datums.append(args[_di])
+         _di = _di + 1
    else:
       msg = 'syntax-error'
       datums = args

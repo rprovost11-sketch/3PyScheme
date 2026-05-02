@@ -71,6 +71,7 @@ from __future__ import annotations
 
 from pyscheme.Environment import (
    Environment,
+   _PositionedSchemeError,
    SchemeArityError, SchemeUnboundError, SchemeTypeError,
    SchemeUserError, SchemeRaised, SchemeFileError,
    arity_mismatch_msg,
@@ -470,8 +471,8 @@ class _ThreadLocalList:
    def append(self, x):
       self._get().append(x)
 
-   def pop(self, *args):
-      return self._get().pop(*args)
+   def pop(self):
+      return self._get().pop()
 
    def clear(self):
       self._get().clear()
@@ -789,8 +790,13 @@ def cek_eval(expr, env, ctx=None):
       _unwind_winds_on_error(ctx, wind_depth_entry)
       while len(_handler_stack) > handler_depth_entry:
          _handler_stack.pop()
-      if hasattr(e, 'call_stack') and e.call_stack is None and _shadow_stack:
-         e.call_stack = list(_shadow_stack)
+      if isinstance(e, _PositionedSchemeError) and e.call_stack is None and _shadow_stack:
+         _cs = []
+         _j = 0
+         while _j < len(_shadow_stack):
+            _cs.append(_shadow_stack[_j])
+            _j = _j + 1
+         e.call_stack = _cs
       _shadow_stack.clear()
       raise
    except BaseException:
@@ -808,8 +814,14 @@ def _library_load_path():
    library file in cwd is found by default."""
    import os
    path_var = os.environ.get('SCHEME_LIBRARY_PATH', '')
-   parts = [p for p in path_var.split(os.pathsep) if p]
-   return ['.'] + parts
+   raw = path_var.split(os.pathsep)
+   parts = ['.']
+   i = 0
+   while i < len(raw):
+      if raw[i]:
+         parts.append(raw[i])
+      i = i + 1
+   return parts
 
 
 def _load_py_extension(path):
@@ -1071,7 +1083,8 @@ def _process_define_library(C, ctx):
    exports_env = Environment(parent=None)
    i = 0
    while i < len(export_names):
-      internal, external = export_names[i]
+      internal = export_names[i][0]
+      external = export_names[i][1]
       if internal not in lib_env._bindings:
          raise SchemeSyntaxError(
             'define-library: exported name not defined: ' + internal,
@@ -1659,7 +1672,9 @@ def _cek_loop(expr, env, ctx):
                      # re-entry into cek_eval would create.  Loops so (apply apply
                      # ...) collapses rather than firing the stub body.
                      while _is_apply_primitive(fn_value):
-                        proc, flat_args = _unpack_apply_args(new_collected, app_node)
+                        _apply_result = _unpack_apply_args(new_collected, app_node)
+                        proc = _apply_result[0]
+                        flat_args = _apply_result[1]
                         if not (is_primitive(proc) or is_closure(proc)
                                 or is_case_closure(proc) or is_continuation(proc)
                                 or is_parameter(proc)):
@@ -1825,9 +1840,11 @@ def _cek_loop(expr, env, ctx):
                               arity_mismatch_msg('%with-parameters', 3, 3,
                                                  len(new_collected)),
                               src_of(app_node) if app_node is not None else None)
-                        install_prim, restore_prim = _build_parameterize_winds(
+                        _param_winds = _build_parameterize_winds(
                            new_collected[0], new_collected[1],
                            ctx, saved_env, app_node)
+                        install_prim = _param_winds[0]
+                        restore_prim = _param_winds[1]
                         _wind_stack.append((install_prim, restore_prim))
                         K.append((FRAME_DYNAMIC_WIND_AFTER, restore_prim))
                         fn_value = new_collected[2]

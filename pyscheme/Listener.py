@@ -122,13 +122,14 @@ def _format_error(exc):
    REPL and test harness so expected/actual error strings compare."""
    if isinstance(exc, NotImplementedError):
       return 'Not implemented: ' + str(exc)
-   if isinstance(exc, (SchemeSyntaxError, SchemeAnalysisError,
-                       SchemeUnboundError, SchemeRuntimeError,
-                       ListenerCommandError)):
+   if (isinstance(exc, SchemeSyntaxError) or isinstance(exc, SchemeAnalysisError)
+         or isinstance(exc, SchemeUnboundError) or isinstance(exc, SchemeRuntimeError)
+         or isinstance(exc, ListenerCommandError)):
       return str(exc)
-   if isinstance(exc, (SchemeArityError, SchemeTypeError, SchemeRaised)):
+   if (isinstance(exc, SchemeArityError) or isinstance(exc, SchemeTypeError)
+         or isinstance(exc, SchemeRaised)):
       msg = type(exc).__name__ + ': ' + str(exc)
-      call_stack = getattr(exc, 'call_stack', None)
+      call_stack = exc.call_stack
       if call_stack:
          msg = msg + '\n' + _format_call_stack(call_stack)
       return msg
@@ -965,23 +966,6 @@ class Listener:
 
       # Grand-total screen summary.
       if len(filenames) > 1:
-         print()
-         print(BOLD + 'Grand Total' + RESET)
-         print(BOLD + ('-' * 11) + RESET)
-         k = 0
-         while k < len(per_file):
-            entry = per_file[k]
-            name  = entry[0]
-            p     = entry[1]
-            f     = entry[2]
-            short = os.path.basename(name)
-            if f == 0:
-               status = GREEN + str(p) + ' passed' + RESET
-            else:
-               total  = p + f
-               status = RED + str(f) + ' of ' + str(total) + ' failed' + RESET
-            print('  ' + short.ljust(40) + ' ' + status)
-            k = k + 1
          print()
          total = grand_pass + grand_fail
          if grand_fail == 0:

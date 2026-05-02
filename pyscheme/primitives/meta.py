@@ -497,7 +497,8 @@ def _prim_get_environment_variables(ctx, env, args, app_node):
    result = NIL_VALUE
    i = len(items) - 1
    while i >= 0:
-      k, v = items[i]
+      k = items[i][0]
+      v = items[i][1]
       pair = alloc_cons(make_string(k), make_string(v))
       result = alloc_cons(pair, result)
       i = i - 1

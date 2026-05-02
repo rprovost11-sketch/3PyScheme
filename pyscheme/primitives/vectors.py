@@ -285,10 +285,19 @@ def _prim_vector_for_each(ctx, env, args, app_node):
    while i < len(args):
       vectors.append(_check_vector(args[i], 'vector-for-each', app_node, i + 1))
       i = i + 1
-   shortest = min(len(v) for v in vectors)
+   shortest = len(vectors[0])
+   _vi = 1
+   while _vi < len(vectors):
+      if len(vectors[_vi]) < shortest:
+         shortest = len(vectors[_vi])
+      _vi = _vi + 1
    i = 0
    while i < shortest:
-      arg_row = [v[i] for v in vectors]
+      arg_row = []
+      _vi = 0
+      while _vi < len(vectors):
+         arg_row.append(vectors[_vi][i])
+         _vi = _vi + 1
       _apply_scheme_proc(proc, arg_row, ctx, None, app_node)
       i = i + 1
    return VOID_VALUE
@@ -306,11 +315,20 @@ def _prim_vector_map(ctx, env, args, app_node):
    while i < len(args):
       vectors.append(_check_vector(args[i], 'vector-map', app_node, i + 1))
       i = i + 1
-   shortest = min(len(v) for v in vectors)
+   shortest = len(vectors[0])
+   _vi = 1
+   while _vi < len(vectors):
+      if len(vectors[_vi]) < shortest:
+         shortest = len(vectors[_vi])
+      _vi = _vi + 1
    collected = []
    i = 0
    while i < shortest:
-      arg_row = [v[i] for v in vectors]
+      arg_row = []
+      _vi = 0
+      while _vi < len(vectors):
+         arg_row.append(vectors[_vi][i])
+         _vi = _vi + 1
       collected.append(_apply_scheme_proc(proc, arg_row, ctx, None, app_node))
       i = i + 1
    return make_vector(collected)

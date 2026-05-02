@@ -232,10 +232,7 @@ def _describe_object(val, out):
       return
    if tag == PORT:
       port = as_port(val)
-      if hasattr(port, 'closed'):
-         status = 'closed' if port.closed else 'open'
-      else:
-         status = 'open'
+      status = 'closed' if port.closed else 'open'
       print('#<port> is a port, status: ' + status, file=out)
       return
    print(pretty_print(val) + ' is of type ' + _scheme_type_name(val), file=out)

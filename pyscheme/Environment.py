@@ -167,8 +167,8 @@ class Environment:
    def __init__(self, parent=None, initialBindings=None):
       self._bindings = {}
       if initialBindings is not None:
-         for k, v in initialBindings.items():
-            self._bindings[k] = [(frozenset(), v)]
+         for k in initialBindings:
+            self._bindings[k] = [(frozenset(), initialBindings[k])]
       self._parent = parent
       self._is_immutable = False
       if parent is None:

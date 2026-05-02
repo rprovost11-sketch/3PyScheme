@@ -452,7 +452,7 @@ def _try_parse_prefixed_number(text, src):
          return None
    if radix == -1:
       radix = 10
-   rest = text[i:]
+   rest = _substring(text, i, len(text))
    if not rest:
       raise SchemeSyntaxError("number prefix with no digits: %r" % text, src)
    # Try integer with given radix.
@@ -509,8 +509,8 @@ def _parse_number_for_complex(s):
    if '/' in s:
       slash = s.index('/')
       try:
-         num = int(s[:slash])
-         den = int(s[slash + 1:])
+         num = int(_substring(s, 0, slash))
+         den = int(_substring(s, slash + 1, len(s)))
          if den != 0:
             return _Fraction(num, den)
       except ValueError:
@@ -540,7 +540,7 @@ def _try_parse_complex_literal(text, src):
    """Parse a+bi / a-bi / +bi / -bi / +i / -i complex literals.
    text ends in 'i' and has length >= 2.
    Produces an exact complex token when both components are exact."""
-   body = text[:-1]   # strip trailing 'i'
+   body = _substring(text, 0, len(text) - 1)
    if not body:
       return None   # bare 'i' is an identifier
 
@@ -561,8 +561,8 @@ def _try_parse_complex_literal(text, src):
    if split == -1:
       return None   # no sign separator found
 
-   real_str  = body[:split]
-   sign_imag = body[split:]   # sign + magnitude, e.g. "+4" / "-3.5" / "+" / "-"
+   real_str  = _substring(body, 0, split)
+   sign_imag = _substring(body, split, len(body))
 
    if real_str == '':
       re_val = 0
@@ -744,7 +744,8 @@ class Parser:
          return make_complex(tok.value[0], tok.value[1], tok.src)
       if kind == TOK_EXACT_COMPLEX:
          self._advance()
-         re_s, im_s = tok.value
+         re_s = tok.value[0]
+         im_s = tok.value[1]
          if is_integer(im_s) and as_integer(im_s) == 0:
             return re_s
          return make_exact_complex(re_s, im_s, tok.src)
