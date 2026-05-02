@@ -86,7 +86,7 @@ from pyscheme.AST import (
    as_closure_params, as_closure_body, as_closure_env, as_closure_rest_name,
    as_closure_param_scopes, as_closure_rest_scope,
    as_case_closure_clauses, as_case_closure_env, as_parameter_value,
-   as_continuation_k, as_continuation_wind,
+   as_continuation_k, as_continuation_wind, as_continuation_shadow,
    as_promise_is_done, as_promise_payload,
    as_multi_values_list, as_environment, as_continuation_handlers,
    as_record_type, as_record_fields,
@@ -490,6 +490,14 @@ def _restore_handler_stack(snapshot):
    (including FRAME_POP_HANDLER) find the matching handler entries."""
    _handler_stack.clear()
    _handler_stack.extend(snapshot)
+
+
+def _restore_shadow_stack(snapshot):
+   """Replace _shadow_stack contents with snapshot in place.  Called on
+   continuation invocation so error reporting reflects the call chain at
+   the capture site, not at the invocation site."""
+   _shadow_stack.clear()
+   _shadow_stack.extend(snapshot)
 
 
 def _build_parameterize_winds(params_list, values_list, ctx, saved_env, app_node):
@@ -1586,6 +1594,7 @@ def _cek_loop(expr, env, ctx):
                         _wind_walk(ctx, as_continuation_wind(V))
                         _restore_handler_stack(as_continuation_handlers(V))
                         K = list(as_continuation_k(V))
+                        _restore_shadow_stack(as_continuation_shadow(V))
                         V = _continuation_value(V, [])
                         continue
                      pv = _apply_parameter_if(V, 0, app_node)
@@ -1650,6 +1659,7 @@ def _cek_loop(expr, env, ctx):
                         _wind_walk(ctx, as_continuation_wind(fn_value))
                         _restore_handler_stack(as_continuation_handlers(fn_value))
                         K = list(as_continuation_k(fn_value))
+                        _restore_shadow_stack(as_continuation_shadow(fn_value))
                         V = _continuation_value(fn_value, new_collected)
                         continue
                      # Capture continuation: call/cc intercepted before its body.
@@ -1660,7 +1670,8 @@ def _cek_loop(expr, env, ctx):
                                                  1, 1, len(new_collected)),
                               src_of(app_node) if app_node is not None else None)
                         cont = make_continuation(
-                           list(K), list(_wind_stack), list(_handler_stack))
+                           list(K), list(_wind_stack), list(_handler_stack),
+                           list(_shadow_stack))
                         user_proc = new_collected[0]
                         # Apply the user proc with the continuation as its arg,
                         # reusing the normal dispatch paths below.

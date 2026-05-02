@@ -143,14 +143,19 @@ class Continuation:
    point; handler_snapshot is a copy of the handler stack so a continuation
    captured inside with-exception-handler keeps its handlers when invoked
    from elsewhere (and stale FRAME_POP_HANDLER frames in k_snapshot find
-   the matching handler entries to pop).  Invoking the continuation walks
-   the wind stack from current to wind_snapshot, restores the handler
-   stack from handler_snapshot, replaces K with a copy of k_snapshot, and
-   resumes the CEK machine."""
-   def __init__(self, k_snapshot, wind_snapshot, handler_snapshot):
+   the matching handler entries to pop).  shadow_snapshot is a copy of the
+   shadow call stack at capture time; restored on invocation so error
+   reporting reflects the resumed context, not the invoker's context.
+   Invoking the continuation walks the wind stack from current to
+   wind_snapshot, restores the handler stack from handler_snapshot,
+   replaces K with a copy of k_snapshot, restores _shadow_stack from
+   shadow_snapshot, and resumes the CEK machine."""
+   def __init__(self, k_snapshot, wind_snapshot, handler_snapshot,
+                shadow_snapshot):
       self.k_snapshot = k_snapshot
       self.wind_snapshot = wind_snapshot
       self.handler_snapshot = handler_snapshot
+      self.shadow_snapshot = shadow_snapshot
 
 
 class Port:
@@ -321,8 +326,10 @@ def make_parameter(value, converter):
 def make_error_object(message, irritants):
    return ErrorObject(message, irritants)
 
-def make_continuation(k_snapshot, wind_snapshot, handler_snapshot):
-   return Continuation(k_snapshot, wind_snapshot, handler_snapshot)
+def make_continuation(k_snapshot, wind_snapshot, handler_snapshot,
+                      shadow_snapshot):
+   return Continuation(k_snapshot, wind_snapshot, handler_snapshot,
+                       shadow_snapshot)
 
 def make_syntax_transformer(name, literals, ellipsis, rules, def_env,
                             literal_bindings=None, def_scope=0):
@@ -757,6 +764,9 @@ def as_continuation_wind(c):
 def as_continuation_handlers(c):
    return c.handler_snapshot
 
+def as_continuation_shadow(c):
+   return c.shadow_snapshot
+
 def as_syntax_transformer_name(t):
    return t.name
 
@@ -1028,11 +1038,13 @@ if __name__ == '__main__':
    ksnap = [('FRAME_TEST', 1), ('FRAME_TEST', 2)]
    wsnap = [('before', 'after')]
    hsnap = ['handler1', 'handler2']
-   cont = make_continuation(ksnap, wsnap, hsnap)
+   ssnap = [['foo', None, 1], ['bar', None, 2]]
+   cont = make_continuation(ksnap, wsnap, hsnap, ssnap)
    check('is_continuation',             is_continuation(cont))
    check('continuation k_snapshot',     as_continuation_k(cont) is ksnap)
    check('continuation wind_snapshot',  as_continuation_wind(cont) is wsnap)
    check('continuation handler_snapshot', as_continuation_handlers(cont) is hsnap)
+   check('continuation shadow_snapshot',  as_continuation_shadow(cont) is ssnap)
    check('continuation not closure',    not is_closure(cont))
    check('continuation not promise',    not is_promise(cont))
 
