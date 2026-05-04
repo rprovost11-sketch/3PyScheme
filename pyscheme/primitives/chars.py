@@ -156,7 +156,7 @@ def _prim_integer_to_char(ctx, env, args, app_node):
 
 def _prim_digit_value(ctx, env, args, app_node):
    c = _check_char(args[0], 'digit-value', app_node)
-   if c.isdigit():
+   if c.isdecimal():
       return make_integer(int(c))
    return make_boolean(False)
 

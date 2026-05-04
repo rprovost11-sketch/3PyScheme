@@ -322,6 +322,14 @@
 >>> (digit-value #\space)
 ==> #f
 
+>>> (digit-value (integer->char #x00B2))
+... ; U+00B2 SUPERSCRIPT TWO: isdigit() True but not a decimal digit
+==> #f
+
+>>> (digit-value (integer->char #x0660))
+... ; U+0660 ARABIC-INDIC DIGIT ZERO: a genuine decimal digit
+==> 0
+
 >>> (digit-value)
 %%% SchemeArityError: line 1, col 1: digit-value: 0 arguments provided; 1 expected
 %%% (digit-value)

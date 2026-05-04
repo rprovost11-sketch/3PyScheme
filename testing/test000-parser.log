@@ -57,6 +57,9 @@
 ==> 10000000000.0
 
 >>> +nan.0
+==> +nan.0
+
+>>> -nan.0
 ... ; --- Boolean literals ---
 ==> +nan.0
 
@@ -256,8 +259,17 @@
 ==> #t
 
 >>> (string=? "\x61;\x62;\x63;" "abc")
-... ; \| escape in strings
 ==> #t
+
+>>> (string=? "ab\
+...   cd" "abcd")
+... ; intraline whitespace continuation: \ + newline folds whitespace
+==> #t
+
+>>> (string-length "ab\
+...   cd")
+... ; \| escape in strings
+==> 4
 
 >>> (string-ref "\|" 0)
 ... ; --- Symbol literals ---

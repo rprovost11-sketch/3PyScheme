@@ -355,7 +355,10 @@ a
 ...     (let ((line (read-line ip)))
 ...       (close-port ip)
 ...       line)))
-%%% internal error: a bytes-like object is required, not 'str'
+... ; display on binary output port must raise SchemeTypeError (fixed: was internal error)
+%%% SchemeTypeError: line 3, col 3: display: argument 2 must be a textual output port
+%%%   (display "hello" op)
+%%%   ^
 >>> (output-port? (open-binary-output-file "/tmp/scheme_bin2.txt"))
 ==> #t
 
@@ -650,3 +653,12 @@ a
 %%% SchemeTypeError: line 3, col 3: read-char: port is closed
 %%%   (read-char p))
 %%%   ^
+>>> (display "hi" (open-output-bytevector))
+... ; display on a binary port must raise SchemeTypeError
+%%% SchemeTypeError: line 1, col 1: display: argument 2 must be a textual output port
+%%% (display "hi" (open-output-bytevector))
+%%% ^
+>>> (write 42 (open-output-bytevector))
+%%% SchemeTypeError: line 1, col 1: write: argument 2 must be a textual output port
+%%% (write 42 (open-output-bytevector))
+%%% ^

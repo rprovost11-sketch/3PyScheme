@@ -611,6 +611,26 @@
 >>> (denominator 0.5)
 ==> 2.0
 
+>>> (numerator +inf.0)
+... ; R7RS §6.2.6: numerator of infinity is itself
+==> +inf.0
+
+>>> (numerator -inf.0)
+==> -inf.0
+
+>>> (denominator +inf.0)
+... ; R7RS §6.2.6: denominator of infinity is 1.0
+==> 1.0
+
+>>> (denominator -inf.0)
+==> 1.0
+
+>>> (numerator +nan.0)
+==> +nan.0
+
+>>> (denominator +nan.0)
+==> 1.0
+
 >>> (numerator)
 %%% SchemeArityError: line 1, col 1: numerator: 0 arguments provided; 1 expected
 %%% (numerator)

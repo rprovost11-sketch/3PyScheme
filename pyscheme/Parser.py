@@ -374,6 +374,8 @@ def _build_token(kind, text, src):
          return Token(TOK_REAL, float('-inf'), src)
       if text == '+nan.0':
          return Token(TOK_REAL, float('nan'), src)
+      if text == '-nan.0':
+         return Token(TOK_REAL, float('nan'), src)
       if text.startswith('#'):
          tok = _try_parse_prefixed_number(text, src)
          if tok is not None:
@@ -476,6 +478,10 @@ def _try_parse_prefixed_number(text, src):
       if rest == '+nan.0':
          if exact == 1:
             raise SchemeSyntaxError("#e cannot be applied to +nan.0", src)
+         return Token(TOK_REAL, float('nan'), src)
+      if rest == '-nan.0':
+         if exact == 1:
+            raise SchemeSyntaxError("#e cannot be applied to -nan.0", src)
          return Token(TOK_REAL, float('nan'), src)
       try:
          f = float(rest)

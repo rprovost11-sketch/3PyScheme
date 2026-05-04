@@ -723,7 +723,7 @@ def _render_display(val):
 def _prim_display(ctx, env, args, app_node):
    v = args[0]
    port_val = _resolve_output_port(ctx, args, 1)
-   p = _check_output_port(port_val, 'display', app_node, 2)
+   p = _check_textual_output(port_val, 'display', app_node, 2)
    _emit_to_port(p, _render_display(v))
    return VOID_VALUE
 
@@ -732,7 +732,7 @@ def _prim_write(ctx, env, args, app_node):
    from pyscheme.PrettyPrinter import pretty_print
    v = args[0]
    port_val = _resolve_output_port(ctx, args, 1)
-   p = _check_output_port(port_val, 'write', app_node, 2)
+   p = _check_textual_output(port_val, 'write', app_node, 2)
    _emit_to_port(p, pretty_print(v))
    return VOID_VALUE
 

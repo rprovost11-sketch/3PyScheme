@@ -209,9 +209,8 @@
 ==> #t
 
 >>> (nan? (string->number "-nan.0"))
-%%% SchemeTypeError: line 1, col 1: nan?: argument must be a number
-%%% (nan? (string->number "-nan.0"))
-%%% ^
+... ; -nan.0 is a valid R7RS literal (alias for +nan.0)
+==> #t
 >>> (finite? 1)
 ==> #t
 

@@ -625,7 +625,7 @@ def _prim_numerator(ctx, env, args, app_node):
    if is_real(v):
       f = as_real(v)
       if not math.isfinite(f):
-         raise SchemeTypeError('numerator: argument must be finite', app_node)
+         return make_real(f)
       if f.is_integer():
          return make_real(f)
       return make_real(float(Fraction(f).numerator))
@@ -641,7 +641,7 @@ def _prim_denominator(ctx, env, args, app_node):
    if is_real(v):
       f = as_real(v)
       if not math.isfinite(f):
-         raise SchemeTypeError('denominator: argument must be finite', app_node)
+         return make_real(1.0)
       if f.is_integer():
          return make_real(1.0)
       return make_real(float(Fraction(f).denominator))
@@ -676,6 +676,8 @@ def _parse_number_for_stn(s):
    if s == '-inf.0':
       return float('-inf')
    if s == '+nan.0':
+      return float('nan')
+   if s == '-nan.0':
       return float('nan')
    try:
       return float(s)
@@ -1009,6 +1011,10 @@ def _prim_string_to_number(ctx, env, args, app_node):
             return make_boolean(False)
          return make_real(float('-inf'))
       if s == '+nan.0':
+         if exact == 1:
+            return make_boolean(False)
+         return make_real(float('nan'))
+      if s == '-nan.0':
          if exact == 1:
             return make_boolean(False)
          return make_real(float('nan'))
