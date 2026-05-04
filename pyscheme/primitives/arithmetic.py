@@ -1248,6 +1248,22 @@ def _prim_rationalize(ctx, env, args, app_node):
    return _wrap(r)
 
 
+def _prim_random(ctx, env, args, app_node):
+   import random as _random
+   n = args[0]
+   if is_integer(n):
+      v = as_integer(n)
+      if v <= 0:
+         raise SchemeTypeError('random: argument must be positive', app_node)
+      return make_integer(_random.randrange(v))
+   if is_real(n):
+      v = as_real(n)
+      if v <= 0.0:
+         raise SchemeTypeError('random: argument must be positive', app_node)
+      return make_real(_random.uniform(0.0, v))
+   raise SchemeTypeError('random: argument must be a number', app_node)
+
+
 def register():
    register_primitive('+', (0, None), _prim_add,
       doc=(
@@ -1440,4 +1456,9 @@ def register():
       category=CATEGORY)
    register_primitive('inexact->exact', (1, 1), _prim_exact,
       doc='Alias for exact.  R6RS / R7RS 6.2.6.',
+      category=CATEGORY)
+   register_primitive('random', (1, 1), _prim_random,
+      doc=('(random n) returns a random non-negative integer less than n when '
+           'n is an exact integer, or a random real in [0.0, n) when n is a '
+           'real.  MIT Scheme compatibility for SICP.'),
       category=CATEGORY)

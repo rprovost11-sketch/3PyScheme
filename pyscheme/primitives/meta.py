@@ -1,16 +1,11 @@
-"""Meta-operations: error, apply, eval, force, make-promise, values, call-with-values.
+"""Meta-operations: apply, eval, force, make-promise, environment.
 
 R7RS library procedures that transcend normal procedure-call semantics:
 
-    (error <message> <irritant>...)     6.11  raise a user error
     (apply <proc> <arg>... <list>)      6.10  apply proc to combined args
     (eval <datum> [<env-spec>])         6.12  evaluate a datum in an environment
     (environment <list>...)             6.12  build a frozen env from libraries
     (interaction-environment)           6.12  return the mutable global env
-    (force <promise>)                   6.10  force a promise's value
-    (make-promise <obj>)                6.10  wrap a value as an already-forced promise
-    (values <obj>...)                   6.10  return multiple values
-    (call-with-values <producer> <consumer>) 6.10  consume producer's multi-values
 
 Record plumbing for define-record-type (R7RS 5.5).  These %-prefixed
 primitives are emitted by the Expander; users do not call them directly:
@@ -25,7 +20,7 @@ primitives are emitted by the Expander; users do not call them directly:
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
    is_cons, is_nil, is_string, is_integer, is_primitive, is_closure, is_case_closure,
-   is_promise, is_multi_values, is_symbol, is_record, is_record_type,
+   is_multi_values, is_symbol, is_record, is_record_type,
    is_parameter, is_error_object,
    as_string, as_integer, as_primitive_fn, as_symbol,
    as_promise_is_done, as_promise_payload, promise_resolve, promise_become,
@@ -34,66 +29,16 @@ from pyscheme.AST import (
    as_parameter_value, as_parameter_converter, set_parameter_value,
    as_error_object_message, as_error_object_irritants,
    is_file_error_object, is_read_error_object,
-   alloc_cons, make_symbol, make_promise_done, make_multi_values,
+   alloc_cons, make_symbol,
    make_record_type, make_record, make_parameter, make_string,
    make_environment, make_record_accessor, make_record_mutator,
-   make_boolean, list_from_items, src_of,
+   make_boolean, make_real, list_from_items, src_of,
    VOID_VALUE,
 )
 from pyscheme.Environment import SchemeTypeError, SchemeUserError, SchemeRaised
 
 
 CATEGORY = 'meta'
-
-
-def _prim_error_unreached(ctx, env, args, app_node):
-   # The Evaluator intercepts error at FRAME_CALL dispatch so that raised
-   # errors flow through the CEK-level handler stack rather than Python
-   # exceptions.  This body fires only if the interceptor is bypassed.
-   raise SchemeTypeError(
-      'error: cannot be called through a re-entering path in this '
-      'implementation', app_node)
-
-
-def _prim_raise_unreached(ctx, env, args, app_node):
-   raise SchemeTypeError(
-      'raise: cannot be called through a re-entering path in this '
-      'implementation', app_node)
-
-
-def _prim_raise_continuable_unreached(ctx, env, args, app_node):
-   raise SchemeTypeError(
-      'raise-continuable: cannot be called through a re-entering path '
-      'in this implementation', app_node)
-
-
-def _prim_with_exception_handler_unreached(ctx, env, args, app_node):
-   raise SchemeTypeError(
-      'with-exception-handler: cannot be called through a re-entering '
-      'path in this implementation', app_node)
-
-
-def _prim_call_cc_unreached(ctx, env, args, app_node):
-   # The evaluator intercepts call/cc at the application dispatch point to
-   # capture the K-stack before this body would run.  If this code fires,
-   # something has invoked call/cc in a way that bypasses the interceptor
-   # (e.g. through apply, which re-enters cek_eval and then calls primitives
-   # directly).  Flag it loudly rather than silently misbehaving.
-   raise SchemeTypeError(
-      'call/cc: cannot be applied through a re-entering primitive '
-      '(apply / call-with-values / force) in this implementation',
-      app_node)
-
-
-def _prim_dynamic_wind_unreached(ctx, env, args, app_node):
-   # The evaluator intercepts dynamic-wind at the application dispatch
-   # point to install a FRAME_DYNAMIC_WIND_AFTER frame and push the wind
-   # entry before the body runs.  If this code fires, dynamic-wind was
-   # invoked through a path that bypasses the interceptor.
-   raise SchemeTypeError(
-      'dynamic-wind: cannot be applied through a re-entering primitive '
-      '(apply / call-with-values / force) in this implementation',
-      app_node)
 
 
 def _prim_file_error_p(ctx, env, args, app_node):
@@ -181,35 +126,6 @@ def _prim_environment(ctx, env, args, app_node):
       i = i + 1
    result.freeze()
    return make_environment(result)
-
-
-def _prim_force_unreached(ctx, env, args, app_node):
-   # The Evaluator intercepts force at FRAME_CALL dispatch to keep the
-   # thunk evaluation tail-position and drive the delay-force chain via
-   # FRAME_FORCE_RESULT frames rather than a Python while loop.  This body
-   # fires only if the interception was bypassed.
-   raise SchemeTypeError(
-      'force: cannot be called through a re-entering path in this '
-      'implementation', app_node)
-
-
-def _prim_make_promise(ctx, env, args, app_node):
-   # (make-promise obj) wraps obj in an already-forced promise.
-   return make_promise_done(args[0])
-
-
-def _prim_values(ctx, env, args, app_node):
-   # R7RS 6.10: values delivers its arguments to its continuation; a
-   # single-value continuation legitimately accepts one value, so
-   # (+ 1 (values 2)) must yield 3 rather than error.  We satisfy this
-   # by representing one-value results as the bare value (no wrapper):
-   # (values) -> empty multi-values (0 values)
-   # (values x) -> x (1 value, no wrapper)
-   # (values a b ...) -> multi-values container (2+ values)
-   if len(args) == 1:
-      return args[0]
-   from pyscheme.AST import src_of
-   return make_multi_values(list(args), src_of(app_node))
 
 
 def _prim_make_record_type(ctx, env, args, app_node):
@@ -384,16 +300,6 @@ def _prim_with_parameters_unreached(ctx, env, args, app_node):
       'in this implementation', app_node)
 
 
-def _prim_call_with_values_unreached(ctx, env, args, app_node):
-   # The Evaluator intercepts call-with-values at FRAME_CALL dispatch so
-   # the producer and consumer are tail-called through the CEK path,
-   # driven by FRAME_CWV_CONSUMER.  This body fires only if interception
-   # was bypassed.
-   raise SchemeTypeError(
-      'call-with-values: cannot be called through a re-entering path '
-      'in this implementation', app_node)
-
-
 def _prim_null_environment(ctx, env, args, app_node):
    from pyscheme.Environment import Environment
    if not is_integer(args[0]):
@@ -505,9 +411,14 @@ def _prim_get_environment_variables(ctx, env, args, app_node):
    return result
 
 
+def _prim_runtime(ctx, env, args, app_node):
+   import time as _time
+   return make_real(_time.process_time())
+
+
+
 def _prim_current_second(ctx, env, args, app_node):
    import time as _time
-   from pyscheme.AST import make_real
    return make_real(_time.time())
 
 
@@ -523,13 +434,6 @@ def _prim_jiffies_per_second(ctx, env, args, app_node):
 
 
 def register():
-   register_primitive('error', (1, None), _prim_error_unreached,
-      doc=(
-         "Raise a user error.  The first argument is a string message;\n"
-         "any trailing arguments are appended to the message as irritants\n"
-         "separated by spaces.  Does not return."),
-      category=CATEGORY)
-
    register_primitive('apply', (2, None), _prim_apply_unreached,
       usage='(apply <proc> <arg>... <list>)',
       doc=(
@@ -568,44 +472,6 @@ def register():
          "integers identifying a registered library, e.g. '(scheme base).\n"
          "The returned environment is frozen: defining or set!'ing on it is\n"
          "an error.  R7RS 6.12; library (scheme eval)."),
-      category=CATEGORY)
-
-   register_primitive('force', (1, 1), _prim_force_unreached,
-      doc=(
-         "Force a promise, returning its value.  The promise's thunk runs\n"
-         "at most once; subsequent forces return the cached value.  If the\n"
-         "thunk yields another promise, force follows the chain iteratively,\n"
-         "so (delay-force ...) promise chains run in constant stack.  A\n"
-         "non-promise argument is returned unchanged (R7RS-small 6.10 leaves\n"
-         "this implementation-defined; we follow SRFI 155)."),
-      category=CATEGORY)
-
-   register_primitive('make-promise', (1, 1), _prim_make_promise,
-      doc=(
-         "Return a promise whose forced value is obj.  Unlike delay,\n"
-         "make-promise is a procedure, not a special form: its argument\n"
-         "is evaluated eagerly and the resulting promise is already forced."),
-      category=CATEGORY)
-
-   register_primitive('values', (0, None), _prim_values,
-      usage='(values <obj>...)',
-      doc=(
-         "Return the arguments as multiple values.  With zero arguments,\n"
-         "returns an empty multi-values container.  With one argument,\n"
-         "returns that value unchanged (no wrapper).  With two or more,\n"
-         "returns a multi-values container that only call-with-values\n"
-         "(and a few related forms) can consume; delivering multi-values\n"
-         "to a single-value context is an error."),
-      category=CATEGORY)
-
-   register_primitive('call-with-values', (2, 2), _prim_call_with_values_unreached,
-      usage='(call-with-values <producer> <consumer>)',
-      doc=(
-         "Call <producer> with no arguments.  Pass its return value(s)\n"
-         "to <consumer>: if <producer> returned a multi-values container,\n"
-         "each value becomes a separate argument to <consumer>; otherwise\n"
-         "<consumer> is called with the single value.  Returns <consumer>'s\n"
-         "result."),
       category=CATEGORY)
 
    # Record plumbing: emitted by the Expander for (define-record-type ...).
@@ -659,32 +525,7 @@ def register():
          "the Expander emits calls to %with-parameters for parameterize."),
       category=CATEGORY)
 
-   # Exception handling
-   register_primitive('raise', (1, 1), _prim_raise_unreached,
-      doc=(
-         "Raise a non-continuable exception carrying the given value.\n"
-         "If a with-exception-handler (or guard) handler catches it, the\n"
-         "handler's return value is discarded and a secondary error fires\n"
-         "because there is no valid continuation to return to.  R7RS 6.11."),
-      category=CATEGORY)
-
-   register_primitive('raise-continuable', (1, 1), _prim_raise_continuable_unreached,
-      doc=(
-         "Raise a continuable exception carrying the given value.  When\n"
-         "caught by with-exception-handler, the handler's return value\n"
-         "becomes the return value of (raise-continuable ...).  R7RS 6.11."),
-      category=CATEGORY)
-
-   register_primitive('with-exception-handler', (2, 2),
-      _prim_with_exception_handler_unreached,
-      usage='(with-exception-handler <handler> <thunk>)',
-      doc=(
-         "Install <handler> for the dynamic extent of (<thunk>).  When a\n"
-         "raise or raise-continuable fires inside <thunk>, call <handler>\n"
-         "with the raised value.  <handler> is a 1-arg procedure; <thunk>\n"
-         "is a 0-arg procedure.  R7RS 6.11."),
-      category=CATEGORY)
-
+   # Exception object accessors
    register_primitive('error-object-message', (1, 1),
       _prim_error_object_message,
       doc='Return the message string of an error object.  R7RS 6.11.',
@@ -703,32 +544,6 @@ def register():
       doc=('(read-error? obj) returns #t if obj is an error raised during '
            'parsing by read.  Same caveat as file-error?: always returns '
            '#f for now.'),
-      category=CATEGORY)
-
-   # First-class continuations
-   register_primitive('call-with-current-continuation', (1, 1),
-      _prim_call_cc_unreached,
-      usage='(call-with-current-continuation <proc>)',
-      doc=(
-         "Capture the current continuation as a first-class procedure and\n"
-         "apply <proc> to it.  Invoking the continuation with zero or more\n"
-         "values abandons the current context and returns to call/cc's\n"
-         "caller with those values.  R7RS 6.10."),
-      category=CATEGORY)
-
-   register_primitive('call/cc', (1, 1), _prim_call_cc_unreached,
-      usage='(call/cc <proc>)',
-      doc='Alias for call-with-current-continuation.',
-      category=CATEGORY)
-
-   register_primitive('dynamic-wind', (3, 3), _prim_dynamic_wind_unreached,
-      usage='(dynamic-wind <before> <thunk> <after>)',
-      doc=(
-         "Call <before> for effect, then <thunk> for value, then <after>\n"
-         "for effect.  The after thunk runs whether <thunk> returns normally\n"
-         "or control leaves via a continuation invocation or an exception.\n"
-         "If the dynamic extent is later re-entered via a continuation,\n"
-         "<before> runs again.  R7RS 6.10."),
       category=CATEGORY)
 
    register_primitive('null-environment', (1, 1), _prim_null_environment,
@@ -776,6 +591,11 @@ def register():
       doc=('(get-environment-variables) returns an alist of (name . value) '
            'strings for all OS environment variables.  '
            'R7RS §6.14 / (scheme process-context).'),
+      category=CATEGORY)
+
+   register_primitive('runtime', (0, 0), _prim_runtime,
+      doc=('(runtime) returns the CPU process time used so far as an inexact '
+           'real number of seconds.  MIT Scheme compatibility for SICP.'),
       category=CATEGORY)
 
    register_primitive('current-second', (0, 0), _prim_current_second,

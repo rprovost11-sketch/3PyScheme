@@ -479,3 +479,38 @@
 %%% SchemeTypeError: line 1, col 1: symbol->string: argument must be a symbol
 %%% (symbol->string "not-a-symbol")
 %%% ^
+... ; ==========================================================
+... ; substring: invalid range errors
+... ; ==========================================================
+>>> (substring "hello" 3 1)
+%%% SchemeTypeError: line 1, col 1: substring: start/end out of range
+%%% (substring "hello" 3 1)
+%%% ^
+>>> (substring "hello" -1 2)
+%%% SchemeTypeError: line 1, col 1: substring: start/end out of range
+%%% (substring "hello" -1 2)
+%%% ^
+>>> (substring "hello" 0 10)
+%%% SchemeTypeError: line 1, col 1: substring: start/end out of range
+%%% (substring "hello" 0 10)
+%%% ^
+... ; string-append: type error
+>>> (string-append "a" 42)
+%%% SchemeTypeError: line 1, col 1: string-append: argument 2 must be a string
+%%% (string-append "a" 42)
+%%% ^
+... ; string-fill!: invalid range
+>>> (string-fill! (string-copy "abc") #\a 2 1)
+%%% SchemeTypeError: line 1, col 1: string-fill!: range out of bounds
+%%% (string-fill! (string-copy "abc") #\a 2 1)
+%%% ^
+... ; string<?: comparison involving empty string
+>>> (string<? "" "a")
+==> #t
+
+>>> (string<? "a" "")
+==> #f
+
+>>> (string<? "" "")
+==> #f
+

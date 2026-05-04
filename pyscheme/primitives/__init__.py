@@ -13,11 +13,11 @@ Primitive signature: (ctx, env, args, app_node) where
 
 Arity: a (min, max) tuple; max=None means variadic.
 
-Kind: 'primitive' (default) or 'special' for the stub entries in
-control.py that document special forms the evaluator handles directly.
-Stubs are bound into env alongside real primitives so (help <form>)
-works without quoting; they never execute in practice because the
-evaluator dispatches special forms before they become an application.
+Kind: 'primitive' (default) or 'special' for stub entries that document
+special forms the evaluator handles directly.  Stubs are bound into env
+alongside real primitives so (help <form>) works without quoting; they
+never execute in practice because the evaluator dispatches special forms
+before they become an application.
 
 Public exports:
     register_primitive  - called by each module's register() function
@@ -116,6 +116,11 @@ def register_primitive(name, arity, fn, usage=None, doc='', category='', kind='p
 # ordering list appear after these in alphabetical order.
 CATEGORY_TITLES = {
    'control':     'Control',
+   'lazy':        'Lazy Evaluation',
+   'binding':     'Binding',
+   'quotation':   'Quotation',
+   'macros':      'Macros',
+   'modules':     'Modules',
    'lists':       'Lists',
    'arithmetic':  'Arithmetic',
    'comparison':  'Comparison',
@@ -127,7 +132,7 @@ CATEGORY_TITLES = {
    'debug':       'Debugging',
 }
 CATEGORY_ORDER = [
-   'control',
+   'control', 'lazy', 'binding', 'quotation', 'macros', 'modules',
    'lists', 'arithmetic', 'comparison', 'predicates',
    'equivalence', 'logical', 'meta', 'ports',
    'strings', 'chars', 'vectors', 'bytevectors',
@@ -140,6 +145,11 @@ CATEGORY_ORDER = [
 # listing order; CATEGORY_ORDER above controls cross-category ordering.
 
 from pyscheme.primitives import control
+from pyscheme.primitives import lazy
+from pyscheme.primitives import binding
+from pyscheme.primitives import quotation
+from pyscheme.primitives import macros
+from pyscheme.primitives import modules
 from pyscheme.primitives import lists
 from pyscheme.primitives import arithmetic
 from pyscheme.primitives import comparison
@@ -156,6 +166,11 @@ from pyscheme.primitives import help_sys
 from pyscheme.primitives import debug
 
 control.register()
+lazy.register()
+binding.register()
+quotation.register()
+macros.register()
+modules.register()
 lists.register()
 arithmetic.register()
 comparison.register()

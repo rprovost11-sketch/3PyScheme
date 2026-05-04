@@ -604,3 +604,49 @@ a
 %%% SchemeArityError: line 1, col 1: rename-file: 1 argument provided; 2 expected
 %%% (rename-file "a")
 %%% ^
+... ; ==========================================================
+... ; open-input-file / open-output-file: text file round-trip
+... ; ==========================================================
+>>> (let* ((fname "/tmp/pyscheme_ports_test.txt")
+...        (op (open-output-file fname)))
+...   (display "hello ports" op)
+...   (close-port op)
+...   (let ((ip (open-input-file fname)))
+...     (let ((line (read-line ip)))
+...       (close-port ip)
+...       (delete-file fname)
+...       line)))
+==> "hello ports"
+
+>>> (output-port? (open-output-file "/tmp/pyscheme_ports_pred.txt"))
+==> #t
+
+>>> (input-port? (open-input-file "/tmp/pyscheme_ports_pred.txt"))
+==> #t
+
+>>> (file-error?
+...   (guard (e (#t e))
+...     (open-output-file "no_such_dir_xyz/missing.txt")))
+==> #t
+
+... ; ==========================================================
+... ; port direction and closed-port errors
+... ; ==========================================================
+>>> (read-char (open-output-string))
+%%% SchemeTypeError: line 1, col 1: read-char: argument 1 must be an input port
+%%% (read-char (open-output-string))
+%%% ^
+>>> (write-char #\a (open-input-string ""))
+%%% SchemeTypeError: line 1, col 1: write-char: argument 2 must be an output port
+%%% (write-char #\a (open-input-string ""))
+%%% ^
+>>> (get-output-string (open-input-string ""))
+%%% SchemeTypeError: line 1, col 1: get-output-string: argument 1 must be an output port
+%%% (get-output-string (open-input-string ""))
+%%% ^
+>>> (let ((p (open-input-string "")))
+...   (close-port p)
+...   (read-char p))
+%%% SchemeTypeError: line 3, col 3: read-char: port is closed
+%%%   (read-char p))
+%%%   ^

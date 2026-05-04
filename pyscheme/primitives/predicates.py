@@ -12,7 +12,7 @@ from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
    is_integer, is_real, is_rational, is_complex, is_exact_complex,
    is_boolean, is_symbol, is_string, is_character,
-   is_closure, is_primitive, is_case_closure, is_promise, is_parameter,
+   is_closure, is_primitive, is_case_closure, is_parameter,
    is_error_object, is_continuation,
    is_record_accessor, is_record_mutator,
    as_integer, as_real, as_rational_num, as_rational_den,
@@ -211,10 +211,6 @@ def _prim_string_p(ctx, env, args, app_node):
    return make_boolean(is_string(args[0]))
 
 
-def _prim_promise_p(ctx, env, args, app_node):
-   return make_boolean(is_promise(args[0]))
-
-
 def register():
    register_primitive('number?', (1, 1), _prim_number_p,
       doc='Return #t if a is any kind of number.',
@@ -259,9 +255,6 @@ def register():
       category=CATEGORY)
    register_primitive('string?', (1, 1), _prim_string_p,
       doc='Return #t if a is a string.',
-      category=CATEGORY)
-   register_primitive('promise?', (1, 1), _prim_promise_p,
-      doc='Return #t if a is a promise (created by delay, delay-force, or make-promise).',
       category=CATEGORY)
    register_primitive('parameter?', (1, 1), _prim_parameter_p,
       doc='Return #t if a is a parameter object (created by make-parameter).',

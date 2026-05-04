@@ -679,3 +679,101 @@ caught
 ...   (integer->char #xDFFF))
 ==> #<error-object "integer->char: code point out of range">
 
+... ; ==========================================================
+... ; 15. apply: non-procedure first argument
+... ; ==========================================================
+>>> (apply 42 '(1 2))
+%%% SchemeTypeError: line 1, col 1: apply: first argument must be a procedure
+%%% (apply 42 '(1 2))
+%%% ^
+... ; ==========================================================
+... ; 16. call/cc delivering multiple values via call-with-values
+... ; ==========================================================
+>>> (call-with-values (lambda () (call/cc (lambda (k) (k 1 2)))) +)
+==> 3
+
+>>> (call-with-values (lambda () (call/cc (lambda (k) (k 10 20 30)))) list)
+==> (10 20 30)
+
+... ; ==========================================================
+... ; 17. parameterize + call/cc: parameter state saved and restored
+... ; ==========================================================
+>>> (define p-cc (make-parameter 1))
+==> #<void>
+
+>>> (define k-cc #f)
+==> #<void>
+
+>>> (parameterize ((p-cc 2))
+...   (call/cc (lambda (k) (set! k-cc k)))
+...   (p-cc))
+==> 2
+
+>>> (p-cc)
+==> 1
+
+... ; ==========================================================
+... ; 18. nested dynamic-wind + call/cc: both wind stacks fire on re-entry
+... ; ==========================================================
+>>> (define k-dw #f)
+==> #<void>
+
+>>> (define log-dw '())
+==> #<void>
+
+>>> (dynamic-wind
+...   (lambda () (set! log-dw (cons 'outer-in log-dw)))
+...   (lambda ()
+...     (dynamic-wind
+...       (lambda () (set! log-dw (cons 'inner-in log-dw)))
+...       (lambda () (call/cc (lambda (k) (set! k-dw k))))
+...       (lambda () (set! log-dw (cons 'inner-out log-dw)))))
+...   (lambda () (set! log-dw (cons 'outer-out log-dw))))
+==> #<void>
+
+>>> (reverse log-dw)
+==> (outer-in inner-in inner-out outer-out)
+
+>>> (k-dw '_)
+==> _
+
+>>> (length log-dw)
+==> 8
+
+... ; ==========================================================
+... ; 19. nested with-exception-handler + raise-continuable chaining
+... ; ==========================================================
+>>> (with-exception-handler
+...   (lambda (e) (quote outer))
+...   (lambda ()
+...     (with-exception-handler
+...       (lambda (e) (+ e 10))
+...       (lambda () (raise-continuable 5)))))
+==> 15
+
+>>> (with-exception-handler
+...   (lambda (e) (* e 3))
+...   (lambda ()
+...     (with-exception-handler
+...       (lambda (e) (raise-continuable (* e 2)))
+...       (lambda () (raise-continuable 4)))))
+==> 24
+
+... ; ==========================================================
+... ; 20. make-parameter converter invoked on parameterize value
+... ; ==========================================================
+>>> (define vp
+...   (make-parameter 0 (lambda (x)
+...     (if (negative? x) (error "negative" x) (* x 2)))))
+==> #<void>
+
+>>> (vp)
+==> 0
+
+>>> (parameterize ((vp 5)) (vp))
+==> 10
+
+>>> (guard (e (#t (error-object-message e)))
+...   (parameterize ((vp -1)) (vp)))
+==> "negative"
+

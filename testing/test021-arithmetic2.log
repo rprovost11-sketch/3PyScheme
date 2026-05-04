@@ -857,3 +857,41 @@
 %%% SchemeArityError: line 1, col 1: inexact?: 0 arguments provided; 1 expected
 %%% (inexact?)
 %%% ^
+... ; ===========================================
+... ; 14. exact->inexact / inexact->exact: non-finite reals
+... ; ===========================================
+... ; exact->inexact passes +inf.0, -inf.0, +nan.0 through unchanged
+>>> (exact->inexact +inf.0)
+==> +inf.0
+
+>>> (exact->inexact -inf.0)
+==> -inf.0
+
+>>> (exact->inexact +nan.0)
+==> +nan.0
+
+>>> (inexact->exact +inf.0)
+%%% SchemeTypeError: line 1, col 1: exact: no exact representation for non-finite real
+%%% (inexact->exact +inf.0)
+%%% ^
+>>> (inexact->exact -inf.0)
+%%% SchemeTypeError: line 1, col 1: exact: no exact representation for non-finite real
+%%% (inexact->exact -inf.0)
+%%% ^
+>>> (inexact->exact +nan.0)
+%%% SchemeTypeError: line 1, col 1: exact: no exact representation for non-finite real
+%%% (inexact->exact +nan.0)
+%%% ^
+... ; ===========================================
+... ; 15. random
+... ; ===========================================
+>>> (let ((n (random 10))) (and (integer? n) (>= n 0) (< n 10)))
+==> #t
+
+>>> (random 1)
+==> 0
+
+>>> (random 0)
+%%% SchemeTypeError: line 1, col 1: random: argument must be positive
+%%% (random 0)
+%%% ^

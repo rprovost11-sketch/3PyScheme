@@ -188,3 +188,19 @@
 %%%   at line 1, col 77: sqrt-safe
 %%% (define (sqrt-safe x) (if (negative? x) (error "sqrt of negative:" x) 'ok)) (sqrt-safe -1)
 %%%                                                                             ^
+... ; ==========================================================
+... ; runtime
+... ; ==========================================================
+>>> (inexact? (runtime))
+==> #t
+
+>>> (>= (runtime) 0)
+==> #t
+
+>>> (number? (runtime))
+==> #t
+
+>>> (runtime 1)
+%%% SchemeArityError: line 1, col 1: runtime: 1 argument provided; 0 expected
+%%% (runtime 1)
+%%% ^

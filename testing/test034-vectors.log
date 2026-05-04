@@ -471,3 +471,8 @@
 ...   bv)
 ... ; returns eof when port is empty
 ==> #u8(0 1 2 3 0)
+... ; vector-set!: type error — non-vector first argument
+>>> (vector-set! "not-a-vector" 0 1)
+%%% SchemeTypeError: line 1, col 1: vector-set!: argument 1 must be a vector
+%%% (vector-set! "not-a-vector" 0 1)
+%%% ^
