@@ -38,11 +38,11 @@
 >>> (list (vector (with-exception-handler (lambda (x) (+ x 5)) (lambda () (+ (raise-continuable 17) 8)))))
 ==> (#(30))
 
-;;; pyscheme allows handler to return from raise (non-continuable): book expects violation
-;;; book: violation: non-continuable; pyscheme: (#(22)) -- raise treated same as raise-continuable
+;;; R7RS §6.11: handler return from non-continuable raise is an error.
+;;; book: violation: non-continuable; pyscheme (strict): uncaught SchemeRaised.
 
 >>> (list (vector (with-exception-handler (lambda (x) (+ x 5)) (lambda () (+ (raise 17) 8)))))
-==> (#(22))
+%%% SchemeRaised: #<error-object "exception handler returned" (17)>
 
 ;;; R6RS error form (who message ...): pyscheme requires string as first argument
 

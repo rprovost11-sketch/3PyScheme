@@ -132,6 +132,7 @@ FRAME_POP_HANDLER        = 20
 FRAME_REINSTALL_HANDLER  = 21
 FRAME_SHADOW_POP         = 23
 FRAME_TRACE_EXIT         = 24
+FRAME_NONCONTIN_RETURN   = 25
 
 
 # Frames that are not single-value continuations: FRAME_CWV_CONSUMER
@@ -144,6 +145,7 @@ _MULTI_VALUES_OK_FRAMES = frozenset([
    FRAME_DYNAMIC_WIND_AFTER,
    FRAME_POP_HANDLER,
    FRAME_REINSTALL_HANDLER,
+   FRAME_NONCONTIN_RETURN,
    FRAME_SHADOW_POP,
    FRAME_TRACE_EXIT,
 ])
@@ -1548,6 +1550,14 @@ def _cek_loop(expr, env, ctx):
                   _handler_stack.append(frame[1])
                   continue
 
+               if ftag == FRAME_NONCONTIN_RETURN:
+                  # Handler returned from a non-continuable raise - R7RS §6.11.
+                  # frame[1] is the original raised value (included as irritant).
+                  from pyscheme.AST import make_error_object
+                  raise SchemeRaised(
+                     make_error_object('exception handler returned', [frame[1]]),
+                     None, continuable=False)
+
                if ftag == FRAME_MAKE_PARAMETER:
                   # frame = (FRAME_MAKE_PARAMETER, converter)
                   # V is the converter's return value; wrap it as a Parameter.
@@ -2300,6 +2310,8 @@ def _cek_loop(expr, env, ctx):
             raised_value = make_read_error_object(e.msg, [])
          else:
             raised_value = make_error_object(e.msg, [])
+         if isinstance(e, SchemeRaised) and not e.continuable:
+            K.append((FRAME_NONCONTIN_RETURN, raised_value))
          result = _enter_proc(handler, [raised_value], ctx, E, None)
          if result[0] == 'value':
             V = result[1]

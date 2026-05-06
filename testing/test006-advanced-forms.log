@@ -452,17 +452,19 @@ Primitive  |  args: pre-evaluated
 %%% SchemeTypeError: line 1, col 1: %with-parameters: non-parameter in parameterize binding
 %%% (parameterize ((42 10)) 'body)
 %%% ^
->>> (with-exception-handler (lambda (v) (list 'caught v)) (lambda () (raise 'boom)))
+>>> (call/cc (lambda (k) (with-exception-handler (lambda (v) (k (list 'caught v))) (lambda () (raise 'boom)))))
+... ;;; R7RS §6.11: handler return from non-continuable raise is an error.
+... ;;; The handler must escape via call/cc rather than returning.
 ... ;;; Raised value can be anything - symbol, number, string, list, record.
 ==> (caught boom)
 
->>> (with-exception-handler (lambda (v) v) (lambda () (raise 42)))
+>>> (call/cc (lambda (k) (with-exception-handler (lambda (v) (k v)) (lambda () (raise 42)))))
 ==> 42
 
->>> (with-exception-handler (lambda (v) v) (lambda () (raise "oops")))
+>>> (call/cc (lambda (k) (with-exception-handler (lambda (v) (k v)) (lambda () (raise "oops")))))
 ==> "oops"
 
->>> (with-exception-handler (lambda (v) v) (lambda () (raise '(1 2 3))))
+>>> (call/cc (lambda (k) (with-exception-handler (lambda (v) (k v)) (lambda () (raise '(1 2 3))))))
 ... ;;; Thunk runs normally when no raise fires.
 ==> (1 2 3)
 
@@ -470,17 +472,17 @@ Primitive  |  args: pre-evaluated
 ... ;;; error primitive produces an error object catchable as any other raise.
 ==> 6
 
->>> (with-exception-handler (lambda (v) (error-object? v)) (lambda () (error "bad" 1 2 3)))
+>>> (call/cc (lambda (k) (with-exception-handler (lambda (v) (k (error-object? v))) (lambda () (error "bad" 1 2 3)))))
 ==> #t
 
->>> (with-exception-handler (lambda (v) (error-object-message v)) (lambda () (error "bad thing")))
+>>> (call/cc (lambda (k) (with-exception-handler (lambda (v) (k (error-object-message v))) (lambda () (error "bad thing")))))
 ==> "bad thing"
 
->>> (with-exception-handler (lambda (v) (error-object-irritants v)) (lambda () (error "bad" 1 2 3)))
+>>> (call/cc (lambda (k) (with-exception-handler (lambda (v) (k (error-object-irritants v))) (lambda () (error "bad" 1 2 3)))))
 ... ;;; error without irritants: irritants is the empty list.
 ==> (1 2 3)
 
->>> (with-exception-handler (lambda (v) (error-object-irritants v)) (lambda () (error "oops")))
+>>> (call/cc (lambda (k) (with-exception-handler (lambda (v) (k (error-object-irritants v))) (lambda () (error "oops")))))
 ... ;;; error-object? on non-error-object.
 ==> ()
 

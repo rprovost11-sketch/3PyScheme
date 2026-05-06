@@ -635,7 +635,8 @@ caught
 >>> (guard (e ((error-object? e) (error-object-message e)))
 ...   (with-exception-handler
 ...     (lambda (e) 42)
-...     (lambda () (raise 'oops))))
+...     (lambda () (raise-continuable 'oops))))
+... ; raise-continuable allows the handler to return; raise does not (R7RS §6.11).
 ... ; ==========================================================
 ... ; 13. void, gensym
 ... ; ==========================================================

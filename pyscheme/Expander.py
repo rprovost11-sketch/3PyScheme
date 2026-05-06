@@ -1418,10 +1418,18 @@ def _expand_guard(sexpr):
          [make_symbol('else', src), raise_call], src)
       cond_items.append(else_clause)
    cond_form = list_from_items(cond_items, src)
-   # Handler: (lambda (<var>) <cond>).
+   # Handler escapes via call/cc instead of returning, so FRAME_NONCONTIN_RETURN
+   # is abandoned when the continuation is invoked.  Expansion:
+   #   (call/cc
+   #     (lambda (%guard-k)
+   #       (with-exception-handler
+   #         (lambda (<var>) (%guard-k (cond ...)))
+   #         (lambda () <body>...))))
+   guard_k_sym = make_symbol('%guard-k', src)
+   escape_call = list_from_items([guard_k_sym, cond_form], src)
    handler_params = alloc_cons(var_sexpr, NIL_VALUE, src)
    handler = list_from_items(
-      [make_symbol('lambda', src), handler_params, cond_form], src)
+      [make_symbol('lambda', src), handler_params, escape_call], src)
    # Thunk: (lambda () <body>...).
    thunk_items = [make_symbol('lambda', src), NIL_VALUE]
    i = 0
@@ -1429,8 +1437,12 @@ def _expand_guard(sexpr):
       thunk_items.append(body_items[i])
       i = i + 1
    thunk = list_from_items(thunk_items, src)
-   return list_from_items(
+   weh = list_from_items(
       [make_symbol('with-exception-handler', src), handler, thunk], src)
+   escape_params = alloc_cons(guard_k_sym, NIL_VALUE, src)
+   escape_lambda = list_from_items(
+      [make_symbol('lambda', src), escape_params, weh], src)
+   return list_from_items([make_symbol('call/cc', src), escape_lambda], src)
 
 
 def _expand_define_library(sexpr):
