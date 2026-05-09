@@ -20,9 +20,7 @@
 >>> "hi"
 ==> "hi"
 
-;;; pyscheme reads #vu8 literals but outputs them as #u8
-
->>> '#vu8(3 4 5)
+>>> '#u8(3 4 5)
 ==> #u8(3 4 5)
 
 >>> (+ 2 3)
@@ -201,10 +199,10 @@
 
 ;;; unspecified; pyscheme returns #f
 
->>> (eq? '#vu8(1) '#vu8(1))
+>>> (eq? '#u8(1) '#u8(1))
 ==> #f
 
->>> (eq? '#vu8(1) '#vu8(2))
+>>> (eq? '#u8(1) '#u8(2))
 ==> #f
 
 >>> (let ([x (make-bytevector 10 0)]) (eq? x x))
@@ -359,10 +357,10 @@
 
 ;;; unspecified; pyscheme returns #f
 
->>> (eqv? '#vu8(1) '#vu8(1))
+>>> (eqv? '#u8(1) '#u8(1))
 ==> #f
 
->>> (eqv? '#vu8(1) '#vu8(2))
+>>> (eqv? '#u8(1) '#u8(2))
 ==> #f
 
 >>> (let ([x (make-bytevector 10 0)]) (eqv? x x))
@@ -511,10 +509,10 @@
 >>> (equal? (string #\h #\i) (string #\h #\i))
 ==> #t
 
->>> (equal? '#vu8(1) '#vu8(1))
+>>> (equal? '#u8(1) '#u8(1))
 ==> #t
 
->>> (equal? '#vu8(1) '#vu8(2))
+>>> (equal? '#u8(1) '#u8(2))
 ==> #f
 
 >>> (let ([x (make-bytevector 10 0)]) (equal? x x))

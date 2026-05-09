@@ -124,10 +124,10 @@ class SchemeSyntaxError(_PositionedSchemeError):
 #
 # Number patterns use a trailing lookahead (?=[\s()'";]|$) so "1abc"
 # does not greedily tokenize as INT 1 + IDENT abc - it falls through
-# to IDENT, where the digit-prefix check rejects it.
+# to IDENT, where the digit-prefix check rejects it (R7RS §7.1.1).
 
 _TOKEN_RE = re.compile(r'''
-      [ \r\n]+                                                                  # whitespace (tabs pre-expanded)
+      [ \t\r\n]+                                                                # whitespace
     | ;[^\n]*                                                                   # line comment
     | (?P<LPAREN>\()
     | (?P<RPAREN>\))
@@ -137,20 +137,21 @@ _TOKEN_RE = re.compile(r'''
     | (?P<UNQUOTE_SPLICING>,@)
     | (?P<UNQUOTE>,)
     | (?P<QUOTE>')
-    | (?P<DOT>\.(?=[\s()\[\]'"`,;]|$))                                         # lone . is the dotted-pair marker
+    | (?P<DOT>\.(?=[\s()\[\]'"`,;|]|$))                                        # lone . is the dotted-pair marker
     | (?P<STRING>"(?:[^"\\]|\\[\s\S])*")
-    | (?P<BYTEVECTOR_LPAREN>\#(?:vu8|u8)\()
+    | (?P<BYTEVECTOR_LPAREN>\#u8\()
     | (?P<VECTOR_LPAREN>\#\()
-    | (?P<CHAR>\#\\(?:x[0-9a-fA-F]+|[a-zA-Z]+|.))
-    | (?P<TRUE>\#t(?:rue)?)
-    | (?P<FALSE>\#f(?:alse)?)
-    | (?P<RATIONAL>[+-]?\d+/\d+(?=[\s()\[\]'"`,;]|$))
+    | (?P<CHAR>\#\\(?:x[0-9a-fA-F]+|[a-zA-Z]+|[\s\S]))
+    | (?P<TRUE>\#t(?:rue)?(?=[\s()\[\]'"`,;|]|$))
+    | (?P<FALSE>\#f(?:alse)?(?=[\s()\[\]'"`,;|]|$))
+    | (?P<RATIONAL>[+-]?\d+/\d+(?=[\s()\[\]'"`,;|]|$))
     | (?P<REAL>
-          [+-]?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?(?=[\s()\[\]'"`,;]|$)
-        | [+-]?\d+[eE][+-]?\d+(?=[\s()\[\]'"`,;]|$)
+          [+-]?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?(?=[\s()\[\]'"`,;|]|$)
+        | [+-]?\d+[eE][+-]?\d+(?=[\s()\[\]'"`,;|]|$)
       )
-    | (?P<INT>[+-]?\d+(?=[\s()\[\]'"`,;]|$))
-    | (?P<IDENT>[^\s()\[\]'"`,;]+)
+    | (?P<INT>[+-]?\d+(?=[\s()\[\]'"`,;|]|$))
+    | (?P<HASH_IDENT>\#[^\s()\[\]'"`,;|\\]*)
+    | (?P<IDENT>[^\s()\[\]'"`,;|#\\]+)
 ''', re.VERBOSE)
 
 
@@ -163,7 +164,16 @@ _STRING_ESCAPES = {
    '|':  '|',
    'a':  '\a',
    'b':  '\b',
-   '0':  '\0',
+}
+
+_SYMBOL_ESCAPES = {
+   'a':  '\a',
+   'b':  '\b',
+   't':  '\t',
+   'n':  '\n',
+   'r':  '\r',
+   '\\': '\\',
+   '|':  '|',
 }
 
 _HEX_DIGITS = '0123456789abcdefABCDEF'
@@ -174,7 +184,6 @@ _CHAR_NAMES = {
    'tab':       '\t',
    'return':    '\r',
    'null':      '\0',
-   'nul':       '\0',
    'alarm':     '\a',
    'backspace': '\b',
    'delete':    '\x7f',
@@ -202,10 +211,10 @@ def _substring(s, start, end):
 
 
 def tokenize(source, filename=None):
-   source       = source.expandtabs()
-   source_lines = source.splitlines()
+   source_lines = source.expandtabs().splitlines()
 
-   tokens = []
+   tokens    = []
+   fold_case = False
    pos  = 0
    line = 1
    col  = 1
@@ -259,6 +268,21 @@ def tokenize(source, filename=None):
             col = col + (j - pos + 1)
             pos = j + 1
             continue
+      # Directive: #!fold-case / #!no-fold-case  R7RS §2.1.
+      if pos + 1 < n and source[pos] == '#' and source[pos + 1] == '!':
+         if _substring(source, pos + 2, pos + 11) == 'fold-case':
+            fold_case = True
+            col = col + 11
+            pos = pos + 11
+            continue
+         if _substring(source, pos + 2, pos + 14) == 'no-fold-case':
+            fold_case = False
+            col = col + 14
+            pos = pos + 14
+            continue
+         raise SchemeSyntaxError(
+            "unknown #!-directive",
+            _make_src(line, col, source_lines, filename))
       # Vertical-bar symbol: |...| with escape sequences.  R7RS §2.1.
       if pos < n and source[pos] == '|':
          src = _make_src(line, col, source_lines, filename)
@@ -303,7 +327,9 @@ def tokenize(source, filename=None):
                _make_src(line, col, source_lines, filename))
          pos = pos + 1
          col = col + 1
-         name = _decode_string_escapes(''.join(raw_chars), src)
+         name = _decode_symbol_escapes(''.join(raw_chars), src)
+         if fold_case:
+            name = name.lower()
          tokens.append(Token(TOK_IDENT, name, src))
          continue
       match = _TOKEN_RE.match(source, pos)
@@ -315,7 +341,7 @@ def tokenize(source, filename=None):
       kind = match.lastgroup
       if kind is not None:
          src = _make_src(line, col, source_lines, filename)
-         tokens.append(_build_token(kind, text, src))
+         tokens.append(_build_token(kind, text, src, fold_case))
       newlines = text.count('\n')
       if newlines > 0:
          line = line + newlines
@@ -327,7 +353,7 @@ def tokenize(source, filename=None):
    return tokens
 
 
-def _build_token(kind, text, src):
+def _build_token(kind, text, src, fold_case=False):
    if kind == 'LPAREN':
       return Token(TOK_LPAREN, '(', src)
    if kind == 'RPAREN':
@@ -367,7 +393,14 @@ def _build_token(kind, text, src):
    if kind == 'RATIONAL':
       parts = text.split('/')
       return Token(TOK_RATIONAL, (int(parts[0]), int(parts[1])), src)
+   if kind == 'HASH_IDENT':
+      tok = _try_parse_prefixed_number(text, src)
+      if tok is not None:
+         return tok
+      raise SchemeSyntaxError("unknown #-syntax: %r" % text, src)
    if kind == 'IDENT':
+      if fold_case:
+         text = text.lower()
       if text == '+inf.0':
          return Token(TOK_REAL, float('inf'), src)
       if text == '-inf.0':
@@ -376,11 +409,6 @@ def _build_token(kind, text, src):
          return Token(TOK_REAL, float('nan'), src)
       if text == '-nan.0':
          return Token(TOK_REAL, float('nan'), src)
-      if text.startswith('#'):
-         tok = _try_parse_prefixed_number(text, src)
-         if tok is not None:
-            return tok
-         raise SchemeSyntaxError("unknown #-syntax: %r" % text, src)
       if text.endswith('i') and len(text) >= 2:
          tok = _try_parse_complex_literal(text, src)
          if tok is not None:
@@ -389,6 +417,9 @@ def _build_token(kind, text, src):
          tok = _try_parse_polar_literal(text, src)
          if tok is not None:
             return tok
+      if len(text) > 0 and text[0] == '@':
+         raise SchemeSyntaxError(
+            "'@' is not a valid identifier initial: %r" % text, src)
       if _starts_like_number(text):
          raise SchemeSyntaxError(
             "malformed number or identifier: %r" % text, src)
@@ -401,7 +432,7 @@ def _starts_like_number(s):
       return False
    if s[0].isdigit():
       return True
-   if s[0] in '+-' and len(s) > 1 and (s[1].isdigit() or s[1] == '.'):
+   if s[0] in '+-' and len(s) > 1 and (s[1].isdigit() or (s[1] == '.' and len(s) > 2 and s[2].isdigit())):
       return True
    if s[0] == '.' and len(s) > 1 and s[1].isdigit():
       return True
@@ -465,6 +496,21 @@ def _try_parse_prefixed_number(text, src):
       return Token(TOK_INT, n, src)
    except ValueError:
       pass
+   # Try rational numerator/denominator with given radix.
+   if '/' in rest:
+      slash = rest.index('/')
+      num_str = _substring(rest, 0, slash)
+      den_str = _substring(rest, slash + 1, len(rest))
+      try:
+         num = int(num_str, radix)
+         den = int(den_str, radix)
+         if den != 0:
+            frac = _Fraction(num, den)
+            if exact == 0:
+               return Token(TOK_REAL, float(frac), src)
+            return Token(TOK_RATIONAL, (frac.numerator, frac.denominator), src)
+      except ValueError:
+         pass
    # Try real (radix 10 only).
    if radix == 10:
       if rest == '+inf.0':
@@ -646,6 +692,37 @@ def _decode_string_escapes(raw, src):
                i = j
             else:
                raise SchemeSyntaxError("unknown string escape \\%s" % esc, src)
+      else:
+         result.append(c)
+         i = i + 1
+   return ''.join(result)
+
+
+def _decode_symbol_escapes(raw, src):
+   result = []
+   i = 0
+   n = len(raw)
+   while i < n:
+      c = raw[i]
+      if c == '\\':
+         if i + 1 >= n:
+            raise SchemeSyntaxError("unterminated symbol escape", src)
+         esc = raw[i + 1]
+         if esc in _SYMBOL_ESCAPES:
+            result.append(_SYMBOL_ESCAPES[esc])
+            i = i + 2
+         elif esc == 'x':
+            j = i + 2
+            while j < n and raw[j] in _HEX_DIGITS:
+               j = j + 1
+            if j == i + 2:
+               raise SchemeSyntaxError("malformed \\x escape: no hex digits", src)
+            if j >= n or raw[j] != ';':
+               raise SchemeSyntaxError("malformed \\x escape: missing semicolon", src)
+            result.append(chr(int(raw[i + 2 : j], 16)))
+            i = j + 1
+         else:
+            raise SchemeSyntaxError("unknown symbol escape \\%s" % esc, src)
       else:
          result.append(c)
          i = i + 1

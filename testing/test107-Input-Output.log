@@ -97,11 +97,11 @@
 
 ;;; open-bytevector-input-port, get-u8: R6RS names -- unbound in pyscheme
 
->>> (let ([ip (open-bytevector-input-port #vu8(1 2))])
+>>> (let ([ip (open-bytevector-input-port #u8(1 2))])
 ...   (let* ([x1 (get-u8 ip)] [x2 (get-u8 ip)] [x3 (get-u8 ip)])
 ...     (list x1 x2 (eof-object? x3))))
 %%% line 1, col 12: unbound variable: open-bytevector-input-port
-%%% (let ([ip (open-bytevector-input-port #vu8(1 2))])
+%%% (let ([ip (open-bytevector-input-port #u8(1 2))])
 %%%            ^
 
 ;;; get-line, open-string-input-port: R6RS names -- unbound in pyscheme
@@ -396,7 +396,7 @@
 
 >>> (let ([tx (make-transcoder (utf-8-codec) (eol-style lf)
 ...             (error-handling-mode replace))])
-...   (bytevector->string #vu8(97 98 99) tx))
+...   (bytevector->string #u8(97 98 99) tx))
 %%% line 1, col 12: unbound variable: make-transcoder
 %%% (let ([tx (make-transcoder (utf-8-codec) (eol-style lf)
 %%%            ^

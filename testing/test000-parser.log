@@ -80,11 +80,8 @@
 >>> #\tab
 ==> #\tab
 
->>> #\nul
-... ; hex character literals #\xNN
-==> #\null
-
 >>> #\x41
+... ; hex character literals #\xNN
 ==> #\A
 
 >>> #\x61
@@ -478,3 +475,68 @@
 %%% "<input-string>" line 1, col 5: mismatched bracket: expected ')'
 %%% (1 2]
 %%%     ^
+
+... ; --- Peculiar identifiers: +.foo / -.bar / +.. (R7RS §7.1.1) ---
+>>> (symbol? '+.foo)
+==> #t
+
+>>> (symbol? '-.bar)
+==> #t
+
+>>> (symbol? '+..)
+==> #t
+
+... ; --- Exactness prefix on rationals (#e/#i applied to n/d) ---
+>>> (exact? #e3/4)
+==> #t
+
+>>> (= #e3/4 3/4)
+==> #t
+
+>>> (inexact? #i3/4)
+==> #t
+
+>>> (= #i3/4 0.75)
+==> #t
+
+... ; --- Radix-prefixed rationals ---
+>>> #b101/10
+==> 5/2
+
+>>> #o7/4
+==> 7/4
+
+>>> #d3/4
+==> 3/4
+
+>>> (= #b101/10 5/2)
+==> #t
+
+... ; --- #!fold-case / #!no-fold-case directives (R7RS §2.1) ---
+>>> (read (open-input-string "#!fold-case ABC"))
+==> abc
+
+>>> (read (open-input-string "#!fold-case #!no-fold-case ABC"))
+==> ABC
+
+>>> (eq? (read (open-input-string "#!fold-case Foo")) 'foo)
+==> #t
+
+... ; --- | as delimiter after numbers ---
+>>> (car (read (open-input-string "(3 |foo| 4)")))
+==> 3
+
+>>> (symbol? (cadr (read (open-input-string "(3 |foo| 4)"))))
+==> #t
+
+... ; --- @ invalid as identifier initial ---
+>>> (read (open-input-string "@foo"))
+%%% "<input-string>" line 1, col 1: '@' is not a valid identifier initial: '@foo'
+%%% @foo
+%%% ^
+
+... ; --- Boolean delimiter lookahead ---
+>>> (read (open-input-string "#true2"))
+%%% "<input-string>" line 1, col 1: unknown #-syntax: '#true2'
+%%% #true2
+%%% ^
