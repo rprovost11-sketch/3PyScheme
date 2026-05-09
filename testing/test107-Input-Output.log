@@ -204,7 +204,7 @@
 >>> (close-output-port (open-output-string))
 ==> #<void>
 
-;;; port-eof?, port-position, port-open?: R6RS -- unbound in pyscheme
+;;; port-eof?, port-position: R6RS -- unbound in pyscheme
 
 >>> (port-eof? (open-input-string ""))
 %%% line 1, col 2: unbound variable: port-eof?
@@ -216,10 +216,10 @@
 %%% (port-position (open-input-string "hello"))
 %%%  ^
 
+;;; port-open? is an extension present in pyscheme
+
 >>> (port-open? (open-input-string "test"))
-%%% line 1, col 2: unbound variable: port-open?
-%%% (port-open? (open-input-string "test"))
-%%%  ^
+==> #t
 
 ;;; ============================================================
 ;;; 7.7  Input Operations

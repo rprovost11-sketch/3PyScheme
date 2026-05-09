@@ -212,6 +212,13 @@ def _prim_output_port_open_p(ctx, env, args, app_node):
    return make_boolean((not p.is_input) and p.is_open)
 
 
+def _prim_port_open_p(ctx, env, args, app_node):
+   v = args[0]
+   if not is_port(v):
+      return make_boolean(False)
+   return make_boolean(as_port(v).is_open)
+
+
 def _prim_eof_object_p(ctx, env, args, app_node):
    return make_boolean(is_eof(args[0]))
 
@@ -932,6 +939,9 @@ def register():
       category=CATEGORY)
    register_primitive('output-port-open?', (1, 1), _prim_output_port_open_p,
       doc='Return #t if obj is an open output port.  R7RS 6.13.',
+      category=CATEGORY)
+   register_primitive('port-open?', (1, 1), _prim_port_open_p,
+      doc='Return #t if port is open (input or output).  Extension.',
       category=CATEGORY)
    register_primitive('eof-object?', (1, 1), _prim_eof_object_p,
       doc='Return #t if obj is the eof object.  R7RS 6.13.',

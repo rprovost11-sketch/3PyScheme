@@ -662,3 +662,18 @@ a
 %%% SchemeTypeError: line 1, col 1: write: argument 2 must be a textual output port
 %%% (write 42 (open-output-bytevector))
 %%% ^
+
+... ; --- port-open? ---
+>>> (port-open? (open-input-string "hi"))
+==> #t
+
+>>> (port-open? (open-output-string))
+==> #t
+
+>>> (let ((p (open-input-string "")))
+...   (close-port p)
+...   (port-open? p))
+==> #f
+
+>>> (port-open? 42)
+==> #f

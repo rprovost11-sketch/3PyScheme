@@ -300,6 +300,24 @@
 ==> #f
 
 >>> (< "a" 1)
-%%% SchemeTypeError: line 1, col 1: <: argument 1 is not a number
+%%% SchemeTypeError: line 1, col 1: <: argument 1 is not a real number
 %%% (< "a" 1)
+%%% ^
+
+... ; --- Ordering with real-valued complex (zero imaginary part) ---
+>>> (< 3.0+0i 4)
+==> #t
+
+>>> (> 5 2.0+0i)
+==> #t
+
+>>> (<= 1+0i 1)
+==> #t
+
+>>> (>= 2 1+0i)
+==> #t
+
+>>> (< 1+2i 3)
+%%% SchemeTypeError: line 1, col 1: <: argument 1 is not a real number
+%%% (< 1+2i 3)
 %%% ^

@@ -23,15 +23,26 @@ CATEGORY = 'comparison'
 
 
 def _num(v, name, app_node, i):
-   """Extract a real-valued Python number.  Errors on complex (not ordered)."""
+   """Extract a real-valued Python number.  Errors on non-real complex."""
    if is_integer(v):
       return as_integer(v)
    if is_rational(v):
       return Fraction(as_rational_num(v), as_rational_den(v))
    if is_real(v):
       return as_real(v)
+   if is_complex(v):
+      if as_complex_imag(v) == 0.0:
+         return as_complex_real(v)
+   if is_exact_complex(v):
+      im = as_exact_complex_imag(v)
+      if is_integer(im) and as_integer(im) == 0:
+         re = as_exact_complex_real(v)
+         if is_integer(re):
+            return as_integer(re)
+         if is_rational(re):
+            return Fraction(as_rational_num(re), as_rational_den(re))
    raise SchemeTypeError(
-      '%s: argument %d is not a number' % (name, i),
+      '%s: argument %d is not a real number' % (name, i),
       app_node)
 
 
