@@ -62,7 +62,7 @@ class Interpreter(InterpreterBase):
       self._ctx.debugger.input_fn = fn
       self._ctx.debugger._rl      = rl
 
-   def reboot(self, outStrm=None):
+   def reboot(self, outStrm=None, load_rc=True):
       """Reset the interpreter to a fresh global environment."""
       if sys.getrecursionlimit() < 2000:
          sys.setrecursionlimit(2000)
@@ -87,12 +87,13 @@ class Interpreter(InterpreterBase):
       self._static_env = dict(PRIMITIVE_ARITIES)
       if outStrm is not None:
          self._ctx.outStrm = outStrm
-      _rc = os.path.expanduser('~/.pyschemerc')
-      if os.path.isfile(_rc):
-         try:
-            self.evalFile(_rc)
-         except Exception as e:
-            print('pyscheme: error loading ~/.pyschemerc: ' + str(e), file=sys.stderr)
+      if load_rc:
+         _rc = os.path.expanduser('~/.pyschemerc')
+         if os.path.isfile(_rc):
+            try:
+               self.evalFile(_rc)
+            except Exception as e:
+               print('pyscheme: error loading ~/.pyschemerc: ' + str(e), file=sys.stderr)
 
    def rawEval(self, source, outStrm=None, filename=None):
       """Parse, expand, analyze, and evaluate every top-level form.

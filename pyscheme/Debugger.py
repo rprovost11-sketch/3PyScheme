@@ -53,304 +53,6 @@ def _substring(s, start, end):
    return result
 
 
-def _cmd_word(line):
-   """Return the first whitespace-delimited token of line."""
-   parts = line.split(None, 1)
-   if parts:
-      return parts[0]
-   return ''
-
-
-def _cmd_rest(line):
-   """Return everything after the first token, stripped."""
-   parts = line.split(None, 1)
-   if len(parts) > 1:
-      return parts[1].strip()
-   return ''
-
-
-def _is_callable(val):
-   """True if val is a procedure (closure, primitive, case-closure, or continuation)."""
-   return is_closure(val) or is_primitive(val) or is_case_closure(val) or is_continuation(val)
-
-
-def _collect_locals(env):
-   """Return all non-global bindings visible from env, innermost scope first."""
-   result     = {}
-   current    = env
-   global_env = env._global_env
-   while current is not None and current is not global_env:
-      for name in current._bindings:
-         if name not in result:
-            entries = current._bindings[name]
-            if len(entries) > 0:
-               result[name] = entries[0][1]
-      current = current._parent
-   return result
-
-
-def _print_scoped_locals(env, max_depth=None):
-   """Print local variable bindings grouped by scope, filtering out callables."""
-   current    = env
-   global_env = env._global_env
-   scope_num  = 0
-   while current is not None and current is not global_env:
-      if max_depth is not None and scope_num >= max_depth:
-         break
-      # Build dict of non-callable bindings in this scope.
-      names_in_scope = []
-      for name in current._bindings:
-         entries = current._bindings[name]
-         if len(entries) > 0:
-            val = entries[0][1]
-            if not _is_callable(val):
-               names_in_scope.append(name)
-      if names_in_scope:
-         names_in_scope.sort()
-         print('--- scope ' + str(scope_num) + ' ---')
-         i = 0
-         while i < len(names_in_scope):
-            name = names_in_scope[i]
-            val  = current._bindings[name][0][1]
-            print(name + ':   ' + pretty_print(val))
-            i = i + 1
-         scope_num = scope_num + 1
-      current = current._parent
-
-
-def _print_named_vars(env, names):
-   """Print specific named variables looked up in env."""
-   i = 0
-   while i < len(names):
-      name = names[i]
-      try:
-         val = env.lookup(name, frozenset())
-         print(name + ':   ' + pretty_print(val))
-      except SchemeUnboundError:
-         print(name + ':   <unbound>')
-      i = i + 1
-
-
-def _parse_bp_args(rest):
-   """Parse rest into list of [name, cond_or_None] pairs.
-   Supports: 'n1 n2', 'n1 (c1) n2 (c2)', or mixed."""
-   pairs = []
-   i = 0
-   n = len(rest)
-   while i < n:
-      while i < n and rest[i] == ' ':
-         i = i + 1
-      if i >= n:
-         break
-      # Extract name (up to space or paren).
-      j = i
-      while j < n and rest[j] != ' ' and rest[j] != '(':
-         j = j + 1
-      name = _substring(rest, i, j)
-      i = j
-      # Skip whitespace.
-      while i < n and rest[i] == ' ':
-         i = i + 1
-      # Check for optional condition in parens.
-      if i < n and rest[i] == '(':
-         depth = 0
-         j = i
-         while j < n:
-            if rest[j] == '(':
-               depth = depth + 1
-            elif rest[j] == ')':
-               depth = depth - 1
-               if depth == 0:
-                  j = j + 1
-                  break
-            j = j + 1
-         cond = _substring(rest, i, j)
-         i = j
-      else:
-         cond = None
-      pairs.append([name, cond])
-   return pairs
-
-
-# ── AST walkers for inner breakpoints ────────────────────────────────────
-
-def _walk_form(cell, callable_name, count, target_n):
-   """Walk one form (a ConsCell S-expression) looking for the target_n-th
-   call to callable_name.  count is a 1-element list [int] (pass-by-pointer
-   pattern).  Returns the matching ConsCell or None."""
-   if not is_cons(cell):
-      return None
-   if is_symbol(cell.car) and as_symbol(cell.car) == callable_name:
-      count[0] = count[0] + 1
-      if count[0] == target_n:
-         return cell
-   # Recurse into argument sub-forms (cdr chain).
-   arg = cell.cdr
-   while is_cons(arg):
-      result = _walk_form(arg.car, callable_name, count, target_n)
-      if result is not None:
-         return result
-      arg = arg.cdr
-   return None
-
-
-def _find_nth_call(body_cons, callable_name, target_n):
-   """Walk body_cons (cons chain of body forms) to find the target_n-th call
-   to callable_name.  Returns the ConsCell or None.  target_n is 1-based."""
-   count = [0]
-   forms = body_cons
-   while is_cons(forms):
-      result = _walk_form(forms.car, callable_name, count, target_n)
-      if result is not None:
-         return result
-      forms = forms.cdr
-   return None
-
-
-def _collect_one(cell, callable_name, results):
-   """Recursively collect all calls to callable_name in one form."""
-   if not is_cons(cell):
-      return
-   if is_symbol(cell.car) and as_symbol(cell.car) == callable_name:
-      results.append(cell)
-   arg = cell.cdr
-   while is_cons(arg):
-      _collect_one(arg.car, callable_name, results)
-      arg = arg.cdr
-
-
-def _collect_calls(body_cons, callable_name):
-   """Walk body_cons and collect all calls to callable_name in walk order."""
-   results = []
-   forms   = body_cons
-   while is_cons(forms):
-      _collect_one(forms.car, callable_name, results)
-      forms = forms.cdr
-   return results
-
-
-# ── Annotated pretty-printer ─────────────────────────────────────────────
-#
-# `annotations` maps id(ConsCell) -> tag string (e.g. '[1]').
-# These are module-level functions (not closures) with annotations passed
-# explicitly - maps directly to C functions taking an annotations pointer.
-
-def _ann_has_any(cell, annotations):
-   """True if cell or any descendant has an annotation entry."""
-   if id(cell) in annotations:
-      return True
-   if is_cons(cell):
-      if _ann_has_any(cell.car, annotations):
-         return True
-      return _ann_has_any(cell.cdr, annotations)
-   return False
-
-
-def _ann_flat(cell, annotations):
-   """Produce a single-line string for cell, inserting annotation tags."""
-   tag = annotations.get(id(cell), '')
-   if not is_cons(cell):
-      return tag + pretty_print(cell)
-   if is_nil(cell):
-      return tag + '()'
-   parts = []
-   cur   = cell
-   while is_cons(cur):
-      parts.append(_ann_flat(cur.car, annotations))
-      cur = cur.cdr
-   if is_nil(cur):
-      return tag + '(' + ' '.join(parts) + ')'
-   parts.append('. ' + _ann_flat(cur, annotations))
-   return tag + '(' + ' '.join(parts) + ')'
-
-
-def _ann_fmt(cell, annotations, ind):
-   """Format cell with line breaks when wide or when sub-expressions are annotated."""
-   tag = annotations.get(id(cell), '')
-   if not is_cons(cell):
-      return tag + pretty_print(cell)
-   if is_nil(cell):
-      return tag + '()'
-   flat    = _ann_flat(cell, annotations)
-   has_ann = False
-   cur     = cell.cdr
-   while is_cons(cur):
-      if _ann_has_any(cur.car, annotations):
-         has_ann = True
-         break
-      cur = cur.cdr
-   if len(flat) + ind <= 50 and not has_ann:
-      return flat
-   head_str  = _ann_flat(cell.car, annotations)
-   child_ind = ind + 2
-   pad       = ' ' * child_ind
-   lines     = [tag + '(' + head_str]
-   cur       = cell.cdr
-   while is_cons(cur):
-      lines.append(pad + _ann_fmt(cur.car, annotations, child_ind))
-      cur = cur.cdr
-   if not is_nil(cur):
-      lines.append(pad + '. ' + _ann_fmt(cur, annotations, child_ind))
-   last_idx = len(lines) - 1
-   lines[last_idx] = lines[last_idx] + ')'
-   return '\n'.join(lines)
-
-
-def _print_annotated(form, annotations, indent=0):
-   """Print form with [N] markers at annotated call sites."""
-   print(_ann_fmt(form, annotations, indent))
-
-
-# ── Help formatting ───────────────────────────────────────────────────────
-
-def _parse_help_entries(docstring):
-   """Parse docstring into list of [usage, description] pairs.
-   Each entry line has the form: <usage><2+ spaces><description>."""
-   entries = []
-   for line in docstring.strip().splitlines():
-      line = line.strip()
-      if not line:
-         continue
-      parts = re.split(r'\s{2,}', line, maxsplit=1)
-      if len(parts) == 2:
-         entries.append([parts[0], parts[1]])
-   return entries
-
-
-def _print_help_entries(entries):
-   """Print help entries with vertically aligned columns."""
-   if not entries:
-      return
-   max_w = 0
-   i = 0
-   while i < len(entries):
-      w = len(entries[i][0])
-      if w > max_w:
-         max_w = w
-      i = i + 1
-   i = 0
-   while i < len(entries):
-      usage = entries[i][0]
-      desc  = entries[i][1]
-      print('  ' + usage.ljust(max_w) + '  ' + desc)
-      i = i + 1
-
-
-def _parse_watch_args(source):
-   """Parse source as a sequence of expressions and return canonical forms."""
-   try:
-      from pyscheme.Parser import parse
-      forms  = parse(source, '<watch>')
-      result = []
-      i = 0
-      while i < len(forms):
-         result.append(pretty_print(forms[i]))
-         i = i + 1
-      return result
-   except Exception:
-      return [source]
-
-
 # ── StepHook ─────────────────────────────────────────────────────────────
 
 class StepHook:
@@ -365,6 +67,288 @@ class StepHook:
 
 class Debugger:
    """Holds breakpoints, watch list, step hook, and implements debug REPLs."""
+
+   # ---- static helpers ----
+
+   @staticmethod
+   def _cmd_word(line):
+      parts = line.split(None, 1)
+      if parts:
+         return parts[0]
+      return ''
+
+   @staticmethod
+   def _cmd_rest(line):
+      parts = line.split(None, 1)
+      if len(parts) > 1:
+         return parts[1].strip()
+      return ''
+
+   @staticmethod
+   def _is_callable(val):
+      return is_closure(val) or is_primitive(val) or is_case_closure(val) or is_continuation(val)
+
+   @staticmethod
+   def _collect_locals(env):
+      result     = {}
+      current    = env
+      global_env = env._global_env
+      while current is not None and current is not global_env:
+         for name in current._bindings:
+            if name not in result:
+               entries = current._bindings[name]
+               if len(entries) > 0:
+                  result[name] = entries[0][1]
+         current = current._parent
+      return result
+
+   @staticmethod
+   def _print_scoped_locals(env, max_depth=None):
+      current    = env
+      global_env = env._global_env
+      scope_num  = 0
+      while current is not None and current is not global_env:
+         if max_depth is not None and scope_num >= max_depth:
+            break
+         names_in_scope = []
+         for name in current._bindings:
+            entries = current._bindings[name]
+            if len(entries) > 0:
+               val = entries[0][1]
+               if not Debugger._is_callable(val):
+                  names_in_scope.append(name)
+         if names_in_scope:
+            names_in_scope.sort()
+            print('--- scope ' + str(scope_num) + ' ---')
+            i = 0
+            while i < len(names_in_scope):
+               name = names_in_scope[i]
+               val  = current._bindings[name][0][1]
+               print(name + ':   ' + pretty_print(val))
+               i = i + 1
+            scope_num = scope_num + 1
+         current = current._parent
+
+   @staticmethod
+   def _print_named_vars(env, names):
+      i = 0
+      while i < len(names):
+         name = names[i]
+         try:
+            val = env.lookup(name, frozenset())
+            print(name + ':   ' + pretty_print(val))
+         except SchemeUnboundError:
+            print(name + ':   <unbound>')
+         i = i + 1
+
+   @staticmethod
+   def _parse_bp_args(rest):
+      pairs = []
+      i = 0
+      n = len(rest)
+      while i < n:
+         while i < n and rest[i] == ' ':
+            i = i + 1
+         if i >= n:
+            break
+         j = i
+         while j < n and rest[j] != ' ' and rest[j] != '(':
+            j = j + 1
+         name = _substring(rest, i, j)
+         i = j
+         while i < n and rest[i] == ' ':
+            i = i + 1
+         if i < n and rest[i] == '(':
+            depth = 0
+            j = i
+            while j < n:
+               if rest[j] == '(':
+                  depth = depth + 1
+               elif rest[j] == ')':
+                  depth = depth - 1
+                  if depth == 0:
+                     j = j + 1
+                     break
+               j = j + 1
+            cond = _substring(rest, i, j)
+            i = j
+         else:
+            cond = None
+         pairs.append([name, cond])
+      return pairs
+
+   @staticmethod
+   def _walk_form(cell, callable_name, count, target_n):
+      if not is_cons(cell):
+         return None
+      if is_symbol(cell.car) and as_symbol(cell.car) == callable_name:
+         count[0] = count[0] + 1
+         if count[0] == target_n:
+            return cell
+      arg = cell.cdr
+      while is_cons(arg):
+         result = Debugger._walk_form(arg.car, callable_name, count, target_n)
+         if result is not None:
+            return result
+         arg = arg.cdr
+      return None
+
+   @staticmethod
+   def _find_nth_call(body_cons, callable_name, target_n):
+      count = [0]
+      forms = body_cons
+      while is_cons(forms):
+         result = Debugger._walk_form(forms.car, callable_name, count, target_n)
+         if result is not None:
+            return result
+         forms = forms.cdr
+      return None
+
+   @staticmethod
+   def _collect_one(cell, callable_name, results):
+      if not is_cons(cell):
+         return
+      if is_symbol(cell.car) and as_symbol(cell.car) == callable_name:
+         results.append(cell)
+      arg = cell.cdr
+      while is_cons(arg):
+         Debugger._collect_one(arg.car, callable_name, results)
+         arg = arg.cdr
+
+   @staticmethod
+   def _collect_calls(body_cons, callable_name):
+      results = []
+      forms   = body_cons
+      while is_cons(forms):
+         Debugger._collect_one(forms.car, callable_name, results)
+         forms = forms.cdr
+      return results
+
+   @staticmethod
+   def _ann_has_any(cell, annotations):
+      if id(cell) in annotations:
+         return True
+      if is_cons(cell):
+         if Debugger._ann_has_any(cell.car, annotations):
+            return True
+         return Debugger._ann_has_any(cell.cdr, annotations)
+      return False
+
+   @staticmethod
+   def _ann_flat(cell, annotations):
+      tag = annotations.get(id(cell), '')
+      if not is_cons(cell):
+         return tag + pretty_print(cell)
+      if is_nil(cell):
+         return tag + '()'
+      parts = []
+      cur   = cell
+      while is_cons(cur):
+         parts.append(Debugger._ann_flat(cur.car, annotations))
+         cur = cur.cdr
+      if is_nil(cur):
+         inner = ''
+         i = 0
+         while i < len(parts):
+            if i > 0:
+               inner = inner + ' '
+            inner = inner + parts[i]
+            i = i + 1
+         return tag + '(' + inner + ')'
+      inner = ''
+      i = 0
+      while i < len(parts):
+         if i > 0:
+            inner = inner + ' '
+         inner = inner + parts[i]
+         i = i + 1
+      return tag + '(' + inner + ' . ' + Debugger._ann_flat(cur, annotations) + ')'
+
+   @staticmethod
+   def _ann_fmt(cell, annotations, ind):
+      tag = annotations.get(id(cell), '')
+      if not is_cons(cell):
+         return tag + pretty_print(cell)
+      if is_nil(cell):
+         return tag + '()'
+      flat    = Debugger._ann_flat(cell, annotations)
+      has_ann = False
+      cur     = cell.cdr
+      while is_cons(cur):
+         if Debugger._ann_has_any(cur.car, annotations):
+            has_ann = True
+            break
+         cur = cur.cdr
+      if len(flat) + ind <= 50 and not has_ann:
+         return flat
+      head_str  = Debugger._ann_flat(cell.car, annotations)
+      child_ind = ind + 2
+      pad       = ' ' * child_ind
+      lines     = [tag + '(' + head_str]
+      cur       = cell.cdr
+      while is_cons(cur):
+         lines.append(pad + Debugger._ann_fmt(cur.car, annotations, child_ind))
+         cur = cur.cdr
+      if not is_nil(cur):
+         lines.append(pad + '. ' + Debugger._ann_fmt(cur, annotations, child_ind))
+      last_idx = len(lines) - 1
+      lines[last_idx] = lines[last_idx] + ')'
+      result = ''
+      i = 0
+      while i < len(lines):
+         if i > 0:
+            result = result + '\n'
+         result = result + lines[i]
+         i = i + 1
+      return result
+
+   @staticmethod
+   def _print_annotated(form, annotations, indent=0):
+      print(Debugger._ann_fmt(form, annotations, indent))
+
+   @staticmethod
+   def _parse_help_entries(docstring):
+      entries = []
+      for line in docstring.strip().splitlines():
+         line = line.strip()
+         if not line:
+            continue
+         parts = re.split(r'\s{2,}', line, maxsplit=1)
+         if len(parts) == 2:
+            entries.append([parts[0], parts[1]])
+      return entries
+
+   @staticmethod
+   def _print_help_entries(entries):
+      if not entries:
+         return
+      max_w = 0
+      i = 0
+      while i < len(entries):
+         w = len(entries[i][0])
+         if w > max_w:
+            max_w = w
+         i = i + 1
+      i = 0
+      while i < len(entries):
+         usage = entries[i][0]
+         desc  = entries[i][1]
+         print('  ' + usage.ljust(max_w) + '  ' + desc)
+         i = i + 1
+
+   @staticmethod
+   def _parse_watch_args(source):
+      try:
+         from pyscheme.Parser import parse
+         forms  = parse(source, '<watch>')
+         result = []
+         i = 0
+         while i < len(forms):
+            result.append(pretty_print(forms[i]))
+            i = i + 1
+         return result
+      except Exception:
+         return [source]
 
    def __init__(self):
       self.breakpoints     = {}      # name -> condition_str or None
@@ -593,7 +577,7 @@ class Debugger:
             return
 
          # b name [name ...] or b name (cond) [name (cond) ...]
-         pairs = _parse_bp_args(rest)
+         pairs = Debugger._parse_bp_args(rest)
          i = 0
          while i < len(pairs):
             name = pairs[i][0]
@@ -705,7 +689,7 @@ class Debugger:
          return
 
       # cmd == 'bc': set/change condition(s)
-      pairs = _parse_bp_args(rest)
+      pairs = Debugger._parse_bp_args(rest)
       i = 0
       while i < len(pairs):
          ref  = pairs[i][0]
@@ -822,7 +806,7 @@ class Debugger:
       print('Body of ' + fn_name + ' ' + params_str + ':')
       forms = body
       while is_cons(forms):
-         print('  ' + _ann_fmt(forms.car, {}, 2))
+         print('  ' + Debugger._ann_fmt(forms.car, {}, 2))
          forms = forms.cdr
 
    def _cmd_c(self, cmd, rest, ctx, env):
@@ -840,9 +824,9 @@ class Debugger:
          base   = rest.strip()
          method = self._commands.get(base)
          if method is not None and method.__doc__:
-            entries = _parse_help_entries(method.__doc__)
+            entries = Debugger._parse_help_entries(method.__doc__)
             if entries:
-               _print_help_entries(entries)
+               Debugger._print_help_entries(entries)
             else:
                print(method.__doc__.strip())
          else:
@@ -853,13 +837,13 @@ class Debugger:
       while i < len(self._help_methods):
          method = self._help_methods[i][1]
          if method.__doc__:
-            these = _parse_help_entries(method.__doc__)
+            these = Debugger._parse_help_entries(method.__doc__)
             j = 0
             while j < len(these):
                entries.append(these[j])
                j = j + 1
          i = i + 1
-      _print_help_entries(entries)
+      Debugger._print_help_entries(entries)
 
    def _cmd_i(self, cmd, rest, ctx, env):
       """i expr  evaluate and interactively inspect the result"""
@@ -914,11 +898,11 @@ class Debugger:
       """v [n]       show local variables (n limits scope depth)
       v name ...  show specific named variables"""
       if rest == '':
-         _print_scoped_locals(env)
+         Debugger._print_scoped_locals(env)
       elif rest.isdigit():
-         _print_scoped_locals(env, int(rest))
+         Debugger._print_scoped_locals(env, int(rest))
       else:
-         _print_named_vars(env, rest.split())
+         Debugger._print_named_vars(env, rest.split())
 
    def _cmd_w(self, cmd, rest, ctx, env):
       """w [*]          show watch list (numbered)
@@ -940,7 +924,7 @@ class Debugger:
                removed = self.watch_list.pop(idx - 1)
                print('Removed watch: ' + removed)
          else:
-            for canonical in _parse_watch_args(rest):
+            for canonical in Debugger._parse_watch_args(rest):
                if canonical in self.watch_list:
                   self.watch_list.remove(canonical)
                else:
@@ -964,7 +948,7 @@ class Debugger:
          else:
             print('Watch list is empty.')
       else:
-         for canonical in _parse_watch_args(rest):
+         for canonical in Debugger._parse_watch_args(rest):
             if canonical not in self.watch_list:
                self.watch_list.append(canonical)
          print('Watching: ' + ', '.join(self.watch_list))
@@ -974,8 +958,8 @@ class Debugger:
    def _dispatch(self, line, ctx, env):
       """Route line to a command handler via _commands dict.
       Returns True if handled."""
-      word   = _cmd_word(line)
-      rest   = _cmd_rest(line)
+      word   = Debugger._cmd_word(line)
+      rest   = Debugger._cmd_rest(line)
       method = self._commands.get(word)
       if method is not None:
          method(word, rest, ctx, env)
@@ -1051,7 +1035,7 @@ class Debugger:
 
       # Interactive selection mode.
       if index == '?':
-         calls = _collect_calls(body, call_name)
+         calls = Debugger._collect_calls(body, call_name)
          if not calls:
             print('No calls to ' + call_name + ' in ' + fn_name + '.')
             return
@@ -1063,7 +1047,7 @@ class Debugger:
          print('Body of ' + fn_name + ' - calls to ' + call_name + ' numbered:')
          forms = body
          while is_cons(forms):
-            _print_annotated(forms.car, annotations, indent=2)
+            Debugger._print_annotated(forms.car, annotations, indent=2)
             forms = forms.cdr
          try:
             choice = self.input_fn('Breakpoint at #? ').strip()
@@ -1101,7 +1085,7 @@ class Debugger:
 
       # Set-all mode.
       if index == '*':
-         calls = _collect_calls(body, call_name)
+         calls = Debugger._collect_calls(body, call_name)
          if not calls:
             print('No calls to ' + call_name + ' in ' + fn_name + '.')
             return
@@ -1119,7 +1103,7 @@ class Debugger:
          return
 
       # Single-index mode.
-      target = _find_nth_call(body, call_name, index)
+      target = Debugger._find_nth_call(body, call_name, index)
       if target is None:
          print('No call to ' + call_name + ' at index ' + str(index) + ' in ' + fn_name + '.')
          return

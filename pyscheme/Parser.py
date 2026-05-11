@@ -753,6 +753,21 @@ def _decode_char_literal(text, src):
 # -------- S-expression reader --------
 
 class Parser:
+
+   @staticmethod
+   def _build_list(items, dotted_tail, list_src):
+      if dotted_tail is None:
+         if not items:
+            return (NIL, list_src)
+         result = NIL_VALUE
+      else:
+         result = dotted_tail
+      i = len(items) - 1
+      while i >= 0:
+         result = alloc_cons(items[i], result, list_src)
+         i = i - 1
+      return result
+
    def __init__(self, tokens):
       self.tokens = tokens
       self.pos    = 0
@@ -930,7 +945,7 @@ class Parser:
          tok = self._peek()
          if tok.kind == closer:
             self._advance()
-            return _build_list(items, dotted_tail, lparen.src)
+            return Parser._build_list(items, dotted_tail, lparen.src)
          if tok.kind == TOK_RPAREN or tok.kind == TOK_RBRACKET:
             raise SchemeSyntaxError(
                "mismatched bracket: expected '%s'" % closer_ch, tok.src)
@@ -949,31 +964,11 @@ class Parser:
                raise SchemeSyntaxError(
                   "expected '%s' after dotted tail" % closer_ch, closing.src)
             self._advance()
-            return _build_list(items, dotted_tail, lparen.src)
+            return Parser._build_list(items, dotted_tail, lparen.src)
          if tok.kind == TOK_EOF:
             raise SchemeSyntaxError(
                "unterminated list (missing '%s')" % closer_ch, lparen.src)
          items.append(self.parse_expr())
-
-
-def _build_list(items, dotted_tail, list_src):
-   """Fold a Python list of Values into a cons-cell chain.
-   All cells share list_src (the position of the opening '(').
-   If dotted_tail is non-None, the innermost cdr is that value instead
-   of NIL_VALUE.  A literal () in source is returned as a positioned
-   nil (NIL, list_src) so diagnostics that reject () as an expression
-   can point at its '('."""
-   if dotted_tail is None:
-      if not items:
-         return (NIL, list_src)
-      result = NIL_VALUE
-   else:
-      result = dotted_tail
-   i = len(items) - 1
-   while i >= 0:
-      result = alloc_cons(items[i], result, list_src)
-      i = i - 1
-   return result
 
 
 # -------- Public entry points --------

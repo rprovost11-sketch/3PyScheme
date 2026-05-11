@@ -96,175 +96,6 @@ class TestResult:
       self.n_fail = n_fail
 
 
-# ---- module-level helpers ---------------------------------------------
-
-
-def _format_call_stack(call_stack):
-   """Render a shadow call-stack list as a backtrace string.
-   Each entry is [label, src, count]."""
-   from pyscheme.AST import format_with_caret
-   lines = []
-   i = 0
-   while i < len(call_stack):
-      entry = call_stack[i]
-      label = entry[0]
-      src   = entry[1]
-      count = entry[2]
-      if count > 1:
-         label = label + ' [x' + str(count) + ']'
-      lines.append('  at ' + format_with_caret(label, src))
-      i = i + 1
-   return '\n'.join(lines)
-
-
-def _format_error(exc):
-   """Produce the user-visible text for an exception.  Same text at
-   REPL and test harness so expected/actual error strings compare."""
-   if isinstance(exc, NotImplementedError):
-      return 'Not implemented: ' + str(exc)
-   if (isinstance(exc, SchemeSyntaxError) or isinstance(exc, SchemeAnalysisError)
-         or isinstance(exc, SchemeUnboundError) or isinstance(exc, SchemeRuntimeError)
-         or isinstance(exc, ListenerCommandError)):
-      return str(exc)
-   if (isinstance(exc, SchemeArityError) or isinstance(exc, SchemeTypeError)
-         or isinstance(exc, SchemeRaised)):
-      msg = type(exc).__name__ + ': ' + str(exc)
-      call_stack = exc.call_stack
-      if call_stack:
-         msg = msg + '\n' + _format_call_stack(call_stack)
-      return msg
-   msg = str(exc)
-   if msg:
-      return 'internal error: ' + msg
-   return 'internal error'
-
-
-def _compute_indent(lines):
-   """Return whitespace to auto-indent the next continuation line.
-   Indents 3 spaces per unclosed paren depth."""
-   depth     = 0
-   in_string = False
-   escape    = False
-   i = 0
-   while i < len(lines):
-      line = lines[i]
-      j = 0
-      while j < len(line):
-         ch = line[j]
-         if escape:
-            escape = False
-         elif in_string:
-            if ch == '\\':
-               escape = True
-            elif ch == '"':
-               in_string = False
-         else:
-            if ch == '"':
-               in_string = True
-            elif ch == ';':
-               break
-            elif ch == '(' or ch == '[':
-               depth = depth + 1
-            elif ch == ')' or ch == ']':
-               if depth > 0:
-                  depth = depth - 1
-         j = j + 1
-      i = i + 1
-   indent = ''
-   k = 0
-   total = depth * 3
-   while k < total:
-      indent = indent + ' '
-      k = k + 1
-   return indent
-
-
-def _parse_log(text):
-   """Parse a session log into a list of 4-tuples (expr, output, retval, error).
-
-   Each entry begins with a `>>> ` line.  Continuation lines (`... `)
-   belong to the same expression.  Lines between the expression and
-   `==> ` (with no marker) are output (from display/print/help).  A
-   `==> ` line gives the return value; a `%%% ` line gives the error
-   message.  Comment lines starting with `;;` outside an entry are
-   skipped."""
-   lines   = text.splitlines(keepends=True)
-   entries = []
-   idx     = 0
-   n       = len(lines)
-   while idx < n:
-      # Skip forward to the next '>>> ' line.
-      while idx < n and not lines[idx].startswith('>>> '):
-         idx = idx + 1
-      if idx >= n:
-         break
-      expr   = _substring(lines[idx], 4, len(lines[idx]))
-      output = ''
-      retval = ''
-      error  = ''
-      idx = idx + 1
-      # Continuation lines '... '.
-      while idx < n and lines[idx].startswith('... '):
-         expr = expr + _substring(lines[idx], 4, len(lines[idx]))
-         idx = idx + 1
-      # cppScheme format: bare '...' (no content) separates expression from output.
-      if idx < n and lines[idx].rstrip() == '...' and not lines[idx].startswith('... '):
-         idx = idx + 1
-      # Pre-retval output: lines that aren't a known marker.
-      while idx < n:
-         line = lines[idx]
-         if line.startswith('==> ') or line.rstrip() == '==>':
-            break
-         if line.startswith('... ') or line.startswith('>>> ') or line.startswith('%%% '):
-            break
-         output = output + line
-         idx = idx + 1
-      # '==> ' retval block (may extend over several non-marker lines).
-      if idx < n and (lines[idx].startswith('==> ') or lines[idx].rstrip() == '==>'):
-         line = lines[idx]
-         if len(line) > 4:
-            retval = _substring(line, 4, len(line))
-         idx = idx + 1
-         while idx < n:
-            line = lines[idx]
-            if line.startswith('==> ') or line.rstrip() == '==>':
-               break
-            if line.startswith('... ') or line.startswith('>>> ') or line.startswith('%%% '):
-               break
-            if line.startswith(';'):
-               expr = expr + line
-            else:
-               retval = retval + line
-            idx = idx + 1
-      # '%%% ' error block.
-      if idx < n and lines[idx].startswith('%%% '):
-         error = _substring(lines[idx], 4, len(lines[idx]))
-         idx = idx + 1
-         while idx < n and lines[idx].startswith('%%% '):
-            error = error + _substring(lines[idx], 4, len(lines[idx]))
-            idx = idx + 1
-      if expr:
-         entries.append((expr, output.rstrip(), retval.rstrip(), error.rstrip()))
-   return entries
-
-
-def _print_welcome_banner():
-   """Short welcome banner printed by __init__ and ]reboot."""
-   useColor = sys.stdout.isatty()
-   if useColor:
-      BOLD_GREEN = '\033[1;92m'
-      CYAN       = '\033[96m'
-      RESET      = '\033[0m'
-   else:
-      BOLD_GREEN = ''
-      CYAN       = ''
-      RESET      = ''
-   print('Enter any expression to have it evaluated by the interpreter.')
-   print("Evaluate '" + CYAN + '(help)' + RESET + "' for online help.")
-   print("Type  '" + CYAN + ']help' + RESET + "' to list Listener commands.")
-   print(BOLD_GREEN + 'Welcome!' + RESET)
-
-
 # ---- Listener ---------------------------------------------------------
 
 
@@ -279,6 +110,168 @@ class Listener:
    # in the same process.
    _rl         = None
    _historyMax = 500
+
+   # ---- static helpers ----
+
+   @staticmethod
+   def _format_call_stack(call_stack):
+      """Render a shadow call-stack list as a backtrace string.
+      Each entry is [label, src, count]."""
+      from pyscheme.AST import format_with_caret
+      lines = []
+      i = 0
+      while i < len(call_stack):
+         entry = call_stack[i]
+         label = entry[0]
+         src   = entry[1]
+         count = entry[2]
+         if count > 1:
+            label = label + ' [x' + str(count) + ']'
+         lines.append('  at ' + format_with_caret(label, src))
+         i = i + 1
+      return '\n'.join(lines)
+
+   @staticmethod
+   def _format_error(exc):
+      """Produce the user-visible text for an exception.  Same text at
+      REPL and test harness so expected/actual error strings compare."""
+      if isinstance(exc, NotImplementedError):
+         return 'Not implemented: ' + str(exc)
+      if (isinstance(exc, SchemeSyntaxError) or isinstance(exc, SchemeAnalysisError)
+            or isinstance(exc, SchemeUnboundError) or isinstance(exc, SchemeRuntimeError)
+            or isinstance(exc, ListenerCommandError)):
+         return str(exc)
+      if (isinstance(exc, SchemeArityError) or isinstance(exc, SchemeTypeError)
+            or isinstance(exc, SchemeRaised)):
+         msg = type(exc).__name__ + ': ' + str(exc)
+         call_stack = exc.call_stack
+         if call_stack:
+            msg = msg + '\n' + Listener._format_call_stack(call_stack)
+         return msg
+      msg = str(exc)
+      if msg:
+         return 'internal error: ' + msg
+      return 'internal error'
+
+   @staticmethod
+   def _compute_indent(lines):
+      """Return whitespace to auto-indent the next continuation line.
+      Indents 3 spaces per unclosed paren depth."""
+      depth     = 0
+      in_string = False
+      escape    = False
+      i = 0
+      while i < len(lines):
+         line = lines[i]
+         j = 0
+         while j < len(line):
+            ch = line[j]
+            if escape:
+               escape = False
+            elif in_string:
+               if ch == '\\':
+                  escape = True
+               elif ch == '"':
+                  in_string = False
+            else:
+               if ch == '"':
+                  in_string = True
+               elif ch == ';':
+                  break
+               elif ch == '(' or ch == '[':
+                  depth = depth + 1
+               elif ch == ')' or ch == ']':
+                  if depth > 0:
+                     depth = depth - 1
+            j = j + 1
+         i = i + 1
+      indent = ''
+      k = 0
+      total = depth * 3
+      while k < total:
+         indent = indent + ' '
+         k = k + 1
+      return indent
+
+   @staticmethod
+   def _parse_log(text):
+      """Parse a session log into a list of 4-tuples (expr, output, retval, error).
+
+      Each entry begins with a `>>> ` line.  Continuation lines (`... `)
+      belong to the same expression.  Lines between the expression and
+      `==> ` (with no marker) are output (from display/print/help).  A
+      `==> ` line gives the return value; a `%%% ` line gives the error
+      message.  Comment lines starting with `;;` outside an entry are
+      skipped."""
+      lines   = text.splitlines(keepends=True)
+      entries = []
+      idx     = 0
+      n       = len(lines)
+      while idx < n:
+         while idx < n and not lines[idx].startswith('>>> '):
+            idx = idx + 1
+         if idx >= n:
+            break
+         expr   = _substring(lines[idx], 4, len(lines[idx]))
+         output = ''
+         retval = ''
+         error  = ''
+         idx = idx + 1
+         while idx < n and lines[idx].startswith('... '):
+            expr = expr + _substring(lines[idx], 4, len(lines[idx]))
+            idx = idx + 1
+         if idx < n and lines[idx].rstrip() == '...' and not lines[idx].startswith('... '):
+            idx = idx + 1
+         while idx < n:
+            line = lines[idx]
+            if line.startswith('==> ') or line.rstrip() == '==>':
+               break
+            if line.startswith('... ') or line.startswith('>>> ') or line.startswith('%%% '):
+               break
+            output = output + line
+            idx = idx + 1
+         if idx < n and (lines[idx].startswith('==> ') or lines[idx].rstrip() == '==>'):
+            line = lines[idx]
+            if len(line) > 4:
+               retval = _substring(line, 4, len(line))
+            idx = idx + 1
+            while idx < n:
+               line = lines[idx]
+               if line.startswith('==> ') or line.rstrip() == '==>':
+                  break
+               if line.startswith('... ') or line.startswith('>>> ') or line.startswith('%%% '):
+                  break
+               if line.startswith(';'):
+                  expr = expr + line
+               else:
+                  retval = retval + line
+               idx = idx + 1
+         if idx < n and lines[idx].startswith('%%% '):
+            error = _substring(lines[idx], 4, len(lines[idx]))
+            idx = idx + 1
+            while idx < n and lines[idx].startswith('%%% '):
+               error = error + _substring(lines[idx], 4, len(lines[idx]))
+               idx = idx + 1
+         if expr:
+            entries.append((expr, output.rstrip(), retval.rstrip(), error.rstrip()))
+      return entries
+
+   @staticmethod
+   def _print_welcome_banner():
+      """Short welcome banner printed by _banner and ]reboot."""
+      useColor = sys.stdout.isatty()
+      if useColor:
+         BOLD_GREEN = '\033[1;92m'
+         CYAN       = '\033[96m'
+         RESET      = '\033[0m'
+      else:
+         BOLD_GREEN = ''
+         CYAN       = ''
+         RESET      = ''
+      print('Enter any expression to have it evaluated by the interpreter.')
+      print("Evaluate '" + CYAN + '(help)' + RESET + "' for online help.")
+      print("Type  '" + CYAN + ']help' + RESET + "' to list Listener commands.")
+      print(BOLD_GREEN + 'Welcome!' + RESET)
 
    def __init__(self, anInterpreter, testdir=_DEFAULT_TEST_DIR,
                 language='pyscheme', version='0.1',
@@ -371,7 +364,7 @@ class Listener:
       print(DIM + '- Interpreter Initialized' + RESET, flush=True)
       print(DIM + '- Listener Initialized' + RESET, flush=True)
       print()
-      _print_welcome_banner()
+      Listener._print_welcome_banner()
       print()
 
    def _writeLn(self, value='', file=None, flush=False):
@@ -462,7 +455,7 @@ class Listener:
             if not inputExprLineList:
                lineInput = self._prompt('>>> ')
             else:
-               indent    = _compute_indent(inputExprLineList)
+               indent    = Listener._compute_indent(inputExprLineList)
                lineInput = self._prompt('... ', prefill=indent)
          except EOFError:
             print()
@@ -527,7 +520,7 @@ class Listener:
          except KeyboardInterrupt:
             self._writeErrorMsg('Interrupted.')
          except Exception as e:
-            self._writeErrorMsg(_format_error(e))
+            self._writeErrorMsg(Listener._format_error(e))
 
          print()
 
@@ -544,7 +537,7 @@ class Listener:
       text = f.read()
       f.close()
 
-      entries = _parse_log(text)
+      entries = Listener._parse_log(text)
       k = 0
       while k < len(entries):
          entry = entries[k]
@@ -594,7 +587,7 @@ class Listener:
          RED   = ''
          RESET = ''
 
-      entries = _parse_log(text)
+      entries = Listener._parse_log(text)
       n_pass  = 0
       n_fail  = 0
       saved_fallback = _expander_mod._include_fallback_dir
@@ -622,7 +615,7 @@ class Listener:
          except KeyboardInterrupt:
             actual_error = 'Interrupted.'
          except Exception as e:
-            actual_error = _format_error(e)
+            actual_error = Listener._format_error(e)
 
          actual_output   = out_capture.getvalue().rstrip()
          expected_output = expected_output.rstrip()
@@ -756,7 +749,7 @@ class Listener:
       print(DIM + '- Initializing interpreter' + RESET)
       self._interp.reboot()
       print()
-      _print_welcome_banner()
+      Listener._print_welcome_banner()
       print()
 
    def _cmd_readsrc(self, args):
@@ -940,7 +933,7 @@ class Listener:
          k = 0
          while k < len(filenames):
             filename = filenames[k]
-            self._interp.reboot()
+            self._interp.reboot(load_rc=False)
             base   = os.path.basename(filename)
             padded = base.ljust(40)
             print(padded + ' ', end='', flush=True, file=savedStdout)
@@ -962,7 +955,7 @@ class Listener:
       finally:
          sys.stdout = savedStdout
 
-      self._interp.reboot()
+      self._interp.reboot(load_rc=False)
 
       # Grand-total screen summary.
       if len(filenames) > 1:

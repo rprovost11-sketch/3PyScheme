@@ -8,6 +8,7 @@ Run with:
 import os
 import sys
 
+from pyscheme            import __version__
 from pyscheme.Interpreter import Interpreter
 from pyscheme.Listener    import Listener
 
@@ -46,7 +47,7 @@ def main():
       interp,
       testdir='testing',
       language='pyscheme',
-      version='0.3.15',
+      version=__version__,
       author='Ron Provost/Longo',
       project='https://github.com/rprovost11/pyscheme',
    )
