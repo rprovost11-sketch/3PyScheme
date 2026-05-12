@@ -136,28 +136,22 @@ def arity_mismatch_msg(name, lo, hi, n_provided):
 
 
 # --- Environment -------------------------------------------------------
-# Binding storage: _bindings maps name -> [(scope_set, value), ...].
-# Multiple entries with the same name but different scope_sets coexist.
-# Resolution (lookup / set) finds the entry whose stored scope_set is
-# the largest frozenset that is still a subset of the query scope_set.
+# Binding storage: _bindings maps name -> value (plain dict).
+# Alpha-renaming in the Expander ensures distinct bindings have distinct names,
+# so a simple name -> value map is sufficient for resolution.
 
-def _best_match_index(entries, scope_set):
-   """Return the index of the most-specific matching entry, or -1.
-   'Matching' means entry_scope_set.issubset(scope_set); 'most specific'
-   means largest matching entry_scope_set by len."""
-   best_idx = -1
-   best_size = -1
-   i = 0
-   while i < len(entries):
-      entry_scopes = entries[i][0]
-      if entry_scopes.issubset(scope_set):
-         size = len(entry_scopes)
-         if size > best_size:
-            best_size = size
-            best_idx = i
-      i = i + 1
-   return best_idx
+_GENSYM_PFX = '\x01h.'
 
+
+def _display_name(name):
+   """Strip hygiene gensym prefix for error messages.  \x01h.BASE.DIGITS -> BASE."""
+   if not name.startswith(_GENSYM_PFX):
+      return name
+   rest = name[len(_GENSYM_PFX):]
+   dot = rest.rfind('.')
+   if dot >= 0 and rest[dot + 1:].isdigit():
+      return rest[:dot]
+   return rest
 
 class Environment:
    """Lexical environment: a binding table plus a parent pointer.
@@ -168,7 +162,7 @@ class Environment:
       self._bindings = {}
       if initialBindings is not None:
          for k in initialBindings:
-            self._bindings[k] = [(frozenset(), initialBindings[k])]
+            self._bindings[k] = initialBindings[k]
       self._parent = parent
       self._is_immutable = False
       if parent is None:
@@ -176,21 +170,11 @@ class Environment:
       else:
          self._global_env = parent._global_env
 
-   def bind(self, key, value, scope_set=frozenset()):
+   def bind(self, key, value):
       if self._is_immutable:
          raise SchemeTypeError(
-            "cannot define '" + key + "' in a frozen environment")
-      if key not in self._bindings:
-         self._bindings[key] = [(scope_set, value)]
-      else:
-         entries = self._bindings[key]
-         i = 0
-         while i < len(entries):
-            if entries[i][0] == scope_set:
-               entries[i] = (scope_set, value)
-               return value
-            i = i + 1
-         entries.append((scope_set, value))
+            "cannot define '" + _display_name(key) + "' in a frozen environment")
+      self._bindings[key] = value
       return value
 
    def freeze(self):
@@ -202,38 +186,29 @@ class Environment:
    def getGlobalEnv(self):
       return self._global_env
 
-   def lookup(self, key, scope_set=frozenset()):
-      """Scheme lookup: walk the scope chain using scope-set resolution.
-      Returns the value of the most-specific matching binding (largest
-      stored scope_set that is a subset of the query scope_set).
-      Raises SchemeUnboundError if no matching binding is found."""
+   def lookup(self, key):
+      """Walk the parent chain; return the value of the first binding found.
+      Raises SchemeUnboundError if no binding is found."""
       scope = self
       while scope:
          if key in scope._bindings:
-            idx = _best_match_index(scope._bindings[key], scope_set)
-            if idx >= 0:
-               return scope._bindings[key][idx][1]
+            return scope._bindings[key]
          scope = scope._parent
-      raise SchemeUnboundError('unbound variable: ' + key)
+      raise SchemeUnboundError('unbound variable: ' + _display_name(key))
 
-   def set(self, key, value, scope_set=frozenset()):
-      """Scheme set!: update the most-specific matching binding in the
-      nearest enclosing scope that has one.  Raises SchemeUnboundError if
-      no matching binding is found; raises SchemeTypeError if the owning
-      scope is frozen."""
+   def set(self, key, value):
+      """Update the nearest binding of key.  Raises SchemeUnboundError if
+      no binding is found; raises SchemeTypeError if the owning scope is frozen."""
       scope = self
       while scope:
          if key in scope._bindings:
-            idx = _best_match_index(scope._bindings[key], scope_set)
-            if idx >= 0:
-               if scope._is_immutable:
-                  raise SchemeTypeError(
-                     "set! on '" + key + "' in a frozen environment")
-               entries = scope._bindings[key]
-               entries[idx] = (entries[idx][0], value)
-               return value
+            if scope._is_immutable:
+               raise SchemeTypeError(
+                  "set! on '" + _display_name(key) + "' in a frozen environment")
+            scope._bindings[key] = value
+            return value
          scope = scope._parent
-      raise SchemeUnboundError('set! on unbound variable: ' + key)
+      raise SchemeUnboundError('set! on unbound variable: ' + _display_name(key))
 
 
 # --- Module self-test --------------------------------------------------
@@ -257,7 +232,7 @@ if __name__ == '__main__':
    check('root is its own global',    root.getGlobalEnv() is root)
    check('empty bindings',            root._bindings == {})
 
-   # Initial bindings (old-format {name: value} converted automatically).
+   # Initial bindings.
    e0 = Environment(initialBindings={'a': 1, 'b': 2})
    check('initial bind a',            e0.lookup('a') == 1)
    check('initial bind b',            e0.lookup('b') == 2)
@@ -284,23 +259,10 @@ if __name__ == '__main__':
    check('set updates parent b',      e0.lookup('b') == 222)
    check('child has no b binding',    'b' not in child._bindings)
 
-   # Scope-set-aware binding: two entries for same name, different scope_sets.
-   sc1 = 1
-   sc2 = 2
-   scoped_env = Environment()
-   scoped_env.bind('x', 'global', frozenset())
-   scoped_env.bind('x', 'inner',  frozenset([sc1]))
-   check('lookup empty finds global',   scoped_env.lookup('x', frozenset()) == 'global')
-   check('lookup {sc1} finds inner',    scoped_env.lookup('x', frozenset([sc1])) == 'inner')
-   check('lookup {sc1,sc2} finds inner', scoped_env.lookup('x', frozenset([sc1, sc2])) == 'inner')
-   check('bind same scope_set replaces', True)   # just verifying no exception
-   scoped_env.bind('x', 'updated', frozenset([sc1]))
-   check('bind same scope_set value',   scoped_env.lookup('x', frozenset([sc1])) == 'updated')
-   check('bind same scope global unchanged', scoped_env.lookup('x', frozenset()) == 'global')
-   # set! with scope_set updates the matching entry.
-   scoped_env.set('x', 'set-global', frozenset())
-   check('set scope_set=empty updates global', scoped_env.lookup('x', frozenset()) == 'set-global')
-   check('set scope_set=empty leaves inner',   scoped_env.lookup('x', frozenset([sc1])) == 'updated')
+   # Rebind same key overwrites.
+   e0.bind('x', 'first')
+   e0.bind('x', 'second')
+   check('rebind overwrites',         e0.lookup('x') == 'second')
 
    # Unbound lookup.
    try:

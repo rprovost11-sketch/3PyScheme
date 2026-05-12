@@ -761,14 +761,15 @@ class Debugger:
 
    def _cmd_bt(self, cmd, rest, ctx, env):
       """bt  show backtrace (shadow call stack)"""
-      from pyscheme.Evaluator import _shadow_stack
-      if not _shadow_stack:
+      from pyscheme.Evaluator import get_shadow_stack
+      stack = get_shadow_stack()
+      if not stack:
          print('No backtrace available.')
          return
       from pyscheme.AST import format_with_caret
       i = 0
-      while i < len(_shadow_stack):
-         entry = _shadow_stack[i]
+      while i < len(stack):
+         entry = stack[i]
          label = entry[0]
          src   = entry[1]
          count = entry[2]

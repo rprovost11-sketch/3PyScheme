@@ -41,6 +41,11 @@ from pyscheme.Environment import SchemeTypeError, SchemeUserError, SchemeRaised
 CATEGORY = 'meta'
 
 
+def _prim_syntax_expand(ctx, env, args, app_node):
+   from pyscheme.Expander import expand
+   return expand(args[0])
+
+
 def _prim_file_error_p(ctx, env, args, app_node):
    from pyscheme.AST import make_boolean, is_error_object
    obj = args[0]
@@ -591,6 +596,17 @@ def register():
       doc=('(get-environment-variables) returns an alist of (name . value) '
            'strings for all OS environment variables.  '
            'R7RS §6.14 / (scheme process-context).'),
+      category=CATEGORY)
+
+   register_primitive('syntax-expand', (1, 1), _prim_syntax_expand,
+      usage='(syntax-expand form)',
+      doc=(
+         "Expand a Scheme form through the macro/sugar expander and return\n"
+         "the result as a Scheme value.  The argument should be a quoted\n"
+         "datum.  Introduced symbols carry internal scope annotations that\n"
+         "do not appear in the printed output.  Gensym names introduced by\n"
+         "do, define-record-type, or let-values are visible as-is.\n"
+         "Non-standard extension; intended for debugging and test baselines."),
       category=CATEGORY)
 
    register_primitive('runtime', (0, 0), _prim_runtime,

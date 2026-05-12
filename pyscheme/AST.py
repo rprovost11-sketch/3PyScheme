@@ -8,7 +8,7 @@ sentinels are tagged tuples - immutable arms of the Value variant.
 C port layout:
    ConsCell     -> struct ConsCell { GcHeader h; Value car; Value cdr; SourceInfo* src; };
    SourceInfo   -> struct SourceInfo { int line; int col; char* source_line; char* filename; };
-   (SYMBOL, name, scope_set, src) -> Value tag SYMBOL; scope_set is a ScopeSet* in C
+   (SYMBOL, name, src) -> Value tag SYMBOL; no scope_set (alpha-renamed at expand time)
    (NIL,)       -> Value with tag NIL, no payload (singleton)
    (VOID,)      -> Value with tag VOID, no payload (singleton)
 
@@ -184,25 +184,25 @@ class Port:
 
 class SyntaxTransformer:
    """syntax-rules transformer (R7RS 4.3).  POD; immutable after parse.
-      name             - str, used in diagnostics only
-      literals         - list of str, literal identifiers in patterns
-      ellipsis         - str, the ellipsis identifier (default '...')
-      rules            - list of (pattern_sexpr, template_sexpr) pairs
-      def_scope        - int, scope id allocated at parse time and added to
-                         every template/pattern symbol; lets def-time bindings
-                         resolve via scope-set lookup at the use site.
-      literal_bindings - dict name -> frozenset, def-time scope_set per literal
-                         (for free-identifier=? matching)
-      def_env          - LEGACY, retained for compat; no longer consulted."""
-   def __init__(self, name, literals, ellipsis, rules, def_env,
-                literal_bindings=None, def_scope=0):
+      name        - str, used in diagnostics only
+      literals    - list of str, literal identifiers in patterns
+      ellipsis    - str, the ellipsis identifier (default '...')
+      rules       - list of (pattern_sexpr, template_sexpr) pairs
+      free_id_map - dict original_name -> gensym_alias; aliases for free
+                    template identifiers bound to their def-time values.
+                    Emitted in place of the original name at instantiation.
+      intro_names - set of str; template-original identifiers that are NOT
+                    free refs (no def-time binding found).  Each application
+                    generates a fresh gensym per intro_name so introduced
+                    binders never capture call-site variables."""
+   def __init__(self, name, literals, ellipsis, rules,
+                free_id_map=None, intro_names=None):
       self.name = name
       self.literals = literals
       self.ellipsis = ellipsis
       self.rules = rules
-      self.def_env = def_env
-      self.literal_bindings = literal_bindings if literal_bindings is not None else {}
-      self.def_scope = def_scope
+      self.free_id_map  = free_id_map  if free_id_map  is not None else {}
+      self.intro_names  = intro_names  if intro_names  is not None else set()
 
 
 # --- Singletons --------------------------------------------------------
@@ -276,24 +276,16 @@ def make_string(s, src=None):
    return SchemeString(s, src)
 
 def make_symbol(name, src=None):
-   return (SYMBOL, name, frozenset(), src)
+   return (SYMBOL, name, src)
 
-def make_closure(params, body, env, rest_name, docstring,
-                 param_scopes=None, rest_scope=frozenset()):
+def make_closure(params, body, env, rest_name, docstring):
    """Build a CLOSURE value.
-      params         - tuple of name strings (positional)
-      body           - cons chain of body expressions
-      env            - definition-time environment (lexical capture)
-      rest_name      - str or None, name for the rest-parameter (variadic)
-      docstring      - str
-      param_scopes   - tuple of frozensets parallel to params, or None
-                       (None means treat all scope sets as empty); set by
-                       _make_closure_from_lambda from the param symbol nodes
-                       so that hygienic macro expansion binds parameters at
-                       their correct scope-set context.
-      rest_scope     - frozenset, scope_set for the rest parameter."""
-   return (CLOSURE, params, body, env, rest_name, docstring,
-           param_scopes, rest_scope)
+      params    - tuple of name strings (positional)
+      body      - cons chain of body expressions
+      env       - definition-time environment (lexical capture)
+      rest_name - str or None, name for the rest-parameter (variadic)
+      docstring - str"""
+   return (CLOSURE, params, body, env, rest_name, docstring)
 
 def make_primitive(name, fn):
    return (PRIMITIVE, name, fn)
@@ -331,10 +323,10 @@ def make_continuation(k_snapshot, wind_snapshot, handler_snapshot,
    return Continuation(k_snapshot, wind_snapshot, handler_snapshot,
                        shadow_snapshot)
 
-def make_syntax_transformer(name, literals, ellipsis, rules, def_env,
-                            literal_bindings=None, def_scope=0):
-   return SyntaxTransformer(name, literals, ellipsis, rules, def_env,
-                            literal_bindings, def_scope)
+def make_syntax_transformer(name, literals, ellipsis, rules,
+                            free_id_map=None, intro_names=None):
+   return SyntaxTransformer(name, literals, ellipsis, rules,
+                            free_id_map, intro_names)
 
 def make_environment(env):
    return (ENVIRONMENT, env)
@@ -370,96 +362,6 @@ def make_port(port_obj):
 EOF_VALUE = (EOF,)
 def make_eof():
    return EOF_VALUE
-
-
-# --- Scope-set helpers ------------------------------------------------
-# Scope IDs are small positive integers.  Each fresh scope is unique.
-# In the C port these map to a uint64_t bitmask or a heap-allocated set.
-
-_scope_counter = 0
-
-def new_scope():
-   global _scope_counter
-   _scope_counter = _scope_counter + 1
-   return _scope_counter
-
-def symbol_add_scope(sym, scope_id):
-   """Return sym with scope_id added to its scope_set (no-op if already present)."""
-   scopes = sym[2]
-   if scope_id in scopes:
-      return sym
-   return (SYMBOL, sym[1], scopes | frozenset([scope_id]), sym[3])
-
-def symbol_flip_scope(sym, scope_id):
-   """Return sym with scope_id toggled in its scope_set."""
-   scopes = sym[2]
-   if scope_id in scopes:
-      return (SYMBOL, sym[1], scopes - frozenset([scope_id]), sym[3])
-   return (SYMBOL, sym[1], scopes | frozenset([scope_id]), sym[3])
-
-def symbol_remove_scope(sym, scope_id):
-   """Return sym with scope_id removed from its scope_set (no-op if absent)."""
-   scopes = sym[2]
-   if scope_id not in scopes:
-      return sym
-   return (SYMBOL, sym[1], scopes - frozenset([scope_id]), sym[3])
-
-def strip_scope_from_form(form, scope_id):
-   """Walk form removing scope_id from every symbol atom.  Used to clean
-   sc_use off captured pattern-variable values so that re-expansion of
-   the captured form does not accumulate stale scope ids."""
-   if is_symbol(form):
-      return symbol_remove_scope(form, scope_id)
-   if is_cons(form):
-      new_car = strip_scope_from_form(form.car, scope_id)
-      new_cdr = strip_scope_from_form(form.cdr, scope_id)
-      if new_car is form.car and new_cdr is form.cdr:
-         return form
-      return alloc_cons(new_car, new_cdr, form.src)
-   if is_vector(form):
-      old_items = as_vector_items(form)
-      new_items = []
-      changed = False
-      i = 0
-      while i < len(old_items):
-         new_item = strip_scope_from_form(old_items[i], scope_id)
-         new_items.append(new_item)
-         if new_item is not old_items[i]:
-            changed = True
-         i = i + 1
-      if not changed:
-         return form
-      return make_vector(new_items)
-   return form
-
-def add_scope_to_form(form, scope_id):
-   """Walk a form, adding scope_id to every symbol atom.
-   Skips the contents of (quote ...) since those are data, not code."""
-   if is_symbol(form):
-      return symbol_add_scope(form, scope_id)
-   if is_cons(form):
-      if is_symbol(form.car) and as_symbol(form.car) == 'quote':
-         return form
-      new_car = add_scope_to_form(form.car, scope_id)
-      new_cdr = add_scope_to_form(form.cdr, scope_id)
-      if new_car is form.car and new_cdr is form.cdr:
-         return form
-      return alloc_cons(new_car, new_cdr, form.src)
-   if is_vector(form):
-      old_items = as_vector_items(form)
-      new_items = []
-      changed = False
-      i = 0
-      while i < len(old_items):
-         new_item = add_scope_to_form(old_items[i], scope_id)
-         new_items.append(new_item)
-         if new_item is not old_items[i]:
-            changed = True
-         i = i + 1
-      if not changed:
-         return form
-      return make_vector(new_items)
-   return form
 
 
 # --- Predicates --------------------------------------------------------
@@ -592,7 +494,7 @@ def src_of(val):
       return None
    tag = val[0]
    if tag == SYMBOL:
-      return val[3]
+      return val[2]
    if tag == INTEGER:
       return val[2]
    if tag == REAL:
@@ -655,9 +557,6 @@ def as_string(val):
 def as_symbol(val):
    return val[1]
 
-def as_symbol_scopes(val):
-   return val[2]
-
 def as_closure_params(val):
    return val[1]
 
@@ -672,14 +571,6 @@ def as_closure_rest_name(val):
 
 def as_closure_docstring(val):
    return val[5]
-
-def as_closure_param_scopes(val):
-   """Tuple of frozensets parallel to params, or None if not tracked."""
-   return val[6] if len(val) > 6 else None
-
-def as_closure_rest_scope(val):
-   """Frozenset scope_set for the rest parameter, or empty if untracked."""
-   return val[7] if len(val) > 7 else frozenset()
 
 def as_primitive_name(val):
    return val[1]
@@ -778,9 +669,6 @@ def as_syntax_transformer_ellipsis(t):
 
 def as_syntax_transformer_rules(t):
    return t.rules
-
-def as_syntax_transformer_def_env(t):
-   return t.def_env
 
 def as_environment(val):
    return val[1]
@@ -978,46 +866,18 @@ if __name__ == '__main__':
    check('as_symbol',        as_symbol(sym) == 'x')
    check('symbol not cons',  not is_cons(sym))
    check('src_of sym None',  src_of(sym) is None)
-   check('symbol scopes empty', as_symbol_scopes(sym) == frozenset())
 
    sym2 = make_symbol('y', si)
    check('src_of sym with src', src_of(sym2) is si)
 
-   # scope helpers
-   sc1 = new_scope()
-   sc2 = new_scope()
-   check('new_scope distinct',   sc1 != sc2)
-   sym3 = symbol_add_scope(sym, sc1)
-   check('add_scope adds',        sc1 in as_symbol_scopes(sym3))
-   check('add_scope name unchanged', as_symbol(sym3) == 'x')
-   check('add_scope src unchanged',  src_of(sym3) is None)
-   check('add_scope idempotent',  symbol_add_scope(sym3, sc1) is sym3)
-   sym4 = symbol_flip_scope(sym, sc1)
-   check('flip_scope adds when absent', sc1 in as_symbol_scopes(sym4))
-   sym5 = symbol_flip_scope(sym4, sc1)
-   check('flip_scope removes when present', sc1 not in as_symbol_scopes(sym5))
-   check('flip_scope name unchanged', as_symbol(sym5) == 'x')
-
-   # add_scope_to_form
-   sc3 = new_scope()
-   fsym = make_symbol('x', None)
-   fstamped = add_scope_to_form(fsym, sc3)
-   check('add_scope_to_form symbol',  sc3 in as_symbol_scopes(fstamped))
-   fnone = alloc_cons(make_symbol('f', None), NIL_VALUE)
-   fnone2 = add_scope_to_form(fnone, sc3)
-   check('add_scope_to_form head',    sc3 in as_symbol_scopes(fnone2.car))
-   qform = alloc_cons(make_symbol('quote', None), alloc_cons(make_symbol('x', None), NIL_VALUE))
-   qstamped = add_scope_to_form(qform, sc3)
-   check('add_scope_to_form skips quote body', qstamped is qform)
-
    # Closure
    cls = make_closure(('x',), NIL_VALUE, None, None, 'doc')
-   check('is_closure',              is_closure(cls))
-   check('as_closure_params',       as_closure_params(cls) == ('x',))
-   check('as_closure_body',         is_nil(as_closure_body(cls)))
-   check('as_closure_env',          as_closure_env(cls) is None)
-   check('as_closure_rest_name',    as_closure_rest_name(cls) is None)
-   check('as_closure_docstring',    as_closure_docstring(cls) == 'doc')
+   check('is_closure',           is_closure(cls))
+   check('as_closure_params',    as_closure_params(cls) == ('x',))
+   check('as_closure_body',      is_nil(as_closure_body(cls)))
+   check('as_closure_env',       as_closure_env(cls) is None)
+   check('as_closure_rest_name', as_closure_rest_name(cls) is None)
+   check('as_closure_docstring', as_closure_docstring(cls) == 'doc')
 
    # Primitive
    def dummy_fn():
@@ -1058,13 +918,12 @@ if __name__ == '__main__':
    check('src_of environment',       src_of(ev) is None)
 
    # SyntaxTransformer
-   st = make_syntax_transformer('swap!', ['set!'], '...', [('pat', 'tmpl')], {})
+   st = make_syntax_transformer('swap!', ['set!'], '...', [('pat', 'tmpl')])
    check('is_syntax_transformer',           is_syntax_transformer(st))
    check('syntax_transformer name',         as_syntax_transformer_name(st) == 'swap!')
    check('syntax_transformer literals',     as_syntax_transformer_literals(st) == ['set!'])
    check('syntax_transformer ellipsis',     as_syntax_transformer_ellipsis(st) == '...')
    check('syntax_transformer rules len',    len(as_syntax_transformer_rules(st)) == 1)
-   check('syntax_transformer def_env',      as_syntax_transformer_def_env(st) == {})
    check('syntax_transformer not cont',     not is_continuation(st))
 
    # ErrorObject

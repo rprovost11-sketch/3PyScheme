@@ -184,7 +184,7 @@ def pretty_print(val):
       return ('#<error-object "' + _escape_string(msg) + '" (' +
               ' '.join(parts) + ')>')
    if is_symbol(val):
-      name = as_symbol(val)
+      name = _display_symbol_name(as_symbol(val))
       if _needs_vertical_bars(name):
          return '|' + _escape_symbol_name(name) + '|'
       return name
@@ -296,6 +296,20 @@ def pretty_print_shared(val):
          next_label[0] = next_label[0] + 1
    seen = set()
    return _shared_render(val, labels, next_label, seen)
+
+
+_GENSYM_PFX = '\x01h.'
+
+
+def _display_symbol_name(name):
+   """Strip hygiene gensym prefix for display.  Format: \x01h.BASE.DIGITS -> BASE."""
+   if not name.startswith(_GENSYM_PFX):
+      return name
+   rest = name[len(_GENSYM_PFX):]
+   dot = rest.rfind('.')
+   if dot >= 0 and rest[dot + 1:].isdigit():
+      return rest[:dot]
+   return rest
 
 
 def _is_safe_symbol_initial(c):

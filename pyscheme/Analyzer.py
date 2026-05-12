@@ -67,7 +67,6 @@ from pyscheme.AST import (
    is_string, is_character, is_boolean,
    as_symbol, as_integer, as_real, as_string, as_character, as_boolean,
    as_rational_num, as_rational_den, as_complex_real, as_complex_imag,
-   as_symbol_scopes,
    src_of,
 )
 
@@ -112,10 +111,24 @@ def _cons_to_list(cell):
    return items
 
 
+_GENSYM_PFX = '\x01h.'
+
+
+def _display_name(name):
+   """Strip hygiene gensym prefix for error messages. \x01h.BASE.DIGITS -> BASE."""
+   if not name.startswith(_GENSYM_PFX):
+      return name
+   rest = name[len(_GENSYM_PFX):]
+   dot = rest.rfind('.')
+   if dot >= 0 and rest[dot + 1:].isdigit():
+      return rest[:dot]
+   return rest
+
+
 def _render(sexpr):
    """Brief text rendering of an S-expression for error messages."""
    if is_symbol(sexpr):
-      return as_symbol(sexpr)
+      return _display_name(as_symbol(sexpr))
    if is_nil(sexpr):
       return '()'
    if is_cons(sexpr):
@@ -462,32 +475,26 @@ def _analyze_begin(sexpr, static_env):
       cur = cur.cdr
 
 
-def _check_unique_let_names(triples, form_name, sexpr):
+def _check_unique_let_names(pairs, form_name, sexpr):
    """Raise SchemeAnalysisError if any binding identifier appears twice.
-   R7RS 4.2.2 + sets-of-scopes hygiene: a binding (name, scope_set) is
-   distinct from another (name, scope_set') when scope_set != scope_set',
-   so two macro applications introducing the same name still produce
-   distinct bindings.  let* explicitly allows duplicates."""
+   With alpha-renaming, two macro-introduced bindings with the same source
+   name produce distinct gensym names, so plain name equality is correct."""
    seen = set()
    i = 0
-   while i < len(triples):
-      n  = triples[i][0]
-      sc = triples[i][1]
-      key = (n, sc)
-      if key in seen:
+   while i < len(pairs):
+      n = pairs[i][0]
+      if n in seen:
          raise SchemeAnalysisError(
             "duplicate variable name in " + form_name + " bindings: " + n,
             src_of(sexpr))
-      seen.add(key)
+      seen.add(n)
       i = i + 1
 
 
 def _parse_let_bindings(bindings_sexpr, form_name):
    """Validate a let-family binding list and return a list of
-   (var_name, scope_set, value_sexpr) triples.  scope_set comes from
-   the binding name symbol so the duplicate-name check distinguishes
-   identifiers introduced by different macro applications.  Does NOT
-   analyze value_sexprs -- the caller picks the right static_env."""
+   (var_name, value_sexpr) pairs.  Does NOT analyze value_sexprs --
+   the caller picks the right static_env."""
    if not is_cons(bindings_sexpr) and not is_nil(bindings_sexpr):
       raise SchemeAnalysisError(
          form_name + " bindings must be a list, got " + _render(bindings_sexpr),
@@ -496,7 +503,7 @@ def _parse_let_bindings(bindings_sexpr, form_name):
       raise SchemeAnalysisError(
          form_name + " bindings must be a proper list",
          src_of(bindings_sexpr))
-   triples = []
+   pairs = []
    cur = bindings_sexpr
    while is_cons(cur):
       b = cur.car
@@ -505,10 +512,9 @@ def _parse_let_bindings(bindings_sexpr, form_name):
             form_name + " binding must be (name value), got " + _render(b),
             src_of(b))
       var = _require_symbol(b.car, form_name + " binding")
-      sc  = as_symbol_scopes(b.car)
-      triples.append((var, sc, b.cdr.car))
+      pairs.append((var, b.cdr.car))
       cur = cur.cdr
-   return triples
+   return pairs
 
 
 def _analyze_let(sexpr, static_env):
@@ -526,7 +532,7 @@ def _analyze_let(sexpr, static_env):
    # All val_exprs evaluated in the enclosing env.
    i = 0
    while i < len(pairs):
-      analyze(pairs[i][2], static_env)
+      analyze(pairs[i][1], static_env)
       i = i + 1
    names = []
    i = 0
@@ -553,7 +559,7 @@ def _analyze_let_star(sexpr, static_env):
    current_env = static_env
    i = 0
    while i < len(pairs):
-      analyze(pairs[i][2], current_env)
+      analyze(pairs[i][1], current_env)
       current_env = _shadow(current_env, [pairs[i][0]])
       i = i + 1
    body_cons = sexpr.cdr.cdr
@@ -590,7 +596,7 @@ def _analyze_letrec_family(sexpr, static_env, name):
    inner_env = _shadow(static_env, names)
    i = 0
    while i < len(pairs):
-      analyze(pairs[i][2], inner_env)
+      analyze(pairs[i][1], inner_env)
       i = i + 1
    body_cons = sexpr.cdr.cdr
    if _proper_list_length(body_cons) <= 0:
@@ -628,7 +634,7 @@ def _analyze_named_let(sexpr, static_env):
    # Inits evaluate in the enclosing env.
    i = 0
    while i < len(pairs):
-      analyze(pairs[i][2], static_env)
+      analyze(pairs[i][1], static_env)
       i = i + 1
    # Body sees `name` with arity (n, n) and its params shadow outer names.
    name_env = dict(static_env)

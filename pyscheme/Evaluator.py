@@ -82,9 +82,8 @@ from pyscheme.AST import (
    is_closure, is_promise,
    is_case_closure, is_multi_values, is_parameter, is_continuation,
    is_environment, is_record, is_record_accessor, is_record_mutator,
-   as_symbol, as_symbol_scopes, as_boolean, as_string, as_primitive_fn, as_primitive_name,
+   as_symbol, as_boolean, as_string, as_primitive_fn, as_primitive_name,
    as_closure_params, as_closure_body, as_closure_env, as_closure_rest_name,
-   as_closure_param_scopes, as_closure_rest_scope,
    as_case_closure_clauses, as_case_closure_env, as_parameter_value,
    as_continuation_k, as_continuation_wind, as_continuation_shadow,
    as_promise_is_done, as_promise_payload,
@@ -233,62 +232,44 @@ def _collect_cons_to_list(cell):
 
 
 def _collect_let_bindings(bindings_cons):
-   """Walk a let bindings list into a Python list of
-   (name, val_expr, name_scope_set) tuples.  Scope set comes from the
-   binding identifier so the evaluator can bind at the correct scope
-   context for hygienic macro expansion."""
+   """Walk a let bindings list into a Python list of (name, val_expr) pairs."""
    pairs = []
    cur = bindings_cons
    while is_cons(cur):
       b = cur.car
       var_name = as_symbol(b.car)
-      var_sc   = as_symbol_scopes(b.car)
       val_expr = b.cdr.car
-      pairs.append((var_name, val_expr, var_sc))
+      pairs.append((var_name, val_expr))
       cur = cur.cdr
    return pairs
 
 
 def _make_closure_from_lambda(lam_cons, env):
-   """Build a CLOSURE value from a (lambda params-form body...) cons cell.
-   Extracts param names and optional rest-param, plus scope sets so the
-   call env can bind each parameter at its correct scope context (needed
-   for hygienic macros: a template id with def_scope must not see a
-   use-site lambda parameter at empty scope)."""
+   """Build a CLOSURE value from a (lambda params-form body...) cons cell."""
    params_sexpr = lam_cons.cdr.car
    body_cons    = lam_cons.cdr.cdr
    params = []
-   param_scopes = []
    rest_name = None
-   rest_scope = frozenset()
    if is_symbol(params_sexpr):
-      rest_name  = as_symbol(params_sexpr)
-      rest_scope = as_symbol_scopes(params_sexpr)
+      rest_name = as_symbol(params_sexpr)
    elif is_cons(params_sexpr) or is_nil(params_sexpr):
       cur = params_sexpr
       while is_cons(cur):
          params.append(as_symbol(cur.car))
-         param_scopes.append(as_symbol_scopes(cur.car))
          cur = cur.cdr
       if is_symbol(cur):
-         rest_name  = as_symbol(cur)
-         rest_scope = as_symbol_scopes(cur)
-   # Optional docstring: peel only when body has 2+ forms.
+         rest_name = as_symbol(cur)
    docstring = ''
    if is_cons(body_cons) and is_cons(body_cons.cdr):
       first = body_cons.car
       if is_string(first):
          docstring = as_string(first)
          body_cons = body_cons.cdr
-   return make_closure(params, body_cons, env, rest_name, docstring,
-                       tuple(param_scopes), rest_scope)
+   return make_closure(params, body_cons, env, rest_name, docstring)
 
 
 def _make_case_closure_from_form(cl_cons, env):
-   """Build a CASE_CLOSURE value from (case-lambda (formals body...) ...).
-   Each clause contributes a (params, body, rest_name, param_scopes,
-   rest_scope) tuple; scope sets are needed so the call env binds each
-   parameter at its def-time scope context for hygienic macro lookup."""
+   """Build a CASE_CLOSURE value from (case-lambda (formals body...) ...)."""
    clauses = []
    cur = cl_cons.cdr
    while is_cons(cur):
@@ -296,23 +277,17 @@ def _make_case_closure_from_form(cl_cons, env):
       params_sexpr = clause.car
       body_cons    = clause.cdr
       params = []
-      param_scopes = []
       rest_name = None
-      rest_scope = frozenset()
       if is_symbol(params_sexpr):
-         rest_name  = as_symbol(params_sexpr)
-         rest_scope = as_symbol_scopes(params_sexpr)
+         rest_name = as_symbol(params_sexpr)
       elif is_cons(params_sexpr) or is_nil(params_sexpr):
          p_cur = params_sexpr
          while is_cons(p_cur):
             params.append(as_symbol(p_cur.car))
-            param_scopes.append(as_symbol_scopes(p_cur.car))
             p_cur = p_cur.cdr
          if is_symbol(p_cur):
-            rest_name  = as_symbol(p_cur)
-            rest_scope = as_symbol_scopes(p_cur)
-      clauses.append((params, body_cons, rest_name,
-                      tuple(param_scopes), rest_scope))
+            rest_name = as_symbol(p_cur)
+      clauses.append((params, body_cons, rest_name))
       cur = cur.cdr
    return make_case_closure(clauses, env, '')
 
@@ -325,13 +300,8 @@ class _BetaResult:
       self.body    = body
 
 
-def _beta_reduce_core(params, body, clo_env, rest, arg_values, app_node,
-                     param_scopes=None, rest_scope=frozenset()):
-   """Shared core: validate arity against (params, rest), build the call
-   env, return a _BetaResult.  Used directly by case-lambda dispatch.
-   If param_scopes is provided (tuple of frozensets parallel to params),
-   each parameter is bound at its scope_set so that hygienic macro
-   expansion finds the correct binding via scope-set lookup."""
+def _beta_reduce_core(params, body, clo_env, rest, arg_values, app_node):
+   """Validate arity against (params, rest), build the call env, return a _BetaResult."""
    n_fixed = len(params)
    n_args  = len(arg_values)
    if rest is None:
@@ -347,8 +317,7 @@ def _beta_reduce_core(params, body, clo_env, rest, arg_values, app_node,
    new_env = Environment(clo_env)
    i = 0
    while i < n_fixed:
-      sc = param_scopes[i] if param_scopes is not None else frozenset()
-      new_env.bind(params[i], arg_values[i], sc)
+      new_env.bind(params[i], arg_values[i])
       i = i + 1
    if rest is not None:
       rest_value = NIL_VALUE
@@ -356,22 +325,18 @@ def _beta_reduce_core(params, body, clo_env, rest, arg_values, app_node,
       while i >= n_fixed:
          rest_value = alloc_cons(arg_values[i], rest_value, None)
          i = i - 1
-      new_env.bind(rest, rest_value, rest_scope)
+      new_env.bind(rest, rest_value)
    return _BetaResult(new_env, body)
 
 
 def _beta_reduce(closure, arg_values, app_node=None):
-   """Validate arity, build the call env, and return a _BetaResult.
-   Caller is responsible for setting C and pushing FRAME_SEQ if the
-   body has more than one expression."""
+   """Validate arity, build the call env, and return a _BetaResult."""
    return _beta_reduce_core(
       as_closure_params(closure),
       as_closure_body(closure),
       as_closure_env(closure),
       as_closure_rest_name(closure),
-      arg_values, app_node,
-      as_closure_param_scopes(closure),
-      as_closure_rest_scope(closure))
+      arg_values, app_node)
 
 
 _CALL_CC_NAMES = ('call-with-current-continuation', 'call/cc')
@@ -494,10 +459,13 @@ def _restore_handler_stack(snapshot):
    _handler_stack.extend(snapshot)
 
 
+def get_shadow_stack():
+   return _shadow_stack
+
+def clear_shadow_stack():
+   _shadow_stack.clear()
+
 def _restore_shadow_stack(snapshot):
-   """Replace _shadow_stack contents with snapshot in place.  Called on
-   continuation invocation so error reporting reflects the call chain at
-   the capture site, not at the invocation site."""
    _shadow_stack.clear()
    _shadow_stack.extend(snapshot)
 
@@ -704,21 +672,19 @@ def _apply_value(V, arg_values, app_node):
       n_args  = len(arg_values)
       i = 0
       while i < len(clauses):
-         c      = clauses[i]
-         params = c[0]
-         body   = c[1]
-         rest   = c[2]
-         psc    = c[3] if len(c) > 3 else None
-         rsc    = c[4] if len(c) > 4 else frozenset()
+         c       = clauses[i]
+         params  = c[0]
+         body    = c[1]
+         rest    = c[2]
          n_fixed = len(params)
          if rest is None:
             if n_fixed == n_args:
                return _beta_reduce_core(params, body, clo_env, None,
-                                        arg_values, app_node, psc, rsc)
+                                        arg_values, app_node)
          else:
             if n_args >= n_fixed:
                return _beta_reduce_core(params, body, clo_env, rest,
-                                        arg_values, app_node, psc, rsc)
+                                        arg_values, app_node)
          i = i + 1
       raise SchemeArityError(
          'case-lambda: no clause matches ' + str(n_args) + ' arguments',
@@ -732,17 +698,15 @@ def _apply_value(V, arg_values, app_node):
 
 
 def _is_aux_keyword(sym, name, env):
-   """R7RS auxiliary syntax recognition: a symbol matches the auxiliary
-   keyword `name` only when it is not bound to a user value visible at
-   its scope-set context.  This is what makes (let ([else #f]) (cond
-   [else 1])) treat `else` as a regular variable rather than the cond
-   else marker."""
+   """R7RS auxiliary syntax: a symbol matches `name` only when not user-bound.
+   With alpha-renaming, any user binding of `else` etc. will have a gensym
+   name, so plain name comparison is sufficient."""
    if not is_symbol(sym) or as_symbol(sym) != name:
       return False
    if env is None:
       return True
    try:
-      env.lookup(name, as_symbol_scopes(sym))
+      env.lookup(name)
    except SchemeUnboundError:
       return True
    return False
@@ -1292,27 +1256,21 @@ def _cek_loop(expr, env, ctx):
                            #   (letrec ((name (lambda (v1 ...) body...))) (name e1 ...))
                            loop_name_sym = C.cdr.car
                            loop_name = as_symbol(loop_name_sym)
-                           loop_sc   = as_symbol_scopes(loop_name_sym)
                            bindings_cons = C.cdr.cdr.car
                            body_cons = C.cdr.cdr.cdr
                            pairs = _collect_let_bindings(bindings_cons)
                            params = []
-                           param_scopes = []
                            init_exprs = []
                            i = 0
                            while i < len(pairs):
                               params.append(pairs[i][0])
                               init_exprs.append(pairs[i][1])
-                              param_scopes.append(pairs[i][2])
                               i = i + 1
-                           # Build the loop env first so the closure can capture it,
-                           # then bind the closure to its own name for self-reference.
                            loop_env = Environment(E)
-                           loop_env.bind(loop_name, VOID_VALUE, loop_sc)
+                           loop_env.bind(loop_name, VOID_VALUE)
                            closure = make_closure(params, body_cons, loop_env,
-                                                  None, '', tuple(param_scopes),
-                                                  frozenset())
-                           loop_env.bind(loop_name, closure, loop_sc)
+                                                  None, '')
+                           loop_env.bind(loop_name, closure)
                            # Now evaluate (name init1 init2 ...) - i.e., apply closure to init values
                            # Set up FRAME_ARG-style call: but we don't have an "AST" for this synthesized call.
                            # Use FRAME_ARG with init_exprs as args list and the current C as app_node.
@@ -1330,22 +1288,18 @@ def _cek_loop(expr, env, ctx):
                               K.append((FRAME_SEQ, body_cons.cdr, E))
                            continue
                         names = []
-                        name_scopes = []
                         val_exprs = []
                         i = 0
                         while i < len(pairs):
                            names.append(pairs[i][0])
                            val_exprs.append(pairs[i][1])
-                           name_scopes.append(pairs[i][2])
                            i = i + 1
-                        # Pre-extract remaining val_exprs (all but first) as Python list
                         remaining = []
                         i = 1
                         while i < len(val_exprs):
                            remaining.append(val_exprs[i])
                            i = i + 1
-                        K.append((FRAME_LET, names, [], remaining, body_cons, E,
-                                  name_scopes))
+                        K.append((FRAME_LET, names, [], remaining, body_cons, E))
                         C = val_exprs[0]
                         # E stays at outer env - all val_exprs evaluate in it
                         continue
@@ -1366,7 +1320,7 @@ def _cek_loop(expr, env, ctx):
                            remaining.append(pairs[i])
                            i = i + 1
                         K.append((FRAME_LET_STAR, pairs[0][0], remaining,
-                                  body_cons, E, pairs[0][2]))
+                                  body_cons, E))
                         C = pairs[0][1]
                         continue
 
@@ -1383,7 +1337,7 @@ def _cek_loop(expr, env, ctx):
                         new_env = Environment(E)
                         i = 0
                         while i < len(pairs):
-                           new_env.bind(pairs[i][0], VOID_VALUE, pairs[i][2])
+                           new_env.bind(pairs[i][0], VOID_VALUE)
                            i = i + 1
                         remaining = []
                         i = 1
@@ -1391,7 +1345,7 @@ def _cek_loop(expr, env, ctx):
                            remaining.append(pairs[i])
                            i = i + 1
                         K.append((FRAME_LETREC, pairs[0][0], remaining,
-                                  body_cons, new_env, pairs[0][2]))
+                                  body_cons, new_env))
                         C = pairs[0][1]
                         E = new_env
                         continue
@@ -1443,7 +1397,7 @@ def _cek_loop(expr, env, ctx):
 
                if is_symbol(C):
                   try:
-                     V = E.lookup(as_symbol(C), as_symbol_scopes(C))
+                     V = E.lookup(as_symbol(C))
                   except SchemeUnboundError as e:
                      e.src = src_of(C)
                      raise
@@ -1475,14 +1429,14 @@ def _cek_loop(expr, env, ctx):
 
                if ftag == FRAME_DEFINE:
                   E = frame[2]
-                  E.bind(as_symbol(frame[1]), V, as_symbol_scopes(frame[1]))
+                  E.bind(as_symbol(frame[1]), V)
                   V = VOID_VALUE
                   continue
 
                if ftag == FRAME_SET:
                   E = frame[2]
                   try:
-                     E.set(as_symbol(frame[1]), V, as_symbol_scopes(frame[1]))
+                     E.set(as_symbol(frame[1]), V)
                   except SchemeUnboundError as e:
                      e.src = frame[3]
                      raise
@@ -2173,15 +2127,13 @@ def _cek_loop(expr, env, ctx):
                   remaining     = frame[3]
                   body          = frame[4]
                   saved_env     = frame[5]
-                  name_scopes   = frame[6] if len(frame) > 6 else None
                   new_collected = list(collected)
                   new_collected.append(V)
                   if len(remaining) == 0:
                      new_env = Environment(saved_env)
                      i = 0
                      while i < len(names):
-                        sc = name_scopes[i] if name_scopes is not None else frozenset()
-                        new_env.bind(names[i], new_collected[i], sc)
+                        new_env.bind(names[i], new_collected[i])
                         i = i + 1
                      E = new_env
                      C = body.car
@@ -2194,7 +2146,7 @@ def _cek_loop(expr, env, ctx):
                      new_remaining.append(remaining[i])
                      i = i + 1
                   K.append((FRAME_LET, names, new_collected,
-                            new_remaining, body, saved_env, name_scopes))
+                            new_remaining, body, saved_env))
                   C = remaining[0]
                   E = saved_env
                   break
@@ -2204,9 +2156,8 @@ def _cek_loop(expr, env, ctx):
                   remaining = frame[2]
                   body      = frame[3]
                   saved_env = frame[4]
-                  name_sc   = frame[5] if len(frame) > 5 else frozenset()
                   new_env   = Environment(saved_env)
-                  new_env.bind(name, V, name_sc)
+                  new_env.bind(name, V)
                   if len(remaining) == 0:
                      E = new_env
                      C = body.car
@@ -2220,7 +2171,7 @@ def _cek_loop(expr, env, ctx):
                      i = i + 1
                   next_pair = remaining[0]
                   K.append((FRAME_LET_STAR, next_pair[0], new_remaining,
-                            body, new_env, next_pair[2]))
+                            body, new_env))
                   C = next_pair[1]
                   E = new_env
                   break
@@ -2230,8 +2181,7 @@ def _cek_loop(expr, env, ctx):
                   remaining = frame[2]
                   body      = frame[3]
                   saved_env = frame[4]
-                  name_sc   = frame[5] if len(frame) > 5 else frozenset()
-                  saved_env.set(name, V, name_sc)
+                  saved_env.set(name, V)
                   if len(remaining) == 0:
                      E = saved_env
                      C = body.car
@@ -2245,7 +2195,7 @@ def _cek_loop(expr, env, ctx):
                      i = i + 1
                   next_pair = remaining[0]
                   K.append((FRAME_LETREC, next_pair[0], new_remaining,
-                            body, saved_env, next_pair[2]))
+                            body, saved_env))
                   C = next_pair[1]
                   E = saved_env
                   break

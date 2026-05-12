@@ -36,11 +36,10 @@ import os
 from pyscheme.AST import (
    alloc_cons, NIL_VALUE, VOID_VALUE, list_from_items,
    is_cons, is_nil, is_symbol, is_string, is_syntax_transformer,
-   is_vector, as_vector_items,
+   is_vector, as_vector_items, make_vector,
    as_symbol, as_string, src_of,
    make_symbol, ConsCell, REPL_FILENAME,
    SYMBOL, VOID,
-   new_scope, symbol_add_scope, add_scope_to_form, as_symbol_scopes,
 )
 from pyscheme.syntax_rules import hygiene_gensym
 
@@ -52,11 +51,6 @@ from pyscheme.syntax_rules import hygiene_gensym
 # letrec-syntax temporarily swap this to a child env for their body.
 # None when no interpreter has wired us up yet.
 _runtime_env_ref = [None]
-
-
-# ---- sets-of-scopes: form walker ------------------------------------------
-
-_add_scope_to_form = add_scope_to_form
 
 
 def set_runtime_env(env):
@@ -80,40 +74,14 @@ _MAX_EXPAND_ITER = 200
 _MAX_EXPAND_DEPTH = 500
 _expand_depth = [0]
 
-# Binding database for free-identifier=? literal matching in syntax-rules.
-# Maps name_str -> list of frozensets of scope IDs.  One entry per variable
-# binding introduced by let / lambda / case-lambda expansion.  Scope IDs are
-# globally unique so entries from different expansions never collide.
-_bound_index = {}
-
-
-def _register_binding(name_str, scope_set):
-   if name_str not in _bound_index:
-      _bound_index[name_str] = []
-   _bound_index[name_str].append(scope_set)
-
-
-def _register_formals(formals):
-   """Walk a (possibly improper) formals list and register each param."""
-   cur = formals
-   while is_cons(cur):
-      if is_symbol(cur.car):
-         _register_binding(as_symbol(cur.car), as_symbol_scopes(cur.car))
-      cur = cur.cdr
-   if is_symbol(cur):
-      _register_binding(as_symbol(cur), as_symbol_scopes(cur))
-
-
 def _lookup_macro(sym):
-   """Return the SyntaxTransformer bound to sym in the current runtime env
-   (walking the parent chain), or None.  sym is the full symbol node so
-   scope_set-aware lookup can discriminate introduced identifiers."""
+   """Return the SyntaxTransformer bound to sym, or None."""
    from pyscheme.Environment import SchemeUnboundError
    env = _runtime_env_ref[0]
    if env is None:
       return None
    try:
-      val = env.lookup(as_symbol(sym), as_symbol_scopes(sym))
+      val = env.lookup(as_symbol(sym))
    except SchemeUnboundError:
       return None
    if is_syntax_transformer(val):
@@ -122,21 +90,17 @@ def _lookup_macro(sym):
 
 
 def _current_macro_env():
-   """Snapshot the current runtime env as a flat dict for the transformer's
-   def_env field.  Inner scopes shadow outer (env.lookup walks the parent
-   chain).  Used by hygiene to resolve free identifiers in macro templates."""
+   """Snapshot the current runtime env as a flat name->value dict."""
    merged = {}
    env = _runtime_env_ref[0]
    chain = []
    while env is not None:
       chain.append(env)
       env = env._parent
-   # Walk outermost to innermost so inner bindings win.
    i = len(chain) - 1
    while i >= 0:
-      for k in chain[i]._bindings:
-         entries = chain[i]._bindings[k]
-         merged[k] = entries[len(entries) - 1][1]
+      for k, v in chain[i]._bindings.items():
+         merged[k] = v
       i = i - 1
    return merged
 
@@ -182,7 +146,7 @@ def _expand_inner(sexpr):
          tr = _lookup_macro(head)
          if tr is not None:
             from pyscheme.syntax_rules import apply_syntax_transformer
-            sexpr = apply_syntax_transformer(tr, sexpr, _bound_index)
+            sexpr = apply_syntax_transformer(tr, sexpr)
             continue
          # 3. Sugar desugaring.
          handler = _SUGAR_HANDLERS.get(name)
@@ -192,7 +156,7 @@ def _expand_inner(sexpr):
       # macro's hygiene) also triggers expansion.
       if is_syntax_transformer(head):
          from pyscheme.syntax_rules import apply_syntax_transformer
-         sexpr = apply_syntax_transformer(head, sexpr, _bound_index)
+         sexpr = apply_syntax_transformer(head, sexpr)
          continue
       return _expand_list(sexpr)
 
@@ -219,85 +183,84 @@ def _expand_define_syntax(sexpr):
       raise SchemeSyntaxError(
          'define-syntax: transformer must be (syntax-rules ...)',
          src_of(tr_expr))
-   t = parse_syntax_rules(tr_expr.cdr, None, macro_name)
+   t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), macro_name)
    env = _runtime_env_ref[0]
    if env is not None:
-      env.bind(macro_name, t, as_symbol_scopes(macro_sym))
+      env.bind(macro_name, t)
    return VOID_VALUE
 
 
 def _expand_let_syntax(sexpr, is_letrec):
-   # (let-syntax ((name (syntax-rules ...))...) body...)
-   # Build a fresh child env, bind each transformer in it, swap the active
-   # runtime env to the child while expanding the body so define-syntax /
-   # macro lookup inside the body see the local transformers.  Restore on
-   # exit.  After expansion, the body has been substituted via templates
-   # and no longer references the transformers, so the temporary child
-   # env can be dropped without affecting the result.
+   # (let-syntax  ((name transformer)...) body...)
+   # (letrec-syntax ((name transformer)...) body...)
+   # Build a fresh child env, bind each transformer, expand body in child env.
+   # let-syntax: transformers are parsed with outer env (siblings invisible).
+   # letrec-syntax: switch to child env before parsing so siblings are visible.
    from pyscheme.Parser import SchemeSyntaxError
    from pyscheme.syntax_rules import parse_syntax_rules
    from pyscheme.Environment import Environment
    if not is_cons(sexpr.cdr):
-      raise SchemeSyntaxError(
-         'let-syntax: malformed', src_of(sexpr))
+      raise SchemeSyntaxError('let-syntax: malformed', src_of(sexpr))
    bindings = sexpr.cdr.car
    body = sexpr.cdr.cdr
    if not is_cons(body):
-      raise SchemeSyntaxError(
-         'let-syntax: empty body', src_of(sexpr))
+      raise SchemeSyntaxError('let-syntax: empty body', src_of(sexpr))
    outer_env = _runtime_env_ref[0]
    if outer_env is None:
       child_env = Environment()
    else:
       child_env = Environment(parent=outer_env)
-   # Sets-of-scopes distinction:
-   # - sc is a fresh scope shared by the body and (for letrec-syntax only)
-   #   each transformer's syntax-rules tail.  Transformers are bound at
-   #   scope_set ∪ {sc}.
-   # - For let-syntax, transformer tails are NOT tagged with sc, so a
-   #   sibling binding (at scope_set ∪ {sc}) is not a subset of any
-   #   transformer's template scopes -> siblings invisible.
-   # - For letrec-syntax, tagging tails with sc before parsing makes
-   #   sibling visibility natural via the same subset lookup.
    src = sexpr.src
-   sc = new_scope()
    if is_letrec:
       _runtime_env_ref[0] = child_env
    try:
+      transformers = []
+      let_rename_table = {}
       cur = bindings
       while is_cons(cur):
          b = cur.car
          if (not is_cons(b) or not is_symbol(b.car) or not is_cons(b.cdr)):
             raise SchemeSyntaxError(
                'let-syntax: malformed binding', src_of(b))
-         bsym  = b.car
-         bname = as_symbol(bsym)
+         bname = as_symbol(b.car)
          tr_expr = b.cdr.car
          if (not is_cons(tr_expr) or not is_symbol(tr_expr.car)
                or as_symbol(tr_expr.car) != 'syntax-rules'):
             raise SchemeSyntaxError(
                'let-syntax: transformer must be (syntax-rules ...)',
                src_of(tr_expr))
-         tail = tr_expr.cdr
+         t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), bname)
          if is_letrec:
-            tail = _add_scope_to_form(tail, sc)
-         t = parse_syntax_rules(tail, None, bname)
-         bind_scope = as_symbol_scopes(bsym) | frozenset([sc])
-         child_env.bind(bname, t, bind_scope)
+            child_env.bind(bname, t)
+         else:
+            # let-syntax: bind under a gensym so sibling templates can't see
+            # each other; rename body references via let_rename_table.
+            gs = hygiene_gensym(bname)
+            child_env.bind(gs, t)
+            let_rename_table[bname] = gs
+         transformers.append(t)
          cur = cur.cdr
-      # Now expand the body with the child env active (for both let and
-      # letrec variants).  Adding sc to the body lets it see the local
-      # transformers via scope-set lookup.
+      # For letrec-syntax, fix up self- and mutual-references: any free_id_map
+      # alias that maps a name now bound in child_env should point to the new
+      # child_env value, not the outer env's shadowed binding.
+      if is_letrec and transformers:
+         global_env = child_env.getGlobalEnv()
+         for t_obj in transformers:
+            for fid, gs in t_obj.free_id_map.items():
+               if fid in child_env._bindings:
+                  global_env.bind(gs, child_env._bindings[fid])
       _runtime_env_ref[0] = child_env
       if is_cons(body.cdr):
          body_items = [make_symbol('begin', src)]
          bcur = body
          while is_cons(bcur):
-            body_items.append(_add_scope_to_form(bcur.car, sc))
+            body_items.append(bcur.car)
             bcur = bcur.cdr
          wrapped = list_from_items(body_items, src)
       else:
-         wrapped = _add_scope_to_form(body.car, sc)
+         wrapped = body.car
+      if let_rename_table:
+         wrapped = _rename_refs_in_form(wrapped, let_rename_table)
       return expand(wrapped)
    finally:
       _runtime_env_ref[0] = outer_env
@@ -493,19 +456,49 @@ def _expand_body(body_cons, src):
       while _ri < len(forms):
          rest_forms.append(forms[_ri])
          _ri = _ri + 1
+      # Per-application intro scope: count occurrences of each name.
+      # Names appearing exactly once go into rename_table so body refs are
+      # renamed to the unique gensym.  Names appearing more than once (from
+      # repeated macro applications) each get a distinct gensym but are NOT
+      # added to rename_table -- body refs stay plain and become unbound,
+      # which is the correct R7RS hygiene behavior.
+      name_counts = {}
+      j = 0
+      while j < len(bindings):
+         n = as_symbol(bindings[j][0])
+         name_counts[n] = name_counts.get(n, 0) + 1
+         j = j + 1
+      gensym_names = []
+      j = 0
+      while j < len(bindings):
+         n = as_symbol(bindings[j][0])
+         gensym_names.append(hygiene_gensym(n))
+         j = j + 1
+      rename_table = {}
+      j = 0
+      while j < len(bindings):
+         n = as_symbol(bindings[j][0])
+         if name_counts[n] == 1:
+            rename_table[n] = gensym_names[j]
+         j = j + 1
       bindings_chain = NIL_VALUE
       j = len(bindings) - 1
       while j >= 0:
-         name_sym = bindings[j][0]
-         init     = bindings[j][1]
-         fsrc     = bindings[j][2]
-         pair = list_from_items([name_sym, init], fsrc)
+         gs_sym  = make_symbol(gensym_names[j], bindings[j][2])
+         init    = _rename_refs_in_form(bindings[j][1], rename_table)
+         fsrc    = bindings[j][2]
+         pair = list_from_items([gs_sym, init], fsrc)
          bindings_chain = alloc_cons(pair, bindings_chain, src)
          j = j - 1
+      renamed_rest = []
+      j = 0
+      while j < len(rest_forms):
+         renamed_rest.append(_rename_refs_in_form(rest_forms[j], rename_table))
+         j = j + 1
       rest_chain = NIL_VALUE
-      j = len(rest_forms) - 1
+      j = len(renamed_rest) - 1
       while j >= 0:
-         rest_chain = alloc_cons(rest_forms[j], rest_chain, src)
+         rest_chain = alloc_cons(renamed_rest[j], rest_chain, src)
          j = j - 1
       letrec_sym = make_symbol('letrec*', src)
       letrec_form = alloc_cons(letrec_sym,
@@ -554,21 +547,423 @@ def _expand_define(sexpr):
    return alloc_cons(define_sym, name_cons, define_src)
 
 
+# ---- alpha-rename helpers ------------------------------------------------
+# Binding sites generate fresh gensym names; references in scope are
+# substituted.  This replaces the sets-of-scopes mechanism entirely.
+
+def _collect_formals_names(formals):
+   """Return set of name strings bound by a formals cons chain (possibly improper)."""
+   names = set()
+   cur = formals
+   while is_cons(cur):
+      if is_symbol(cur.car):
+         names.add(as_symbol(cur.car))
+      cur = cur.cdr
+   if is_symbol(cur):
+      names.add(as_symbol(cur))
+   return names
+
+
+def _collect_let_bound_names(bindings):
+   """Return set of name strings bound by a let/letrec binding list."""
+   names = set()
+   cur = bindings
+   while is_cons(cur):
+      pair = cur.car
+      if is_cons(pair) and is_symbol(pair.car):
+         names.add(as_symbol(pair.car))
+      cur = cur.cdr
+   return names
+
+
+def _gensym_rename_formals(formals, rename_table, src):
+   """Walk formals (possibly improper list), gensym each name,
+   populate rename_table {original: gensym}, return new formals.
+   Raises SchemeSyntaxError for duplicate parameter names before renaming."""
+   from pyscheme.Parser import SchemeSyntaxError
+   if is_symbol(formals):
+      name = as_symbol(formals)
+      gs = hygiene_gensym(name)
+      rename_table[name] = gs
+      return make_symbol(gs, src_of(formals))
+   if is_nil(formals):
+      return formals
+   seen = set()
+   items = []
+   cur = formals
+   while is_cons(cur):
+      sym = cur.car
+      if is_symbol(sym):
+         name = as_symbol(sym)
+         if name in seen:
+            raise SchemeSyntaxError(
+               'duplicate parameter name in lambda: ' + name, src_of(sym))
+         seen.add(name)
+         gs = hygiene_gensym(name)
+         rename_table[name] = gs
+         items.append(make_symbol(gs, src_of(sym)))
+      else:
+         items.append(sym)
+      cur = cur.cdr
+   if is_nil(cur):
+      tail = NIL_VALUE
+   elif is_symbol(cur):
+      name = as_symbol(cur)
+      if name in seen:
+         raise SchemeSyntaxError(
+            'rest parameter name conflicts with fixed parameter: ' + name, src_of(cur))
+      gs = hygiene_gensym(name)
+      rename_table[name] = gs
+      tail = make_symbol(gs, src_of(cur))
+   else:
+      tail = cur
+   result = tail
+   i = len(items) - 1
+   while i >= 0:
+      result = alloc_cons(items[i], result, src)
+      i = i - 1
+   return result
+
+
+def _rename_refs_in_form(form, rename_table):
+   """Substitute free variable references named in rename_table.
+   Scope-aware: masks names re-bound by inner lambda/let forms.
+   Does not rename inside (quote ...) or binding-site positions."""
+   if not rename_table:
+      return form
+   if is_symbol(form):
+      name = as_symbol(form)
+      new_name = rename_table.get(name)
+      if new_name is not None:
+         return make_symbol(new_name, src_of(form))
+      return form
+   if is_vector(form):
+      items = as_vector_items(form)
+      new_items = []
+      changed = False
+      i = 0
+      while i < len(items):
+         ni = _rename_refs_in_form(items[i], rename_table)
+         new_items.append(ni)
+         if ni is not items[i]:
+            changed = True
+         i = i + 1
+      if not changed:
+         return form
+      return make_vector(new_items)
+   if not is_cons(form):
+      return form
+   head = form.car
+   if is_symbol(head):
+      hname = as_symbol(head)
+      if hname == 'quote':
+         return form
+      if hname == 'lambda':
+         return _rrif_lambda(form, rename_table)
+      if hname in ('let', 'let*', 'letrec', 'letrec*'):
+         return _rrif_let(form, rename_table, hname)
+      if hname == 'case-lambda':
+         return _rrif_case_lambda(form, rename_table)
+      if hname == 'case':
+         return _rrif_case(form, rename_table)
+      if hname in ('let-syntax', 'letrec-syntax'):
+         return _rrif_let_syntax(form, rename_table, hname == 'letrec-syntax')
+   new_head = _rename_refs_in_form(head, rename_table)
+   new_cdr  = _rename_refs_in_form(form.cdr, rename_table)
+   if new_head is head and new_cdr is form.cdr:
+      return form
+   return alloc_cons(new_head, new_cdr, form.src)
+
+
+def _rrif_lambda(form, rename_table):
+   """_rename_refs_in_form for (lambda formals body...) forms."""
+   if not is_cons(form.cdr):
+      return _rrif_default(form, rename_table)
+   formals = form.cdr.car
+   body_cons = form.cdr.cdr
+   bound = _collect_formals_names(formals)
+   inner = rename_table
+   if bound:
+      inner = {}
+      for k, v in rename_table.items():
+         if k not in bound:
+            inner[k] = v
+   new_body = _rename_refs_in_form(body_cons, inner)
+   if new_body is body_cons:
+      return form
+   new_cdr = alloc_cons(formals, new_body, form.cdr.src)
+   return alloc_cons(form.car, new_cdr, form.src)
+
+
+def _rrif_let(form, rename_table, kind):
+   """_rename_refs_in_form for (let|let*|letrec|letrec* ...) forms."""
+   head = form.car
+   if not is_cons(form.cdr):
+      return _rrif_default(form, rename_table)
+   # Named let: (let <name> <bindings> <body>...)
+   if kind == 'let' and is_symbol(form.cdr.car):
+      if not is_cons(form.cdr.cdr):
+         return _rrif_default(form, rename_table)
+      loop_sym = form.cdr.car
+      loop_name = as_symbol(loop_sym)
+      bindings = form.cdr.cdr.car
+      body_cons = form.cdr.cdr.cdr
+      bound = _collect_let_bound_names(bindings)
+      body_table = {}
+      for k, v in rename_table.items():
+         if k not in bound and k != loop_name:
+            body_table[k] = v
+      new_bindings = _rrif_bindings_parallel(bindings, rename_table)
+      new_body = _rename_refs_in_form(body_cons, body_table)
+      if new_bindings is bindings and new_body is body_cons:
+         return form
+      rest = alloc_cons(new_bindings, new_body, form.cdr.cdr.src)
+      return alloc_cons(head, alloc_cons(loop_sym, rest, form.cdr.src), form.src)
+   bindings = form.cdr.car
+   body_cons = form.cdr.cdr
+   bound = _collect_let_bound_names(bindings)
+   body_table = {}
+   for k, v in rename_table.items():
+      if k not in bound:
+         body_table[k] = v
+   if kind == 'let':
+      new_bindings = _rrif_bindings_parallel(bindings, rename_table)
+      new_body = _rename_refs_in_form(body_cons, body_table)
+   elif kind == 'let*':
+      new_bindings = _rrif_bindings_let_star(bindings, rename_table)
+      new_body = _rename_refs_in_form(body_cons, body_table)
+   else:
+      new_bindings = _rrif_bindings_parallel(bindings, body_table)
+      new_body = _rename_refs_in_form(body_cons, body_table)
+   if new_bindings is bindings and new_body is body_cons:
+      return form
+   return alloc_cons(head, alloc_cons(new_bindings, new_body, form.cdr.src), form.src)
+
+
+def _rrif_case_lambda(form, rename_table):
+   """_rename_refs_in_form for (case-lambda (formals body...)...) forms."""
+   changed = False
+   clauses = []
+   cur = form.cdr
+   while is_cons(cur):
+      clause = cur.car
+      if is_cons(clause):
+         formals = clause.car
+         body_cons = clause.cdr
+         bound = _collect_formals_names(formals)
+         inner = {}
+         for k, v in rename_table.items():
+            if k not in bound:
+               inner[k] = v
+         new_body = _rename_refs_in_form(body_cons, inner)
+         if new_body is body_cons:
+            clauses.append((clause, cur.src))
+         else:
+            changed = True
+            clauses.append((alloc_cons(formals, new_body, clause.src), cur.src))
+      else:
+         clauses.append((clause, cur.src))
+      cur = cur.cdr
+   if not changed:
+      return form
+   tail = cur
+   i = len(clauses) - 1
+   while i >= 0:
+      tail = alloc_cons(clauses[i][0], tail, clauses[i][1])
+      i = i - 1
+   return alloc_cons(form.car, tail, form.src)
+
+
+def _rrif_default(form, rename_table):
+   """Rename all sub-forms (used when head is not a special form)."""
+   new_head = _rename_refs_in_form(form.car, rename_table)
+   new_cdr  = _rename_refs_in_form(form.cdr, rename_table)
+   if new_head is form.car and new_cdr is form.cdr:
+      return form
+   return alloc_cons(new_head, new_cdr, form.src)
+
+
+def _rrif_case(form, rename_table):
+   """_rename_refs_in_form for (case key clause...) forms.
+   Renames key and clause bodies; datum lists are literal datums, not renamed."""
+   if not is_cons(form.cdr):
+      return _rrif_default(form, rename_table)
+   new_key = _rename_refs_in_form(form.cdr.car, rename_table)
+   clauses = form.cdr.cdr
+   changed = new_key is not form.cdr.car
+   new_clauses = []
+   cur = clauses
+   while is_cons(cur):
+      clause = cur.car
+      if is_cons(clause):
+         head = clause.car
+         body = clause.cdr
+         # A symbol head (i.e., 'else') is renamed so shadowing is detected.
+         # A list head is a datum-list; its contents are literal values, not renamed.
+         if is_symbol(head):
+            new_head = _rename_refs_in_form(head, rename_table)
+         else:
+            new_head = head
+         new_body = _rename_refs_in_form(body, rename_table)
+         if new_head is head and new_body is body:
+            new_clauses.append((clause, cur.src))
+         else:
+            changed = True
+            new_clauses.append((alloc_cons(new_head, new_body, clause.src), cur.src))
+      else:
+         new_clauses.append((clause, cur.src))
+      cur = cur.cdr
+   if not changed:
+      return form
+   tail = cur
+   i = len(new_clauses) - 1
+   while i >= 0:
+      tail = alloc_cons(new_clauses[i][0], tail, new_clauses[i][1])
+      i = i - 1
+   new_cdr = alloc_cons(new_key, tail, form.cdr.src)
+   return alloc_cons(form.car, new_cdr, form.src)
+
+
+def _rrif_let_syntax(form, rename_table, is_letrec):
+   """_rename_refs_in_form for (let-syntax|letrec-syntax ...) forms.
+   let-syntax: transformer expressions see the outer rename_table (so outer
+   renames like f->h.f.A propagate into templates); body masks binding names.
+   letrec-syntax: transformer expressions also mask binding names (letrec scope).
+   """
+   if not is_cons(form.cdr):
+      return _rrif_default(form, rename_table)
+   bindings = form.cdr.car
+   body_cons = form.cdr.cdr
+   bound = set()
+   cur = bindings
+   while is_cons(cur):
+      b = cur.car
+      if is_cons(b) and is_symbol(b.car):
+         bound.add(as_symbol(b.car))
+      cur = cur.cdr
+   body_table = rename_table
+   if bound:
+      body_table = {}
+      for k, v in rename_table.items():
+         if k not in bound:
+            body_table[k] = v
+   tr_table = body_table if is_letrec else rename_table
+   changed = False
+   new_binding_items = []
+   tail = bindings
+   cur = bindings
+   while is_cons(cur):
+      b = cur.car
+      tail = cur.cdr
+      if is_cons(b) and is_symbol(b.car) and is_cons(b.cdr):
+         new_tr = _rename_refs_in_form(b.cdr.car, tr_table)
+         if new_tr is not b.cdr.car:
+            changed = True
+            new_b = alloc_cons(b.car,
+                               alloc_cons(new_tr, b.cdr.cdr, b.cdr.src),
+                               b.src)
+            new_binding_items.append((new_b, cur.src))
+         else:
+            new_binding_items.append((b, cur.src))
+      else:
+         new_binding_items.append((b, cur.src))
+      cur = cur.cdr
+   new_body = _rename_refs_in_form(body_cons, body_table)
+   if not changed and new_body is body_cons:
+      return form
+   new_bindings = tail
+   i = len(new_binding_items) - 1
+   while i >= 0:
+      new_bindings = alloc_cons(new_binding_items[i][0], new_bindings,
+                                new_binding_items[i][1])
+      i = i - 1
+   new_cdr = alloc_cons(new_bindings, new_body, form.cdr.src)
+   return alloc_cons(form.car, new_cdr, form.src)
+
+
+def _rrif_bindings_parallel(bindings, table):
+   """Rename init expressions in binding pairs with table; don't touch names."""
+   if not table:
+      return bindings
+   changed = False
+   items = []
+   cur = bindings
+   while is_cons(cur):
+      pair = cur.car
+      if is_cons(pair) and is_cons(pair.cdr):
+         new_init = _rename_refs_in_form(pair.cdr.car, table)
+         if new_init is not pair.cdr.car:
+            changed = True
+            new_pair = alloc_cons(pair.car,
+                         alloc_cons(new_init, pair.cdr.cdr, pair.cdr.src),
+                         pair.src)
+            items.append((new_pair, cur.src))
+         else:
+            items.append((pair, cur.src))
+      else:
+         items.append((pair, cur.src))
+      cur = cur.cdr
+   if not changed:
+      return bindings
+   result = cur
+   i = len(items) - 1
+   while i >= 0:
+      result = alloc_cons(items[i][0], result, items[i][1])
+      i = i - 1
+   return result
+
+
+def _rrif_bindings_let_star(bindings, table):
+   """Rename let* init expressions progressively, masking each name after use."""
+   if not table:
+      return bindings
+   current_table = dict(table)
+   changed = False
+   items = []
+   cur = bindings
+   while is_cons(cur):
+      pair = cur.car
+      if is_cons(pair) and is_symbol(pair.car) and is_cons(pair.cdr):
+         name = as_symbol(pair.car)
+         new_init = _rename_refs_in_form(pair.cdr.car, current_table)
+         if new_init is not pair.cdr.car:
+            changed = True
+            new_pair = alloc_cons(pair.car,
+                         alloc_cons(new_init, pair.cdr.cdr, pair.cdr.src),
+                         pair.src)
+            items.append((new_pair, cur.src))
+         else:
+            items.append((pair, cur.src))
+         current_table.pop(name, None)
+      else:
+         items.append((pair, cur.src))
+      cur = cur.cdr
+   if not changed:
+      return bindings
+   result = cur
+   i = len(items) - 1
+   while i >= 0:
+      result = alloc_cons(items[i][0], result, items[i][1])
+      i = i - 1
+   return result
+
+
+# ---- let family (let, let*, letrec, letrec*) -----------------------------
+
 def _expand_let_family(sexpr, head_name):
    # Generic shape: (let|let*|letrec|letrec* <bindings> <body>...).
    # Plain let also accepts the named form: (let <name> <bindings> <body>...).
-   # Expand each init expression and apply body hoisting.  Bindings stay
-   # as ((<sym> <init>) ...); we pass them through with the inits expanded.
+   # Generate a fresh gensym for each binding name; rename refs in body
+   # (and inits for letrec/letrec*); expand inits; expand body.
    if not is_cons(sexpr.cdr):
       return _expand_list(sexpr)
    src = sexpr.src
    head_sym = make_symbol(head_name, src)
    first = sexpr.cdr.car
    rest  = sexpr.cdr.cdr
-   # Named-let: (let <name> <bindings> <body>...)
-   named_name = None
+   named_name_sym = None
    if head_name == 'let' and is_symbol(first) and is_cons(rest):
-      named_name = first
+      named_name_sym = first
       bindings_form = rest.car
       body_cons     = rest.cdr
    else:
@@ -578,57 +973,93 @@ def _expand_let_family(sexpr, head_name):
       return _expand_list(sexpr)
    if is_nil(body_cons):
       return _expand_list(sexpr)
-   sc = new_scope()
-   scoped_bindings = _add_scope_to_form(bindings_form, sc)
-   scoped_body     = _add_scope_to_form(body_cons, sc)
-   # Register each let-bound name in the binding database for literal matching.
-   cur3 = scoped_bindings
-   while is_cons(cur3):
-      pair = cur3.car
-      if is_cons(pair) and is_symbol(pair.car):
-         _register_binding(as_symbol(pair.car), as_symbol_scopes(pair.car))
-      cur3 = cur3.cdr
-   new_bindings = _expand_let_bindings(scoped_bindings, src)
-   if new_bindings is None:
-      return _expand_list(sexpr)
-   expanded_body = _expand_body(scoped_body, src)
-   if named_name is not None:
-      scoped_loop_name = symbol_add_scope(named_name, sc)
-      tail = alloc_cons(scoped_loop_name,
-                alloc_cons(new_bindings, expanded_body, src),
-                src)
-   else:
-      tail = alloc_cons(new_bindings, expanded_body, src)
-   return alloc_cons(head_sym, tail, src)
-
-
-def _expand_let_bindings(bindings_form, src):
-   """Expand each init expression in a let/let*/letrec/letrec* binding
-   list.  Bindings shape: ((<sym> <init>) ...).  Return a fresh cons
-   chain with each init expanded, or None on shape error so the caller
-   can punt to _expand_list."""
-   if is_nil(bindings_form):
-      return NIL_VALUE
-   items = []
+   # Collect raw (name, init, pair_src) triples.
+   raw_pairs = []
    cur = bindings_form
    while is_cons(cur):
       pair = cur.car
-      if (not is_cons(pair) or not is_cons(pair.cdr)
-            or not is_nil(pair.cdr.cdr)):
-         return None
-      name = pair.car
-      init = pair.cdr.car
-      new_pair = list_from_items([name, expand(init)], pair.src)
-      items.append(new_pair)
+      if (not is_cons(pair) or not is_symbol(pair.car)
+            or not is_cons(pair.cdr) or not is_nil(pair.cdr.cdr)):
+         return _expand_list(sexpr)
+      raw_pairs.append((as_symbol(pair.car), pair.cdr.car, pair.src))
       cur = cur.cdr
    if not is_nil(cur):
-      return None
-   result = NIL_VALUE
-   i = len(items) - 1
+      return _expand_list(sexpr)
+   # Check for duplicate binding names (error for let/letrec/letrec*, ok for let*).
+   if head_name != 'let*':
+      from pyscheme.Parser import SchemeSyntaxError
+      seen_names = set()
+      i = 0
+      while i < len(raw_pairs):
+         n = raw_pairs[i][0]
+         if n in seen_names:
+            raise SchemeSyntaxError(
+               'duplicate variable name in ' + head_name + ' bindings: ' + n,
+               src)
+         seen_names.add(n)
+         i = i + 1
+   # Generate gensyms for all binding names.
+   rename_table = {}
+   i = 0
+   while i < len(raw_pairs):
+      name = raw_pairs[i][0]
+      rename_table[name] = hygiene_gensym(name)
+      i = i + 1
+   new_named_sym = None
+   if named_name_sym is not None:
+      loop_name = as_symbol(named_name_sym)
+      loop_gs = hygiene_gensym(loop_name)
+      rename_table[loop_name] = loop_gs
+      new_named_sym = make_symbol(loop_gs, src_of(named_name_sym))
+   # Build new binding pairs with renamed names + expanded inits.
+   new_pairs = []
+   if head_name == 'let':
+      # inits see outer scope: don't apply rename_table to inits
+      i = 0
+      while i < len(raw_pairs):
+         orig_name, init_expr, pair_src = raw_pairs[i][0], raw_pairs[i][1], raw_pairs[i][2]
+         gs_sym = make_symbol(rename_table[orig_name], src)
+         new_init = expand(init_expr)
+         new_pairs.append(list_from_items([gs_sym, new_init], pair_src))
+         i = i + 1
+   elif head_name == 'let*':
+      # each init sees only the preceding bindings' renamed names
+      progressive = {}
+      i = 0
+      while i < len(raw_pairs):
+         orig_name, init_expr, pair_src = raw_pairs[i][0], raw_pairs[i][1], raw_pairs[i][2]
+         renamed_init = _rename_refs_in_form(init_expr, progressive)
+         new_init = expand(renamed_init)
+         gs_sym = make_symbol(rename_table[orig_name], src)
+         new_pairs.append(list_from_items([gs_sym, new_init], pair_src))
+         progressive[orig_name] = rename_table[orig_name]
+         i = i + 1
+   else:
+      # letrec / letrec*: all binding names visible in all inits
+      i = 0
+      while i < len(raw_pairs):
+         orig_name, init_expr, pair_src = raw_pairs[i][0], raw_pairs[i][1], raw_pairs[i][2]
+         renamed_init = _rename_refs_in_form(init_expr, rename_table)
+         new_init = expand(renamed_init)
+         gs_sym = make_symbol(rename_table[orig_name], src)
+         new_pairs.append(list_from_items([gs_sym, new_init], pair_src))
+         i = i + 1
+   # Build new bindings cons chain.
+   new_bindings = NIL_VALUE
+   i = len(new_pairs) - 1
    while i >= 0:
-      result = alloc_cons(items[i], result, src)
+      new_bindings = alloc_cons(new_pairs[i], new_bindings, src)
       i = i - 1
-   return result
+   # Rename body refs and expand.
+   renamed_body = _rename_refs_in_form(body_cons, rename_table)
+   expanded_body = _expand_body(renamed_body, src)
+   if new_named_sym is not None:
+      tail = alloc_cons(new_named_sym,
+               alloc_cons(new_bindings, expanded_body, src),
+               src)
+   else:
+      tail = alloc_cons(new_bindings, expanded_body, src)
+   return alloc_cons(head_sym, tail, src)
 
 
 def _expand_let(sexpr):
@@ -649,8 +1080,7 @@ def _expand_letrec_star(sexpr):
 
 def _expand_lambda(sexpr):
    # (lambda <formals> <body>...)
-   # Pass formals through verbatim; expand the body with internal-define
-   # hoisting (R7RS 5.3.2 letrec* equivalence).
+   # Gensym each formal name; rename refs in body; expand body with hoisting.
    if not is_cons(sexpr.cdr):
       return _expand_list(sexpr)
    formals = sexpr.cdr.car
@@ -658,14 +1088,13 @@ def _expand_lambda(sexpr):
    if is_nil(body):
       return _expand_list(sexpr)
    src = sexpr.src
-   sc = new_scope()
-   scoped_formals = _add_scope_to_form(formals, sc)
-   scoped_body    = _add_scope_to_form(body, sc)
-   _register_formals(scoped_formals)
-   expanded_body = _expand_body(scoped_body, src)
+   rename_table = {}
+   new_formals = _gensym_rename_formals(formals, rename_table, src)
+   renamed_body = _rename_refs_in_form(body, rename_table)
+   expanded_body = _expand_body(renamed_body, src)
    lambda_sym = make_symbol('lambda', src)
    return alloc_cons(lambda_sym,
-                     alloc_cons(scoped_formals, expanded_body, src),
+                     alloc_cons(new_formals, expanded_body, src),
                      src)
 
 
@@ -696,7 +1125,7 @@ def _expand_unless(sexpr):
 
 def _expand_case_lambda(sexpr):
    # (case-lambda <clause>...)  where each clause is (<formals> <body>...).
-   # Apply body hoisting per clause; formals pass through verbatim.
+   # Gensym each clause's formals; rename refs in body; expand body.
    if not is_cons(sexpr.cdr):
       return _expand_list(sexpr)
    src = sexpr.src
@@ -709,13 +1138,11 @@ def _expand_case_lambda(sexpr):
          return _expand_list(sexpr)
       formals = clause.car
       body    = clause.cdr
-      sc = new_scope()
-      scoped_formals = _add_scope_to_form(formals, sc)
-      scoped_body    = _add_scope_to_form(body, sc)
-      _register_formals(scoped_formals)
-      expanded_body = _expand_body(scoped_body, clause.src)
-      expanded_clauses.append(
-         alloc_cons(scoped_formals, expanded_body, clause.src))
+      rename_table = {}
+      new_formals = _gensym_rename_formals(formals, rename_table, src)
+      renamed_body = _rename_refs_in_form(body, rename_table)
+      expanded_body = _expand_body(renamed_body, clause.src)
+      expanded_clauses.append(alloc_cons(new_formals, expanded_body, clause.src))
       cur = cur.cdr
    if not is_nil(cur):
       return _expand_list(sexpr)

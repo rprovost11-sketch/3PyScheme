@@ -11,53 +11,38 @@ Public API:
         Run transformer t against form; return the expanded s-expression.
         Raises SchemeSyntaxError if no pattern matches.
 
-Hygiene model: sets-of-scopes per Flatt 2016 with two scopes per macro
-application -- a use-site scope sc_use added to the input form (and
-stripped from pattern-variable captures) and a fresh introduction
-scope sc_intro added to template-original identifiers at instantiation
-time.  Combined with a per-definition def_scope baked in at
-parse_syntax_rules time, this gives full R7RS 4.3 hygiene: free
-template ids resolve at the def site, template-introduced bindings
-do not capture use-site references of the same name, and distinct
-applications of the same template produce distinct introduced
-identifiers.
+Hygiene model: alpha-renaming at binding sites.
+
+  free_id_map   - dict name->gensym_alias built at parse time.  Every free
+                  template identifier that was bound in the definition
+                  environment gets a gensym alias; that alias is bound in
+                  the runtime env to the def-time value.  Template expansion
+                  emits the alias so the reference resolves at the def site.
+
+  intro_names   - set of template identifiers not found in the definition
+                  environment (introduced binding sites like `t`, `tmp`).
+                  Emitted as-is; the Expander alpha-renames them when it
+                  processes the expanded form's binding sites.
+
+Literal matching uses plain string equality: user-site identifiers that
+share a literal's name but were introduced by a binding form arrive with
+a gensym suffix (e.g., `foo#3`) so they fail the plain-name comparison.
 """
 
 from pyscheme.AST import (
    is_cons, is_nil, is_symbol, is_string, is_integer, is_real, is_boolean,
    is_character, is_vector,
    as_symbol, as_string, as_integer, as_real, as_boolean, as_character,
-   as_vector_items, as_symbol_scopes,
+   as_vector_items,
    alloc_cons, make_symbol, make_vector, list_from_items, src_of, eqv_atom,
    make_syntax_transformer, is_syntax_transformer,
    is_closure, is_primitive,
    NIL_VALUE, SYMBOL,
-   new_scope, symbol_flip_scope, symbol_add_scope,
-   add_scope_to_form, strip_scope_from_form,
 )
 
-# Active binding database for the current apply_syntax_transformer call.
-# Set at the start of each call; None when called outside the Expander
-# (e.g., from the self-test).  Single-threaded expansion makes this safe.
-_active_bound_index = None
 
-
-def _is_identifier_bound(name, scope_set, bound_index):
-   """Return True if name has any registered binding with scope-set T where
-   T is a subset of scope_set.  This implements the scope-set binding lookup
-   from Flatt 2016: a binding (name, T) is visible at scope_set S iff T ⊆ S."""
-   entries = bound_index.get(name)
-   if entries is None:
-      return False
-   for T in entries:
-      if T <= scope_set:
-         return True
-   return False
-
-
-# Syntactic keywords that must not be renamed during hygienic expansion.
-# These name the built-in special forms and desugaring markers the
-# Expander / Evaluator recognize directly.
+# Syntactic keywords recognized directly by the Evaluator / Expander.
+# These must not be renamed when they appear in macro templates.
 _SYNTACTIC_KEYWORDS = {
    'if', 'lambda', 'begin', 'define', 'set!', 'quote',
    'let', 'let*', 'letrec', 'letrec*',
@@ -70,7 +55,6 @@ _SYNTACTIC_KEYWORDS = {
    'include', 'include-ci', 'cond-expand',
    'delay', 'delay-force',
    'else', '=>', 'library',
-   # Also treat keyword-like constants that appear in patterns:
    '_', '...',
 }
 
@@ -79,12 +63,19 @@ _SYNTACTIC_KEYWORDS = {
 _GENSYM_COUNTER = 0
 
 
+_GENSYM_PREFIX = '\x01h.'
+
+
 def hygiene_gensym(base):
    """Generate a fresh symbol name unlikely to collide with user code.
-   Uses a non-printable marker byte to discourage accidental reuse."""
+   Uses a non-printable marker byte so the PrettyPrinter can strip it.
+   If base is already a gensym (starts with the prefix), return it unchanged
+   to prevent double-gensymming when the Expander processes macro output."""
    global _GENSYM_COUNTER
+   if base.startswith(_GENSYM_PREFIX):
+      return base
    _GENSYM_COUNTER = _GENSYM_COUNTER + 1
-   return '\x01h.' + base + '.' + str(_GENSYM_COUNTER)
+   return _GENSYM_PREFIX + base + '.' + str(_GENSYM_COUNTER)
 
 
 # ── SyntaxMatch: bindings produced by pattern matching ─────────────────────
@@ -174,9 +165,8 @@ def collect_pvars_with_depth(pat, literals, ellipsis_sym, out, depth):
 # ── Free-identifier collector ──────────────────────────────────────────────
 
 def collect_free_ids(tmpl, pvars, literals, ellipsis_sym, out):
-   """Collect template identifiers that aren't pvars / literals / ellipsis /
-   underscore / syntactic keywords; skips inside (quote ...) since those
-   are data.  `out` is a set to add to."""
+   """Collect template identifiers that are not pvars / literals / ellipsis /
+   underscore / syntactic keywords; skips inside (quote ...).  `out` is a set."""
    if is_symbol(tmpl):
       s = as_symbol(tmpl)
       if s == ellipsis_sym or s == '_':
@@ -200,6 +190,86 @@ def collect_free_ids(tmpl, pvars, literals, ellipsis_sym, out):
    if is_vector(tmpl):
       for item in as_vector_items(tmpl):
          collect_free_ids(item, pvars, literals, ellipsis_sym, out)
+
+
+# ── Binding-site intro-name collector ─────────────────────────────────────
+
+def collect_binding_intros(tmpl, pvars, out):
+   """Collect non-pvar template symbols that appear in binding positions
+   (lambda formals, let/letrec binding names, named-let name, define name).
+   These are the intro_names that must be gensymmed per application so they
+   don't accidentally capture same-named use-site variables."""
+   if not is_cons(tmpl):
+      return
+   if is_symbol(tmpl.car) and as_symbol(tmpl.car) == 'quote':
+      return
+   if is_symbol(tmpl.car):
+      hname = as_symbol(tmpl.car)
+      if hname == 'lambda':
+         if is_cons(tmpl.cdr):
+            _cbi_formals(tmpl.cdr.car, pvars, out)
+            collect_binding_intros(tmpl.cdr.cdr, pvars, out)
+         return
+      if hname in ('let', 'let*', 'letrec', 'letrec*'):
+         if is_cons(tmpl.cdr):
+            second = tmpl.cdr.car
+            body_start = tmpl.cdr.cdr
+            bindings = second
+            if hname == 'let' and is_symbol(second):
+               name = as_symbol(second)
+               if name not in pvars:
+                  out.add(name)
+               if is_cons(body_start):
+                  bindings = body_start.car
+                  body_start = body_start.cdr
+               else:
+                  return
+            _cbi_let_bindings(bindings, pvars, out)
+            collect_binding_intros(body_start, pvars, out)
+         return
+      if hname == 'define':
+         if is_cons(tmpl.cdr):
+            nameform = tmpl.cdr.car
+            if is_symbol(nameform):
+               n = as_symbol(nameform)
+               if n not in pvars:
+                  out.add(n)
+            elif is_cons(nameform) and is_symbol(nameform.car):
+               n = as_symbol(nameform.car)
+               if n not in pvars:
+                  out.add(n)
+               _cbi_formals(nameform.cdr, pvars, out)
+            collect_binding_intros(tmpl.cdr.cdr, pvars, out)
+         return
+   collect_binding_intros(tmpl.car, pvars, out)
+   collect_binding_intros(tmpl.cdr, pvars, out)
+
+
+def _cbi_formals(formals, pvars, out):
+   """Collect binding-intro names from a lambda formals list."""
+   cur = formals
+   while is_cons(cur):
+      if is_symbol(cur.car):
+         n = as_symbol(cur.car)
+         if n not in pvars:
+            out.add(n)
+      cur = cur.cdr
+   if is_symbol(cur):
+      n = as_symbol(cur)
+      if n not in pvars:
+         out.add(n)
+
+
+def _cbi_let_bindings(bindings, pvars, out):
+   """Collect binding-intro names from a let/letrec binding list."""
+   cur = bindings
+   while is_cons(cur):
+      b = cur.car
+      if is_cons(b) and is_symbol(b.car):
+         n = as_symbol(b.car)
+         if n not in pvars:
+            out.add(n)
+      cur = cur.cdr
 
 
 # ── Pattern matching ────────────────────────────────────────────────────────
@@ -239,59 +309,38 @@ def _datum_equal(a, b):
    return False
 
 
-def _match_pattern(pat, form, literals, lit_scopes, sc_use, ellipsis_sym, out):
+def _match_pattern(pat, form, literals, ellipsis_sym, out):
    """Match one pattern node against one form node.  Returns True and fills
-   `out`, or False.
-   lit_scopes: dict name -> frozenset (definition-time scope_set of the literal).
-   sc_use: scope id stamped onto the input form for this macro application."""
+   `out`, or False.  Literal matching uses plain string equality: a
+   use-site identifier that has been alpha-renamed will have a gensym name
+   and will not match the literal's plain name."""
    if is_symbol(pat):
       s = as_symbol(pat)
       if s == '_':
          return True
-      # Literal identifier: R7RS free-identifier=?.
-      # Name must match; then both must be bound to the same binding, or
-      # both must be unbound (free).  We consult _active_bound_index to
-      # determine whether each side has a variable binding in scope.
       i = 0
       while i < len(literals):
          if s == literals[i]:
             if not (is_symbol(form) and as_symbol(form) == s):
                return False
-            def_sc  = lit_scopes.get(s, frozenset())
-            use_sc  = as_symbol_scopes(form) - {sc_use}
-            if _active_bound_index is not None:
-               def_bound = _is_identifier_bound(s, def_sc, _active_bound_index)
-               use_bound = _is_identifier_bound(s, use_sc, _active_bound_index)
-               if def_bound != use_bound:
-                  return False
-               if not def_bound:
-                  return True   # both free -> free-identifier=? succeeds
-               # Both bound: fall through to scope-set equality as tiebreak.
-            return use_sc == def_sc
+            return True
          i = i + 1
-      # Pattern variable: bind (strip sc_use to prevent scope accumulation
-      # across recursive macro applications).
-      out.scalars[s] = strip_scope_from_form(form, sc_use)
+      out.scalars[s] = form
       return True
    if is_cons(pat):
-      return _match_list_pattern(pat, form, literals, lit_scopes,
-                                 sc_use, ellipsis_sym, out)
+      return _match_list_pattern(pat, form, literals, ellipsis_sym, out)
    if is_vector(pat):
       if not is_vector(form):
          return False
       return _match_vector_pattern(as_vector_items(pat), as_vector_items(form),
-                                   literals, lit_scopes, sc_use, ellipsis_sym,
-                                   out)
+                                   literals, ellipsis_sym, out)
    if is_nil(pat):
       return is_nil(form)
-   # Literal datum (number, string, etc.).
    return _datum_equal(pat, form)
 
 
-def _match_list_pattern(pat_list, form_list, literals, lit_scopes,
-                        sc_use, ellipsis_sym, out):
-   """Match a list-shaped pattern against a list-shaped form.  Handles
-   ellipsis, fixed prefix, and improper (dotted) tail."""
+def _match_list_pattern(pat_list, form_list, literals, ellipsis_sym, out):
+   """Match a list-shaped pattern against a list-shaped form."""
    while is_cons(pat_list):
       pat_elem = pat_list.car
       pat_rest = pat_list.cdr
@@ -317,8 +366,8 @@ def _match_list_pattern(pat_list, form_list, literals, lit_scopes,
          i = 0
          while i < n_ellipsis:
             sub = _SyntaxMatch()
-            if not _match_pattern(pat_elem, form_vec[i], literals, lit_scopes,
-                                   sc_use, ellipsis_sym, sub):
+            if not _match_pattern(pat_elem, form_vec[i], literals,
+                                   ellipsis_sym, sub):
                return False
             for k in sub.scalars:
                out.ellipsis[k].append(sub.scalars[k])
@@ -331,11 +380,11 @@ def _match_list_pattern(pat_list, form_list, literals, lit_scopes,
             suffix_form = alloc_cons(form_vec[j], suffix_form)
             j = j - 1
          return _match_list_pattern(suffix_pat, suffix_form, literals,
-                                    lit_scopes, sc_use, ellipsis_sym, out)
+                                    ellipsis_sym, out)
       if not is_cons(form_list):
          return False
-      if not _match_pattern(pat_elem, form_list.car, literals, lit_scopes,
-                             sc_use, ellipsis_sym, out):
+      if not _match_pattern(pat_elem, form_list.car, literals,
+                             ellipsis_sym, out):
          return False
       pat_list = pat_rest
       form_list = form_list.cdr
@@ -348,15 +397,13 @@ def _match_list_pattern(pat_list, form_list, literals, lit_scopes,
          if s == literals[i]:
             return False
          i = i + 1
-      out.scalars[s] = strip_scope_from_form(form_list, sc_use)
+      out.scalars[s] = form_list
       return True
    return False
 
 
-def _match_vector_pattern(pat_items, form_items, literals, lit_scopes,
-                          sc_use, ellipsis_sym, out):
-   """Match a vector pattern (Python list) against a vector form (Python list).
-   Supports ellipsis and tail patterns identically to _match_list_pattern."""
+def _match_vector_pattern(pat_items, form_items, literals, ellipsis_sym, out):
+   """Match a vector pattern (Python list) against a vector form (Python list)."""
    i = 0
    j = 0
    n_pat  = len(pat_items)
@@ -380,7 +427,7 @@ def _match_vector_pattern(pat_items, form_items, literals, lit_scopes,
          while k < n_ellipsis:
             sub = _SyntaxMatch()
             if not _match_pattern(pat_elem, form_items[j + k], literals,
-                                   lit_scopes, sc_use, ellipsis_sym, sub):
+                                   ellipsis_sym, sub):
                return False
             for key in sub.scalars:
                out.ellipsis[key].append(sub.scalars[key])
@@ -392,8 +439,8 @@ def _match_vector_pattern(pat_items, form_items, literals, lit_scopes,
          continue
       if j >= n_form:
          return False
-      if not _match_pattern(pat_elem, form_items[j], literals, lit_scopes,
-                             sc_use, ellipsis_sym, out):
+      if not _match_pattern(pat_elem, form_items[j], literals,
+                             ellipsis_sym, out):
          return False
       i = i + 1
       j = j + 1
@@ -403,8 +450,7 @@ def _match_vector_pattern(pat_items, form_items, literals, lit_scopes,
 # ── Template instantiation ──────────────────────────────────────────────────
 
 def _collect_ell_refs(tmpl, match, out):
-   """Find all ellipsis-bound pvars referenced in a template sub-element.
-   `out` is a Python list; may contain duplicates (caller doesn't care)."""
+   """Find all ellipsis-bound pvars referenced in a template sub-element."""
    if is_symbol(tmpl):
       s = as_symbol(tmpl)
       if s in match.ellipsis:
@@ -418,48 +464,47 @@ def _collect_ell_refs(tmpl, match, out):
          _collect_ell_refs(item, match, out)
 
 
-def _instantiate(tmpl, match, ellipsis_sym, use_src, sc_intro):
-   """Expand a template sub-expression against match bindings.  use_src
-   is the macro use-site source position; new cons cells synthesized
-   from the template carry this src so downstream errors point at the
-   user's macro call rather than nowhere.  sc_intro is the per-application
-   introduction scope (R7RS / Flatt 2016): every template-original
-   identifier is tagged with sc_intro at emission time, distinguishing
-   this application's introduced ids from any other application's.
-   Pattern-variable substitutions pass through untouched -- they
-   already carry the user's scope sets."""
+def _instantiate(tmpl, match, ellipsis_sym, use_src, free_id_map):
+   """Expand a template sub-expression against match bindings.
+
+   free_id_map - per-transformer map: free_id -> gensym_alias (bound at def time)
+
+   Template symbols not in match or free_id_map are emitted as-is: binding-site
+   symbols (like `t` in `(let ((t e)) ...)`) are renamed by the Expander when it
+   processes the expanded form; call-position symbols (like recursive macro refs)
+   resolve in the use-site environment as expected.
+
+   use_src is carried to synthesized cons cells."""
    if is_symbol(tmpl):
       s = as_symbol(tmpl)
       if s in match.scalars:
          return match.scalars[s]
-      return symbol_add_scope(tmpl, sc_intro)
+      if s in free_id_map:
+         return make_symbol(free_id_map[s], src_of(tmpl))
+      return tmpl
    if is_cons(tmpl):
       # R7RS §4.3.2 escape: (ellipsis inner) disables ellipsis inside inner.
-      # Expand inner substituting pvars normally but treating ... as a datum.
+      # This takes priority over quote so '(... ...) in a template yields '...
       if (_is_ellipsis(tmpl.car, ellipsis_sym)
             and is_cons(tmpl.cdr) and is_nil(tmpl.cdr.cdr)):
          return _instantiate(tmpl.cdr.car, match,
-                             '\x00no-ellipsis\x00', use_src, sc_intro)
-      # R7RS §4.3.2 syntax-error: instantiate args, raise at expansion time.
+                             '\x00no-ellipsis\x00', use_src, free_id_map)
       if is_symbol(tmpl.car) and as_symbol(tmpl.car) == 'syntax-error':
-         _raise_syntax_error(tmpl.cdr, match, ellipsis_sym, use_src, sc_intro)
-      return _instantiate_list(tmpl, match, ellipsis_sym, use_src, sc_intro)
+         _raise_syntax_error(tmpl.cdr, match, ellipsis_sym, use_src, free_id_map)
+      return _instantiate_list(tmpl, match, ellipsis_sym, use_src, free_id_map)
    if is_vector(tmpl):
       return _instantiate_vector(as_vector_items(tmpl), match,
-                                 ellipsis_sym, use_src, sc_intro)
+                                 ellipsis_sym, use_src, free_id_map)
    return tmpl
 
 
-def _raise_syntax_error(args_tail, match, ellipsis_sym, use_src, sc_intro):
-   """Implement R7RS 4.3.2 (syntax-error <message> <args>...).
-   First arg must be a literal string after instantiation; remaining
-   args (if any) are appended to the message in their datum form."""
+def _raise_syntax_error(args_tail, match, ellipsis_sym, use_src, free_id_map):
    from pyscheme.Parser import SchemeSyntaxError
    from pyscheme.PrettyPrinter import pretty_print
    args = []
    cur = args_tail
    while is_cons(cur):
-      args.append(_instantiate(cur.car, match, ellipsis_sym, use_src, sc_intro))
+      args.append(_instantiate(cur.car, match, ellipsis_sym, use_src, free_id_map))
       cur = cur.cdr
    if args and is_string(args[0]):
       msg = as_string(args[0])
@@ -481,8 +526,7 @@ def _raise_syntax_error(args_tail, match, ellipsis_sym, use_src, sc_intro):
    raise SchemeSyntaxError(msg, use_src)
 
 
-def _instantiate_vector(tmpl_items, match, ellipsis_sym, use_src, sc_intro):
-   """Instantiate a vector template; returns a fresh vector value."""
+def _instantiate_vector(tmpl_items, match, ellipsis_sym, use_src, free_id_map):
    output = []
    i = 0
    n = len(tmpl_items)
@@ -519,16 +563,16 @@ def _instantiate_vector(tmpl_items, match, ellipsis_sym, use_src, sc_intro):
                      sub.ell_depth[sv] = d - 1
                   j = j + 1
                output.append(_instantiate(elem, sub, ellipsis_sym,
-                                          use_src, sc_intro))
+                                          use_src, free_id_map))
                k = k + 1
          i = i + 2
          continue
-      output.append(_instantiate(elem, match, ellipsis_sym, use_src, sc_intro))
+      output.append(_instantiate(elem, match, ellipsis_sym, use_src, free_id_map))
       i = i + 1
    return make_vector(output)
 
 
-def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src, sc_intro):
+def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src, free_id_map):
    output = []
    cur = tmpl_list
    while is_cons(cur):
@@ -545,7 +589,6 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src, sc_intro):
                sub = _SyntaxMatch()
                for k in match.scalars:
                   sub.scalars[k] = match.scalars[k]
-               # Copy ellipsis bindings, peeling one layer for ell_syms.
                for k in match.ellipsis:
                   sub.ellipsis[k] = match.ellipsis[k]
                   sub.ell_depth[k] = match.ell_depth.get(k, 0)
@@ -565,24 +608,16 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src, sc_intro):
                      sub.ell_depth[sv] = d - 1
                   j = j + 1
                output.append(_instantiate(elem, sub, ellipsis_sym,
-                                          use_src, sc_intro))
+                                          use_src, free_id_map))
                i = i + 1
-         # Zero ellipsis-bound pvars under elem -> zero repetitions.
          cur = rest.cdr
          continue
-      output.append(_instantiate(elem, match, ellipsis_sym, use_src, sc_intro))
+      output.append(_instantiate(elem, match, ellipsis_sym, use_src, free_id_map))
       cur = rest
-   # Handle tail (nil or rest pvar).
    if is_nil(cur):
       tail = NIL_VALUE
-   elif is_symbol(cur):
-      s = as_symbol(cur)
-      if s in match.scalars:
-         tail = match.scalars[s]
-      else:
-         tail = symbol_add_scope(cur, sc_intro)
    else:
-      tail = _instantiate(cur, match, ellipsis_sym, use_src, sc_intro)
+      tail = _instantiate(cur, match, ellipsis_sym, use_src, free_id_map)
    result = tail
    i = len(output) - 1
    while i >= 0:
@@ -593,46 +628,35 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src, sc_intro):
 
 # ── Transformer application ─────────────────────────────────────────────────
 
-def apply_syntax_transformer(t, form, bound_index=None):
+def apply_syntax_transformer(t, form):
    """Try each rule in order; on match, instantiate the template.
-   Raises SchemeSyntaxError if no pattern matches.  bound_index, when
-   supplied by the Expander, is the binding database used for
-   free-identifier=? literal matching.
-
-   Hygiene model (sets-of-scopes, R7RS 4.3 / Flatt 2016, two scopes
-   per use):
-     - parse_syntax_rules tagged every template/literal symbol with
-       t.def_scope at definition time, so def-time free references
-       resolve to def-time bindings via Environment scope-set lookup.
-     - sc_use is a fresh use-site scope added to the input form;
-       pattern variable captures strip it so they carry use-site
-       scopes only.
-     - sc_intro is a fresh introduction scope added to template-
-       original identifiers at instantiation time (in _instantiate).
-       This distinguishes this application's introduced ids from any
-       other application's, so e.g. two same-macro applications
-       introducing the same name produce distinct bindings.
-   No eager def_env substitution is performed."""
-   global _active_bound_index
-   _active_bound_index = bound_index
+   Raises SchemeSyntaxError if no pattern matches."""
    from pyscheme.Parser import SchemeSyntaxError
    literals     = t.literals
-   lit_scopes   = t.literal_bindings   # name -> definition-time scope_set
    ellipsis_sym = t.ellipsis
+   base_map     = t.free_id_map if t.free_id_map is not None else {}
    use_src      = src_of(form)
-   sc_use       = new_scope()
-   sc_intro     = new_scope()
-   scoped_form  = add_scope_to_form(form, sc_use)
+   # Per-application gensym for intro_names in binding positions: ensures
+   # macro-introduced binders don't capture same-named use-site variables.
+   binding_intros = getattr(t, 'binding_intro_names', None)
+   if binding_intros:
+      free_id_map = dict(base_map)
+      for iname in binding_intros:
+         if iname not in free_id_map:
+            free_id_map[iname] = hygiene_gensym(iname)
+   else:
+      free_id_map = base_map
+   form_tail = form.cdr if is_cons(form) else NIL_VALUE
    i = 0
    while i < len(t.rules):
       pattern  = t.rules[i][0]
       template = t.rules[i][1]
       if is_cons(pattern):
-         match     = _SyntaxMatch()
-         form_tail = scoped_form.cdr if is_cons(scoped_form) else NIL_VALUE
-         if _match_list_pattern(pattern.cdr, form_tail, literals, lit_scopes,
-                                sc_use, ellipsis_sym, match):
-            return _instantiate(template, match, ellipsis_sym, use_src, sc_intro)
+         match = _SyntaxMatch()
+         if _match_list_pattern(pattern.cdr, form_tail, literals,
+                                ellipsis_sym, match):
+            return _instantiate(template, match, ellipsis_sym, use_src,
+                                free_id_map)
       i = i + 1
    raise SchemeSyntaxError(
       "syntax-rules: no matching pattern for '" + t.name + "'", use_src)
@@ -641,24 +665,22 @@ def apply_syntax_transformer(t, form, bound_index=None):
 # ── Parse (syntax-rules [ellipsis] (literals) rules...) ─────────────────────
 
 def parse_syntax_rules(tail, def_env, name):
-   """Parse a syntax-rules body into a SyntaxTransformer.  `tail` is the
-   cdr of the (syntax-rules ...) form.  Allocates a fresh def_scope and
-   tags every symbol in tail with it; this is the sets-of-scopes hygiene
-   marker that lets def-time bindings be found at the use site via
-   scope-set lookup, replacing the older eager def_env substitution."""
+   """Parse a syntax-rules body into a SyntaxTransformer.
+
+   def_env is a flat dict snapshot of the current runtime env (name->value).
+   For each free template identifier:
+     - If found in def_env: create a gensym alias, bind alias->def_value in
+       the runtime env, store in free_id_map.
+     - If not found: add to intro_names (introduced binding sites)."""
    from pyscheme.Parser import SchemeSyntaxError
    if not is_cons(tail):
       raise SchemeSyntaxError('syntax-rules: malformed', src_of(tail))
-   def_scope = new_scope()
-   tail = add_scope_to_form(tail, def_scope)
    ellipsis_sym = '...'
    first = tail.car
    rest = tail.cdr
-   # Optional custom ellipsis: (syntax-rules my-dots (literals) rules...)
    if is_symbol(first) and is_cons(rest):
       second = rest.car
       if is_nil(second) or is_cons(second):
-         # Treat first as custom ellipsis identifier.
          ellipsis_sym = as_symbol(first)
          lit_list = second
          rules_list = rest.cdr
@@ -681,20 +703,9 @@ def parse_syntax_rules(tail, def_env, name):
             src_of(cur.car))
       literals.append(lit_name)
       cur = cur.cdr
-   # Capture definition-time scope_set for each literal (for free-identifier=?).
-   # R7RS: a literal matches if the use-site identifier has the same name AND
-   # resolves to the same binding (i.e., same scope context).  We store the
-   # literal symbol's scope_set as parsed; at match time we compare against
-   # the form symbol's scope_set minus sc_use.
-   lit_scope_map = {}
-   cur2 = lit_list
-   for lit in literals:
-      if is_cons(cur2):
-         lit_scope_map[lit] = as_symbol_scopes(cur2.car)
-         cur2 = cur2.cdr
-      else:
-         lit_scope_map[lit] = frozenset()
    rules = []
+   pvars_union = set()
+   templates = []
    cur = rules_list
    while is_cons(cur):
       rule = cur.car
@@ -702,15 +713,54 @@ def parse_syntax_rules(tail, def_env, name):
          raise SchemeSyntaxError(
             'syntax-rules: each rule must be (pattern template)',
             src_of(rule))
-      pattern = rule.car
+      pattern  = rule.car
       template = rule.cdr.car
+      pvars = set()
+      if is_cons(pattern):
+         collect_pvars(pattern.cdr, literals, ellipsis_sym, pvars)
+      pvars_union = pvars_union | pvars
       rules.append((pattern, template))
+      templates.append((template, pvars))
       cur = cur.cdr
-   # def_env retained for backward-compat only; sets-of-scopes hygiene now
-   # uses def_scope to resolve def-time bindings via Environment lookup.
-   return make_syntax_transformer(name, literals, ellipsis_sym, rules,
-                                  dict(def_env) if def_env is not None else {},
-                                  lit_scope_map, def_scope)
+   # Collect all free identifiers across all templates.
+   free_ids = set()
+   for tmpl, pvars in templates:
+      collect_free_ids(tmpl, pvars, literals, ellipsis_sym, free_ids)
+   # Collect binding-position intro names (need per-application gensym).
+   binding_intros = set()
+   for tmpl, pvars in templates:
+      collect_binding_intros(tmpl, pvars, binding_intros)
+   # Build free_id_map and intro_names from def_env.
+   free_id_map = {}
+   intro_names = set()
+   if def_env is not None:
+      for fid in free_ids:
+         if fid in def_env:
+            gs = hygiene_gensym(fid)
+            free_id_map[fid] = gs
+         else:
+            intro_names.add(fid)
+   else:
+      for fid in free_ids:
+         intro_names.add(fid)
+   # binding_intro_names = intro_names that appear in binding positions.
+   binding_intro_names = intro_names & binding_intros
+   # Bind each free_id alias in the GLOBAL runtime env so the alias persists
+   # past any temporary body-scan child envs and is accessible at eval time.
+   if free_id_map and def_env is not None:
+      try:
+         from pyscheme.Expander import get_runtime_env
+         env = get_runtime_env()
+         if env is not None:
+            global_env = env.getGlobalEnv()
+            for fid, gs in free_id_map.items():
+               global_env.bind(gs, def_env[fid])
+      except ImportError:
+         pass
+   t = make_syntax_transformer(name, literals, ellipsis_sym, rules,
+                               free_id_map, intro_names)
+   t.binding_intro_names = binding_intro_names
+   return t
 
 
 # ── Self-test ──────────────────────────────────────────────────────────────
@@ -731,27 +781,34 @@ if __name__ == '__main__':
          n_fail = n_fail + 1
 
    # Pattern matching: literal symbol.
-   # Both lit_scopes and form scope_sets are frozenset() in test context ->
-   # (frozenset() - {0}) == frozenset() -> match.
    pat = parse_one('(foo bar)')
    form = parse_one('(foo bar)')
    m = _SyntaxMatch()
-   ok = _match_list_pattern(pat.cdr, form.cdr, ['bar'], {}, 0, '...', m)
-   check('literal matches',  ok)
+   ok = _match_list_pattern(pat.cdr, form.cdr, ['bar'], '...', m)
+   check('literal matches', ok)
 
    # Pattern variable capture.
    pat = parse_one('(foo x)')
    form = parse_one('(foo 42)')
    m = _SyntaxMatch()
-   ok = _match_list_pattern(pat.cdr, form.cdr, [], {}, 0, '...', m)
-   check('pvar matches',  ok)
-   check('pvar bound',    'x' in m.scalars)
+   ok = _match_list_pattern(pat.cdr, form.cdr, [], '...', m)
+   check('pvar matches', ok)
+   check('pvar bound', 'x' in m.scalars)
+
+   # Literal mismatch due to alpha-rename: gensym name != literal name.
+   pat = parse_one('(foo bar)')
+   form_sym = make_symbol('\x01h.bar.99', None)
+   from pyscheme.AST import alloc_cons, NIL_VALUE
+   renamed_form = alloc_cons(parse_one('foo'), alloc_cons(form_sym, NIL_VALUE, None), None)
+   m2 = _SyntaxMatch()
+   ok2 = _match_list_pattern(pat.cdr, renamed_form.cdr, ['bar'], '...', m2)
+   check('renamed literal does not match', not ok2)
 
    # Ellipsis.
    pat = parse_one('(foo x ...)')
    form = parse_one('(foo 1 2 3)')
    m = _SyntaxMatch()
-   ok = _match_list_pattern(pat.cdr, form.cdr, [], {}, 0, '...', m)
+   ok = _match_list_pattern(pat.cdr, form.cdr, [], '...', m)
    check('ellipsis matches', ok)
    check('ellipsis depth 1', m.ell_depth.get('x') == 1)
    check('ellipsis count 3', len(m.ellipsis.get('x', [])) == 3)
@@ -759,23 +816,21 @@ if __name__ == '__main__':
    # parse_syntax_rules.
    body = parse_one('(() ((_ a b) (cons a b)))')
    t = parse_syntax_rules(body, {}, 'mymacro')
-   check('parsed no literals',   t.literals == [])
-   check('parsed one rule',      len(t.rules) == 1)
-   check('default ellipsis',     t.ellipsis == '...')
+   check('parsed no literals', t.literals == [])
+   check('parsed one rule', len(t.rules) == 1)
+   check('default ellipsis', t.ellipsis == '...')
+   check('cons in intro_names', 'cons' in t.intro_names)
 
    # Apply a simple transformer.
    body2 = parse_one('(() ((_ a b) (list a b)))')
    t2 = parse_syntax_rules(body2, {}, 'pair-up')
    form2 = parse_one('(pair-up 1 2)')
    result = apply_syntax_transformer(t2, form2)
-   # result should be (list 1 2) with 'list' gensym-renamed (unbound in def_env).
-   # So it's ((gensym-for-list) 1 2).  Verify the shape.
-   check('expansion is cons',    is_cons(result))
-   check('expansion arity 3',    _list_length_approx(result) == 3)
-   # The first element is a renamed 'list' symbol.
-   check('first is symbol',      is_symbol(result.car))
-   check('second is 1',          is_integer(result.cdr.car) and as_integer(result.cdr.car) == 1)
-   check('third is 2',           is_integer(result.cdr.cdr.car) and as_integer(result.cdr.cdr.car) == 2)
+   check('expansion is cons', is_cons(result))
+   check('expansion arity 3', _list_length_approx(result) == 3)
+   check('first is renamed list symbol', is_symbol(result.car))
+   check('second is 1', is_integer(result.cdr.car) and as_integer(result.cdr.car) == 1)
+   check('third is 2', is_integer(result.cdr.cdr.car) and as_integer(result.cdr.cdr.car) == 2)
 
    print()
    print('%d passed, %d failed' % (n_pass, n_fail))
