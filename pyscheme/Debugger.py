@@ -31,9 +31,10 @@ class _RestartRd(Exception):
 
 # ── ANSI helpers ─────────────────────────────────────────────────────────
 
-_BOLD  = '\033[1m'
-_DIM   = '\033[2m'
-_RESET = '\033[0m'
+_ANSI  = sys.stdout.isatty()
+_BOLD  = '\033[1m' if _ANSI else ''
+_DIM   = '\033[2m' if _ANSI else ''
+_RESET = '\033[0m' if _ANSI else ''
 
 
 # ── Default break-on set ─────────────────────────────────────────────────
@@ -112,19 +113,16 @@ class Debugger:
             break
          names_in_scope = []
          for name in current._bindings:
-            entries = current._bindings[name]
-            if len(entries) > 0:
-               val = entries[0][1]
-               if not Debugger._is_callable(val):
-                  names_in_scope.append(name)
+            val = current._bindings[name]
+            if not Debugger._is_callable(val):
+               names_in_scope.append(name)
          if names_in_scope:
             names_in_scope.sort()
             print('--- scope ' + str(scope_num) + ' ---')
             i = 0
             while i < len(names_in_scope):
                name = names_in_scope[i]
-               val  = current._bindings[name][0][1]
-               print(name + ':   ' + pretty_print(val))
+               print(name + ':   ' + pretty_print(current._bindings[name]))
                i = i + 1
             scope_num = scope_num + 1
          current = current._parent
@@ -135,7 +133,7 @@ class Debugger:
       while i < len(names):
          name = names[i]
          try:
-            val = env.lookup(name, frozenset())
+            val = env.lookup(name)
             print(name + ':   ' + pretty_print(val))
          except SchemeUnboundError:
             print(name + ':   <unbound>')
@@ -785,7 +783,7 @@ class Debugger:
          return
       fn_name = rest.strip()
       try:
-         fn = env.lookup(fn_name, frozenset())
+         fn = env.lookup(fn_name)
       except SchemeUnboundError:
          print(fn_name + ' is not defined.')
          return
@@ -979,7 +977,7 @@ class Debugger:
          fn_name = entry[3]
          fn_obj  = entry[4]
          try:
-            current_fn = env.lookup(fn_name, frozenset())
+            current_fn = env.lookup(fn_name)
          except SchemeUnboundError:
             current_fn = None
          if current_fn is not fn_obj:
@@ -1024,7 +1022,7 @@ class Debugger:
          print('Cannot resolve inner breakpoint without an environment.')
          return
       try:
-         fn = env.lookup(fn_name, frozenset())
+         fn = env.lookup(fn_name)
       except SchemeUnboundError:
          print(fn_name + ' is not defined.')
          return
@@ -1302,9 +1300,12 @@ class Debugger:
                   continue
                return 'abort'
 
-            if self._dispatch(line, ctx, env):
-               pass
-            else:
+            try:
+               handled = self._dispatch(line, ctx, env)
+            except Exception as e:
+               print('%%% internal debugger error: ' + str(e))
+               continue
+            if not handled:
                print('Unknown command.  Type h for help.')
       finally:
          self._swap_history_out()

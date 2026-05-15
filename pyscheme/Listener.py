@@ -936,6 +936,9 @@ class Listener:
             self._interp.reboot(load_rc=False)
             base   = os.path.basename(filename)
             padded = base.ljust(40)
+            # Name and status are intentionally two separate print calls.
+            # Name flushes before the test runs so the user sees progress;
+            # status completes the same line after.  Do not merge into one print.
             print(padded + ' ', end='', flush=True, file=savedStdout)
             if runFile is not None:
                sys.stdout = runFile

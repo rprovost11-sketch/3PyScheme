@@ -20,7 +20,15 @@ The Python source is structured as a 1:1 prototype for a C11/C++17 port.
 ## Requirements
 
 - Python 3.10+
-- No third-party dependencies
+- No third-party dependencies (pyscheme interpreter)
+- `tkinter` required for cherry GUI (included in standard Python on Windows and
+  macOS; on Linux install the system package, e.g. `sudo apt install python3-tk`)
+
+## Portability
+
+Both pyscheme and cherry target Python 3.10+ and are tested on Windows, Linux,
+and macOS.  cherry uses only tkinter from the standard library and no
+platform-specific APIs.
 
 ## Installation
 

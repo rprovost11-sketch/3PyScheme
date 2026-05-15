@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyscheme"
+dynamic = ["version"]
+description = "R7RS Scheme interpreter implemented as a CEK machine"
+license = { file = "LICENSE" }
+authors = [{ name = "Ron Provost/Longo", email = "rprovost11@gmail.com" }]
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Scheme",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Interpreters",
+]
+
+[project.urls]
+Homepage = "https://github.com/rprovost11/pyscheme"
+Repository = "https://github.com/rprovost11/pyscheme"
+
+[project.scripts]
+pyscheme = "pyscheme.__main__:main"
+cherry   = "pyscheme.cherry.app:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "pyscheme.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pyscheme*"]
+
+[tool.setuptools.package-data]
+"pyscheme" = [
+    "help/*.txt",
+    "help/reference/*.txt",
+    "help/tutorial/*.txt",
+]

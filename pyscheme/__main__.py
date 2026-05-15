@@ -6,6 +6,7 @@ Run with:
     python -m pyscheme <file.scm>         # evaluate the file, then exit
 """
 import os
+import signal
 import sys
 
 from pyscheme            import __version__
@@ -14,6 +15,8 @@ from pyscheme.Listener    import Listener
 
 
 def main():
+   if hasattr(signal, 'SIGBREAK'):
+      signal.signal(signal.SIGBREAK, signal.default_int_handler)
    argc = len(sys.argv)
    if argc > 2:
       print('Usage: python -m pyscheme [<directory> | <scheme-source-file>]',
