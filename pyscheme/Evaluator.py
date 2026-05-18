@@ -646,11 +646,7 @@ def _is_aux_keyword(sym, name, env):
       return False
    if env is None:
       return True
-   try:
-      env.lookup(name)
-   except SchemeUnboundError:
-      return True
-   return False
+   return env.lookup_optional(name) is None
 
 
 def _classify_cond_clause(clause, env=None):
