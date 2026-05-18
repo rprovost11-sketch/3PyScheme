@@ -9,6 +9,7 @@ from Environment - putting the errors here avoids a circular import.
 from pyscheme.AST import (
    SourceInfo, ConsCell, format_with_caret,
    make_error_object, make_file_error_object,
+   intern_symbol, symbol_name,
 )
 
 
@@ -143,8 +144,9 @@ def arity_mismatch_msg(name, lo, hi, n_provided):
 _GENSYM_PFX = '\x01h.'
 
 
-def _display_name(name):
+def _display_name(sid: int) -> str:
    """Strip hygiene gensym prefix for error messages.  \x01h.BASE.DIGITS -> BASE."""
+   name = symbol_name(sid)
    if not name.startswith(_GENSYM_PFX):
       return name
    rest = name[len(_GENSYM_PFX):]
@@ -162,7 +164,7 @@ class Environment:
       self._bindings = {}
       if initialBindings is not None:
          for k in initialBindings:
-            self._bindings[k] = initialBindings[k]
+            self._bindings[intern_symbol(k)] = initialBindings[k]
       self._parent = parent
       self._is_immutable = False
       if parent is None:
@@ -170,11 +172,19 @@ class Environment:
       else:
          self._global_env = parent._global_env
 
-   def bind(self, key, value):
+   def bind(self, key: str, value):
+      sid = intern_symbol(key)
       if self._is_immutable:
          raise SchemeTypeError(
-            "cannot define '" + _display_name(key) + "' in a frozen environment")
-      self._bindings[key] = value
+            "cannot define '" + _display_name(sid) + "' in a frozen environment")
+      self._bindings[sid] = value
+      return value
+
+   def bind_id(self, sid: int, value):
+      if self._is_immutable:
+         raise SchemeTypeError(
+            "cannot define '" + _display_name(sid) + "' in a frozen environment")
+      self._bindings[sid] = value
       return value
 
    def freeze(self):
@@ -186,29 +196,70 @@ class Environment:
    def getGlobalEnv(self):
       return self._global_env
 
-   def lookup(self, key):
+   def lookup(self, key: str):
       """Walk the parent chain; return the value of the first binding found.
       Raises SchemeUnboundError if no binding is found."""
+      sid = intern_symbol(key)
       scope = self
       while scope:
-         if key in scope._bindings:
-            return scope._bindings[key]
+         if sid in scope._bindings:
+            return scope._bindings[sid]
          scope = scope._parent
-      raise SchemeUnboundError('unbound variable: ' + _display_name(key))
+      raise SchemeUnboundError('unbound variable: ' + _display_name(sid))
 
-   def set(self, key, value):
+   def lookup_id(self, sid: int):
+      scope = self
+      while scope:
+         if sid in scope._bindings:
+            return scope._bindings[sid]
+         scope = scope._parent
+      raise SchemeUnboundError('unbound variable: ' + _display_name(sid))
+
+   def lookup_optional(self, key: str):
+      """Walk the parent chain; return value or None if not found."""
+      sid = intern_symbol(key)
+      scope = self
+      while scope:
+         if sid in scope._bindings:
+            return scope._bindings[sid]
+         scope = scope._parent
+      return None
+
+   def lookup_optional_id(self, sid: int):
+      """Walk the parent chain; return value or None if not found."""
+      scope = self
+      while scope:
+         if sid in scope._bindings:
+            return scope._bindings[sid]
+         scope = scope._parent
+      return None
+
+   def set(self, key: str, value):
       """Update the nearest binding of key.  Raises SchemeUnboundError if
       no binding is found; raises SchemeTypeError if the owning scope is frozen."""
+      sid = intern_symbol(key)
       scope = self
       while scope:
-         if key in scope._bindings:
+         if sid in scope._bindings:
             if scope._is_immutable:
                raise SchemeTypeError(
-                  "set! on '" + _display_name(key) + "' in a frozen environment")
-            scope._bindings[key] = value
+                  "set! on '" + _display_name(sid) + "' in a frozen environment")
+            scope._bindings[sid] = value
             return value
          scope = scope._parent
-      raise SchemeUnboundError('set! on unbound variable: ' + _display_name(key))
+      raise SchemeUnboundError('set! on unbound variable: ' + _display_name(sid))
+
+   def set_id(self, sid: int, value):
+      scope = self
+      while scope:
+         if sid in scope._bindings:
+            if scope._is_immutable:
+               raise SchemeTypeError(
+                  "set! on '" + _display_name(sid) + "' in a frozen environment")
+            scope._bindings[sid] = value
+            return value
+         scope = scope._parent
+      raise SchemeUnboundError('set! on unbound variable: ' + _display_name(sid))
 
 
 # --- Module self-test --------------------------------------------------
@@ -257,7 +308,7 @@ if __name__ == '__main__':
    # set walks up and updates nearest binding.
    child.set('b', 222)
    check('set updates parent b',      e0.lookup('b') == 222)
-   check('child has no b binding',    'b' not in child._bindings)
+   check('child has no b binding',    intern_symbol('b') not in child._bindings)
 
    # Rebind same key overwrites.
    e0.bind('x', 'first')

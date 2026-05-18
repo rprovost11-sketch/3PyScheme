@@ -25,6 +25,7 @@ from pyscheme.AST import (
    as_string, as_symbol,
    as_closure_params, as_closure_rest_name, as_closure_docstring,
    as_primitive_name,
+   intern_symbol, symbol_name,
    VOID_VALUE,
 )
 from pyscheme.Environment import SchemeTypeError
@@ -221,10 +222,9 @@ def _collect_primitives_by_category():
 def _collect_closures(global_env):
    """Return a sorted list of the names bound to closure values in env."""
    closures = []
-   for name in global_env._bindings:
-      val = global_env.lookup(name)
+   for sid, val in global_env._bindings.items():
       if is_closure(val):
-         closures.append(name)
+         closures.append(symbol_name(sid))
    closures.sort()
    return closures
 
@@ -426,7 +426,8 @@ def _show_topic(ctx, name):
 def _collect_matching_names(global_env, lo):
    """Names in global_env whose lowercase form contains lo."""
    result = []
-   for name in global_env._bindings:
+   for sid in global_env._bindings:
+      name = symbol_name(sid)
       if lo in name.lower():
          result.append(name)
    result.sort()
@@ -490,9 +491,9 @@ def _apropos(ctx, env, pattern):
 
 def _find_closure_name(global_env, closure):
    """Find the first global name bound to `closure` (by identity)."""
-   for name in global_env._bindings:
-      if global_env.lookup(name) is closure:
-         return name
+   for sid, val in global_env._bindings.items():
+      if val is closure:
+         return symbol_name(sid)
    return None
 
 
@@ -527,7 +528,7 @@ def _prim_help(ctx, env, args, app_node):
    if is_symbol(target):
       name = as_symbol(target)
       global_env = env.getGlobalEnv()
-      if name not in global_env._bindings:
+      if intern_symbol(name) not in global_env._bindings:
          ctx.outStrm.write("No binding for '" + name + "'.\n")
          return VOID_VALUE
       val = global_env.lookup(name)

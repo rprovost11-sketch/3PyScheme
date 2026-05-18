@@ -29,7 +29,7 @@ from pyscheme.AST import (
    as_parameter_value, as_parameter_converter, set_parameter_value,
    as_error_object_message, as_error_object_irritants,
    is_file_error_object, is_read_error_object,
-   alloc_cons, make_symbol,
+   alloc_cons, make_symbol, symbol_name,
    make_record_type, make_record, make_parameter, make_string,
    make_environment, make_record_accessor, make_record_mutator,
    make_boolean, make_real, list_from_items, src_of,
@@ -126,8 +126,8 @@ def _prim_environment(ctx, env, args, app_node):
          raise SchemeTypeError(
             'environment: library not found: ' + pretty_print(spec),
             app_node)
-      for n in lib_env._bindings:
-         result.bind(n, lib_env.lookup(n))
+      for sid, val in lib_env._bindings.items():
+         result.bind(symbol_name(sid), val)
       i = i + 1
    result.freeze()
    return make_environment(result)

@@ -25,7 +25,7 @@ from pyscheme.Expander      import expand
 from pyscheme.Analyzer      import (
    analyze, SchemeAnalysisError, extend_static_env_with_define,
 )
-from pyscheme.Evaluator          import cek_eval, clear_shadow_stack, set_global_env
+from pyscheme.Evaluator          import cek_eval, set_global_env
 from pyscheme.primitives.ports   import reset_current_port_params
 from pyscheme.primitives    import install_primitives, PRIMITIVE_ARITIES
 from pyscheme.Environment   import Environment, SchemeRuntimeError
@@ -104,7 +104,7 @@ class Interpreter(InterpreterBase):
       prev_out = self._ctx.outStrm
       if outStrm is not None:
          self._ctx.outStrm = outStrm
-      clear_shadow_stack()
+      self._ctx.shadow_stack.clear()
       try:
          forms = parse(source, filename)
          last  = None

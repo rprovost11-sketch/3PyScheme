@@ -6,7 +6,7 @@ the small-integer numeric predicates (zero?, positive?, ...).
 """
 
 import math as _math
-from fractions import Fraction
+from pyscheme.rational import _Rat
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
@@ -89,7 +89,7 @@ def _num_or_error(v, name, app_node):
    if is_integer(v):
       return as_integer(v)
    if is_rational(v):
-      return Fraction(as_rational_num(v), as_rational_den(v))
+      return _Rat(as_rational_num(v), as_rational_den(v))
    if is_real(v):
       return as_real(v)
    if is_complex(v) and as_complex_imag(v) == 0.0:
@@ -100,7 +100,7 @@ def _num_or_error(v, name, app_node):
          re = as_exact_complex_real(v)
          if is_integer(re):
             return as_integer(re)
-         return Fraction(as_rational_num(re), as_rational_den(re))
+         return _Rat(as_rational_num(re), as_rational_den(re))
    raise SchemeTypeError(
       '%s: argument is not a real number' % name,
       app_node)

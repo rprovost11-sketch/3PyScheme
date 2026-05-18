@@ -60,7 +60,7 @@ Public API:
 """
 import re
 import math as _math
-from fractions import Fraction as _Fraction
+from pyscheme.rational import _Rat
 
 from pyscheme.AST import (
    alloc_cons, NIL_VALUE, SourceInfo, ConsCell, is_cons, is_nil,
@@ -71,6 +71,7 @@ from pyscheme.AST import (
    make_integer, make_real, make_rational, make_complex, make_exact_complex,
    make_string, make_character,
    make_boolean, make_symbol, make_vector, make_bytevector,
+   src_of,
    REAL, RATIONAL, INTEGER, CHARACTER, BOOLEAN, STRING, SYMBOL, NIL,
 )
 from pyscheme.Environment import _PositionedSchemeError
@@ -505,7 +506,7 @@ def _try_parse_prefixed_number(text, src):
          num = int(num_str, radix)
          den = int(den_str, radix)
          if den != 0:
-            frac = _Fraction(num, den)
+            frac = _Rat(num, den)
             if exact == 0:
                return Token(TOK_REAL, float(frac), src)
             return Token(TOK_RATIONAL, (frac.numerator, frac.denominator), src)
@@ -537,7 +538,7 @@ def _try_parse_prefixed_number(text, src):
                   "#e applied to non-finite real %r" % rest, src)
             if f.is_integer():
                return Token(TOK_INT, int(f), src)
-            frac = _Fraction(f)
+            frac = _Rat.from_float(f)
             return Token(TOK_RATIONAL, (frac.numerator, frac.denominator), src)
          return Token(TOK_REAL, f, src)
       except ValueError:
@@ -546,7 +547,7 @@ def _try_parse_prefixed_number(text, src):
 
 
 def _parse_number_for_complex(s):
-   """Parse a complex component string.  Returns int, Fraction, or float.
+   """Parse a complex component string.  Returns int, _Rat, or float.
    Returns None if the string is not a valid number."""
    if s == '+inf.0':
       return float('inf')
@@ -564,7 +565,7 @@ def _parse_number_for_complex(s):
          num = int(_substring(s, 0, slash))
          den = int(_substring(s, slash + 1, len(s)))
          if den != 0:
-            return _Fraction(num, den)
+            return _Rat(num, den)
       except ValueError:
          pass
    try:
@@ -575,12 +576,12 @@ def _parse_number_for_complex(s):
 
 
 def _is_exact_component(v):
-   """True if v (returned by _parse_number_for_complex) is exact (int or Fraction)."""
-   return isinstance(v, int) or isinstance(v, _Fraction)
+   """True if v (returned by _parse_number_for_complex) is exact (int or _Rat)."""
+   return isinstance(v, int) or isinstance(v, _Rat)
 
 
 def _component_to_scheme(v, src):
-   """Wrap an exact complex component (int or Fraction) into a Scheme value."""
+   """Wrap an exact complex component (int or _Rat) into a Scheme value."""
    if isinstance(v, int):
       return make_integer(v, src)
    if v.denominator == 1:
@@ -1010,13 +1011,13 @@ def _strip_src(v):
       return (items, _strip_src(cur))
    if is_nil(v):
       return []
-   if is_integer(v):     return (INTEGER,   as_integer(v))
-   if is_real(v):        return (REAL,      as_real(v))
-   if is_rational(v):    return (RATIONAL,  as_rational_num(v), as_rational_den(v))
+   if is_integer(v):     return make_integer(as_integer(v))
+   if is_real(v):        return make_real(as_real(v))
+   if is_rational(v):    return make_rational(as_rational_num(v), as_rational_den(v))
    if is_string(v):      return make_string(as_string(v))
-   if is_character(v):   return (CHARACTER, as_character(v))
-   if is_boolean(v):     return (BOOLEAN,   as_boolean(v))
-   if is_symbol(v):      return (SYMBOL,    as_symbol(v))
+   if is_character(v):   return make_character(as_character(v))
+   if is_boolean(v):     return make_boolean(as_boolean(v))
+   if is_symbol(v):      return make_symbol(as_symbol(v))
    return v
 
 
@@ -1026,60 +1027,60 @@ if __name__ == '__main__':
 
    happy = [
       # literals
-      ('42',                  (INTEGER, 42)),
-      ('-5',                  (INTEGER, -5)),
-      ('3.14',                (REAL, 3.14)),
-      ('3/4',                 (RATIONAL, 3, 4)),
-      ('#t',                  (BOOLEAN, True)),
-      ('#f',                  (BOOLEAN, False)),
-      ('#\\a',                (CHARACTER, 'a')),
-      ('#\\space',            (CHARACTER, ' ')),
+      ('42',                  make_integer(42)),
+      ('-5',                  make_integer(-5)),
+      ('3.14',                make_real(3.14)),
+      ('3/4',                 make_rational(3, 4)),
+      ('#t',                  make_boolean(True)),
+      ('#f',                  make_boolean(False)),
+      ('#\\a',                make_character('a')),
+      ('#\\space',            make_character(' ')),
       ('"hello"',             make_string('hello')),
 
       # identifiers
-      ('x',                   (SYMBOL, 'x')),
-      ('foo-bar',             (SYMBOL, 'foo-bar')),
-      ('+',                   (SYMBOL, '+')),
-      ('lambda',              (SYMBOL, 'lambda')),
-      ('set!',                (SYMBOL, 'set!')),
+      ('x',                   make_symbol('x')),
+      ('foo-bar',             make_symbol('foo-bar')),
+      ('+',                   make_symbol('+')),
+      ('lambda',              make_symbol('lambda')),
+      ('set!',                make_symbol('set!')),
 
       # lists - no special-form handling
       ('()',                  []),
-      ('(1 2 3)',             [(INTEGER, 1), (INTEGER, 2), (INTEGER, 3)]),
+      ('(1 2 3)',             [make_integer(1), make_integer(2), make_integer(3)]),
       ('(lambda (x) x)',
-         [(SYMBOL, 'lambda'), [(SYMBOL, 'x')], (SYMBOL, 'x')]),
+         [make_symbol('lambda'), [make_symbol('x')], make_symbol('x')]),
       ('(define (f x) x)',
-         [(SYMBOL, 'define'),
-             [(SYMBOL, 'f'), (SYMBOL, 'x')],
-             (SYMBOL, 'x')]),
+         [make_symbol('define'),
+             [make_symbol('f'), make_symbol('x')],
+             make_symbol('x')]),
       ('(if #t 1)',
-         [(SYMBOL, 'if'), (BOOLEAN, True), (INTEGER, 1)]),
+         [make_symbol('if'), make_boolean(True), make_integer(1)]),
       ('(if #t 1 2)',
-         [(SYMBOL, 'if'), (BOOLEAN, True), (INTEGER, 1), (INTEGER, 2)]),
+         [make_symbol('if'), make_boolean(True), make_integer(1), make_integer(2)]),
 
       # nested
       ('((lambda (x) x) 7)',
-         [[(SYMBOL, 'lambda'), [(SYMBOL, 'x')], (SYMBOL, 'x')],
-          (INTEGER, 7)]),
+         [[make_symbol('lambda'), [make_symbol('x')], make_symbol('x')],
+          make_integer(7)]),
 
       # quote shortcut becomes a list
       ("'x",
-         [(SYMBOL, 'quote'), (SYMBOL, 'x')]),
+         [make_symbol('quote'), make_symbol('x')]),
       ("'42",
-         [(SYMBOL, 'quote'), (INTEGER, 42)]),
+         [make_symbol('quote'), make_integer(42)]),
       ("'(a b c)",
-         [(SYMBOL, 'quote'),
-             [(SYMBOL, 'a'), (SYMBOL, 'b'), (SYMBOL, 'c')]]),
+         [make_symbol('quote'),
+             [make_symbol('a'), make_symbol('b'), make_symbol('c')]]),
       ("''x",
-         [(SYMBOL, 'quote'),
-             [(SYMBOL, 'quote'), (SYMBOL, 'x')]]),
+         [make_symbol('quote'),
+             [make_symbol('quote'), make_symbol('x')]]),
 
       # dotted / improper lists
-      ('(a . b)',             ([(SYMBOL, 'a')], (SYMBOL, 'b'))),
-      ('(a b . c)',           ([(SYMBOL, 'a'), (SYMBOL, 'b')], (SYMBOL, 'c'))),
+      ('(a . b)',             ([make_symbol('a')], make_symbol('b'))),
+      ('(a b . c)',           ([make_symbol('a'), make_symbol('b')], make_symbol('c'))),
 
       # comments / whitespace
-      ('  42 ; comment\n',    (INTEGER, 42)),
+      ('  42 ; comment\n',    make_integer(42)),
    ]
 
    print('-- happy path --')
@@ -1157,7 +1158,7 @@ if __name__ == '__main__':
       n_fail = n_fail + 1
 
    foo_atom = expr.car
-   foo_src  = foo_atom[-1]
+   foo_src  = src_of(foo_atom)
    if foo_src is not None and foo_src.line == 1 and foo_src.col == 2:
       print("[ OK ] atom 'foo' src (line 1 col 2)")
       n_pass = n_pass + 1
@@ -1166,7 +1167,7 @@ if __name__ == '__main__':
       n_fail = n_fail + 1
 
    bar_atom = expr.cdr.car
-   bar_src  = bar_atom[-1]
+   bar_src  = src_of(bar_atom)
    if bar_src is not None and bar_src.line == 1 and bar_src.col == 6:
       print("[ OK ] atom 'bar' src (line 1 col 6)")
       n_pass = n_pass + 1
@@ -1184,11 +1185,12 @@ if __name__ == '__main__':
       print("[FAIL] cons filename: expected %r, got %r" % (REPL_FILENAME, rexpr.src))
       n_fail = n_fail + 1
    a_atom = rexpr.car
-   if a_atom[-1] is not None and a_atom[-1].filename == REPL_FILENAME:
+   a_src  = src_of(a_atom)
+   if a_src is not None and a_src.filename == REPL_FILENAME:
       print("[ OK ] atom filename propagated")
       n_pass = n_pass + 1
    else:
-      print("[FAIL] atom filename: expected %r, got %r" % (REPL_FILENAME, a_atom[-1]))
+      print("[FAIL] atom filename: expected %r, got %r" % (REPL_FILENAME, a_src))
       n_fail = n_fail + 1
 
    print()

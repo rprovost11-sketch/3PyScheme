@@ -12,7 +12,7 @@ without changing the API.
 
 import math
 import cmath
-from fractions import Fraction
+from pyscheme.rational import _Rat
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
@@ -43,12 +43,12 @@ class NumResult:
 
 
 def _num(v, name, app_node, i):
-   """Extract a Python real-numeric value (int, Fraction, float).
+   """Extract a Python real-numeric value (int, _Rat, float).
    Raises for non-numeric or complex (complex not valid for ordering ops)."""
    if is_integer(v):
       return as_integer(v)
    if is_rational(v):
-      return Fraction(as_rational_num(v), as_rational_den(v))
+      return _Rat(as_rational_num(v), as_rational_den(v))
    if is_real(v):
       return as_real(v)
    raise SchemeTypeError(
@@ -57,13 +57,13 @@ def _num(v, name, app_node, i):
 
 
 def _any_num(v, name, app_node, i):
-   """Extract a Python numeric value (int, Fraction, float, or complex).
+   """Extract a Python numeric value (int, _Rat, float, or complex).
    Exact complex falls back to a Python complex approximation so that
    transcendentals (exp, sin, sqrt, etc.) still work."""
    if is_integer(v):
       return as_integer(v)
    if is_rational(v):
-      return Fraction(as_rational_num(v), as_rational_den(v))
+      return _Rat(as_rational_num(v), as_rational_den(v))
    if is_real(v):
       return as_real(v)
    if is_complex(v):
@@ -77,14 +77,14 @@ def _any_num(v, name, app_node, i):
 
 
 def _as_exact_component(scheme_val):
-   """Extract an exact complex component (INTEGER or RATIONAL) as Python int or Fraction."""
+   """Extract an exact complex component (INTEGER or RATIONAL) as Python int or _Rat."""
    if is_integer(scheme_val):
       return as_integer(scheme_val)
-   return Fraction(as_rational_num(scheme_val), as_rational_den(scheme_val))
+   return _Rat(as_rational_num(scheme_val), as_rational_den(scheme_val))
 
 
 def _wrap_component(py_val):
-   """Wrap a Python int or Fraction back to a Scheme INTEGER or RATIONAL."""
+   """Wrap a Python int or _Rat back to a Scheme INTEGER or RATIONAL."""
    if isinstance(py_val, int):
       return make_integer(py_val)
    if py_val.denominator == 1:
@@ -94,7 +94,7 @@ def _wrap_component(py_val):
 
 def _extract_complex(v):
    """Decompose any Scheme number into a NumResult(re, im, exact).
-   re and im are Python int/Fraction for exact, float for inexact.
+   re and im are Python int/_Rat for exact, float for inexact.
    Non-complex numbers get im = 0 (exact) or 0.0 (inexact).
    Returns NumResult with re=None for non-numeric input."""
    if is_exact_complex(v):
@@ -106,7 +106,7 @@ def _extract_complex(v):
    if is_integer(v):
       return NumResult(as_integer(v), 0, True)
    if is_rational(v):
-      return NumResult(Fraction(as_rational_num(v), as_rational_den(v)), 0, True)
+      return NumResult(_Rat(as_rational_num(v), as_rational_den(v)), 0, True)
    if is_real(v):
       return NumResult(as_real(v), 0.0, False)
    return NumResult()
@@ -153,7 +153,7 @@ def _wrap(n):
       n = int(n)
    if isinstance(n, int):
       return make_integer(n)
-   if isinstance(n, Fraction):
+   if isinstance(n, _Rat):
       if n.denominator == 1:
          return make_integer(n.numerator)
       return make_rational(n.numerator, n.denominator)
@@ -254,7 +254,7 @@ def _prim_mul(ctx, env, args, app_node):
 def _exact_div(a, b):
    """Divide two numbers.
    - Complex input: use Python complex division.
-   - Both exact (int or Fraction): return exact result (Fraction or int).
+   - Both exact (int or _Rat): return exact result (_Rat or int).
    - Either inexact (float): return float; float zero divisor -> +-inf.
    """
    if isinstance(a, complex) or isinstance(b, complex):
@@ -271,8 +271,8 @@ def _exact_div(a, b):
       return fa / fb
    if isinstance(a, float):
       return a / float(b)
-   # Both exact: use Fraction for exact rational arithmetic.
-   return Fraction(a) / Fraction(b)
+   # Both exact: use _Rat for exact rational arithmetic.
+   return _Rat(a) / _Rat(b)
 
 
 def _complex_div(a, b):
@@ -283,10 +283,10 @@ def _complex_div(a, b):
    bre = b.re
    bim = b.im
    if exact:
-      are = Fraction(are)
-      aim = Fraction(aim)
-      bre = Fraction(bre)
-      bim = Fraction(bim)
+      are = _Rat(are)
+      aim = _Rat(aim)
+      bre = _Rat(bre)
+      bim = _Rat(bim)
    denom = bre * bre + bim * bim
    if denom == 0:
       return NumResult()
@@ -468,14 +468,14 @@ def _prim_expt(ctx, env, args, app_node):
          return _wrap(cb ** exp)
       ce = exp if isinstance(exp, complex) else complex(float(exp))
       return _wrap(_clean_complex(cb ** ce))
-   if isinstance(exp, int) and isinstance(base, (int, Fraction)):
+   if isinstance(exp, int) and isinstance(base, (int, _Rat)):
       if exp >= 0:
-         return _wrap(Fraction(base) ** exp)
+         return _wrap(_Rat(base) ** exp)
       # Negative exact exponent: 1 / base^(-exp)
-      pos = Fraction(base) ** (-exp)
+      pos = _Rat(base) ** (-exp)
       if pos == 0:
          raise SchemeTypeError('expt: division by zero', args[1])
-      return _wrap(Fraction(1, 1) / pos)
+      return _wrap(_Rat(1) / pos)
    fb = float(base)
    fe = float(exp)
    try:
@@ -495,11 +495,11 @@ def _prim_sqrt(ctx, env, args, app_node):
       r = math.isqrt(v)
       if r * r == v:
          return make_integer(r)
-   if isinstance(v, Fraction) and v >= 0:
+   if isinstance(v, _Rat) and v >= 0:
       rn = math.isqrt(v.numerator)
       rd = math.isqrt(v.denominator)
       if rn * rn == v.numerator and rd * rd == v.denominator:
-         return _wrap(Fraction(rn, rd))
+         return _wrap(_Rat(rn, rd))
    fv = float(v)
    if fv == 0.0:
       return make_real(0.0)
@@ -517,7 +517,7 @@ def _prim_floor(ctx, env, args, app_node):
    v = _num(args[0], 'floor', app_node, 1)
    if isinstance(v, int):
       return make_integer(v)
-   if isinstance(v, Fraction):
+   if isinstance(v, _Rat):
       return make_integer(math.floor(v))
    if not math.isfinite(v):
       return make_real(v)
@@ -528,7 +528,7 @@ def _prim_ceiling(ctx, env, args, app_node):
    v = _num(args[0], 'ceiling', app_node, 1)
    if isinstance(v, int):
       return make_integer(v)
-   if isinstance(v, Fraction):
+   if isinstance(v, _Rat):
       return make_integer(math.ceil(v))
    if not math.isfinite(v):
       return make_real(v)
@@ -539,7 +539,7 @@ def _prim_truncate(ctx, env, args, app_node):
    v = _num(args[0], 'truncate', app_node, 1)
    if isinstance(v, int):
       return make_integer(v)
-   if isinstance(v, Fraction):
+   if isinstance(v, _Rat):
       return make_integer(math.trunc(v))
    if not math.isfinite(v):
       return make_real(v)
@@ -550,7 +550,7 @@ def _prim_round(ctx, env, args, app_node):
    v = _num(args[0], 'round', app_node, 1)
    if isinstance(v, int):
       return make_integer(v)
-   if isinstance(v, Fraction):
+   if isinstance(v, _Rat):
       return make_integer(round(v))
    if not math.isfinite(v):
       return make_real(v)
@@ -575,7 +575,7 @@ def _float_to_exact(f, name, app_node):
          '%s: no exact representation for non-finite real' % name, app_node)
    if f.is_integer():
       return make_integer(int(f))
-   frac = Fraction(f)
+   frac = _Rat.from_float(f)
    return make_rational(frac.numerator, frac.denominator)
 
 
@@ -603,7 +603,7 @@ def _prim_inexact(ctx, env, args, app_node):
    if is_integer(v):
       return make_real(float(as_integer(v)))
    if is_rational(v):
-      return make_real(float(Fraction(as_rational_num(v), as_rational_den(v))))
+      return make_real(as_rational_num(v) / as_rational_den(v))
    if is_exact_complex(v):
       re = float(_as_exact_component(as_exact_complex_real(v)))
       im = float(_as_exact_component(as_exact_complex_imag(v)))
@@ -628,7 +628,7 @@ def _prim_numerator(ctx, env, args, app_node):
          return make_real(f)
       if f.is_integer():
          return make_real(f)
-      return make_real(float(Fraction(f).numerator))
+      return make_real(float(_Rat.from_float(f).numerator))
    raise SchemeTypeError('numerator: argument must be a real number', app_node)
 
 
@@ -644,7 +644,7 @@ def _prim_denominator(ctx, env, args, app_node):
          return make_real(1.0)
       if f.is_integer():
          return make_real(1.0)
-      return make_real(float(Fraction(f).denominator))
+      return make_real(float(_Rat.from_float(f).denominator))
    raise SchemeTypeError('denominator: argument must be a real number', app_node)
 
 
@@ -992,7 +992,7 @@ def _prim_string_to_number(ctx, env, args, app_node):
          num = int(num_str, radix)
          den = int(den_str, radix)
          if den != 0:
-            frac = Fraction(num, den)
+            frac = _Rat(num, den)
             if exact == 0:
                return make_real(float(frac))
             if frac.denominator == 1:
@@ -1025,7 +1025,7 @@ def _prim_string_to_number(ctx, env, args, app_node):
                return make_boolean(False)
             if f.is_integer():
                return make_integer(int(f))
-            frac = Fraction(f)
+            frac = _Rat.from_float(f)
             return make_rational(frac.numerator, frac.denominator)
          return make_real(f)
       except (ValueError, TypeError):
@@ -1133,7 +1133,7 @@ def _as_real_val(v, name, app_node, idx):
    if is_integer(v):
       return float(as_integer(v))
    if is_rational(v):
-      return float(Fraction(as_rational_num(v), as_rational_den(v)))
+      return as_rational_num(v) / as_rational_den(v)
    if is_real(v):
       return as_real(v)
    raise SchemeTypeError(
@@ -1215,24 +1215,33 @@ def _prim_angle(ctx, env, args, app_node):
 
 
 def _simplest_rational(lo, hi):
-   """Return simplest rational in [lo, hi] (lo, hi Fractions, 0 < lo <= hi)."""
+   """Return simplest rational in [lo, hi] (lo, hi _Rats, 0 < lo <= hi)."""
    if lo == hi:
       return lo
    n = math.ceil(lo)
-   if Fraction(n) <= hi:
-      return Fraction(n)
-   return Fraction(1) / _simplest_rational(Fraction(1) / hi, Fraction(1) / lo)
+   if _Rat(n) <= hi:
+      return _Rat(n)
+   return _Rat(1) / _simplest_rational(_Rat(1) / hi, _Rat(1) / lo)
 
 
 def _rationalize_exact(x, delta):
-   """Return simplest rational y s.t. |x - y| <= delta (Fractions)."""
+   """Return simplest rational y s.t. |x - y| <= delta (_Rats)."""
    lo = x - delta
    hi = x + delta
    if lo <= 0 and hi >= 0:
-      return Fraction(0)
+      return _Rat(0)
    if lo > 0:
       return _simplest_rational(lo, hi)
    return -_simplest_rational(-hi, -lo)
+
+
+def _to_rat(x):
+   """Convert int, _Rat, or finite float to _Rat."""
+   if isinstance(x, _Rat):
+      return x
+   if isinstance(x, int):
+      return _Rat(x)
+   return _Rat.from_float(x)
 
 
 def _prim_rationalize(ctx, env, args, app_node):
@@ -1246,8 +1255,8 @@ def _prim_rationalize(ctx, env, args, app_node):
          return make_real(0.0) if inexact else make_integer(0)
       if math.isnan(delta):
          return make_real(float('nan'))
-   fx = Fraction(x)
-   fd = abs(Fraction(delta))
+   fx = _to_rat(x)
+   fd = abs(_to_rat(delta))
    r = _rationalize_exact(fx, fd)
    if inexact:
       return _wrap(float(r))

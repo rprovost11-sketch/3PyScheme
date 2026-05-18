@@ -18,6 +18,7 @@ from pyscheme.AST import (
    is_cons, is_nil, is_symbol, is_closure, is_primitive, is_case_closure,
    is_continuation,
    as_symbol, as_closure_params, as_closure_body, as_closure_rest_name,
+   symbol_name,
 )
 from pyscheme.Environment import SchemeUnboundError, SchemeRuntimeError
 from pyscheme.PrettyPrinter import pretty_print
@@ -95,11 +96,9 @@ class Debugger:
       current    = env
       global_env = env._global_env
       while current is not None and current is not global_env:
-         for name in current._bindings:
-            if name not in result:
-               entries = current._bindings[name]
-               if len(entries) > 0:
-                  result[name] = entries[0][1]
+         for sid, val in current._bindings.items():
+            if sid not in result:
+               result[sid] = val
          current = current._parent
       return result
 
@@ -112,17 +111,17 @@ class Debugger:
          if max_depth is not None and scope_num >= max_depth:
             break
          names_in_scope = []
-         for name in current._bindings:
-            val = current._bindings[name]
+         for sid in current._bindings:
+            val = current._bindings[sid]
             if not Debugger._is_callable(val):
-               names_in_scope.append(name)
+               names_in_scope.append(sid)
          if names_in_scope:
-            names_in_scope.sort()
+            names_in_scope.sort(key=symbol_name)
             print('--- scope ' + str(scope_num) + ' ---')
             i = 0
             while i < len(names_in_scope):
-               name = names_in_scope[i]
-               print(name + ':   ' + pretty_print(current._bindings[name]))
+               sid = names_in_scope[i]
+               print(symbol_name(sid) + ':   ' + pretty_print(current._bindings[sid]))
                i = i + 1
             scope_num = scope_num + 1
          current = current._parent
@@ -759,8 +758,7 @@ class Debugger:
 
    def _cmd_bt(self, cmd, rest, ctx, env):
       """bt  show backtrace (shadow call stack)"""
-      from pyscheme.Evaluator import get_shadow_stack
-      stack = get_shadow_stack()
+      stack = ctx.shadow_stack
       if not stack:
          print('No backtrace available.')
          return

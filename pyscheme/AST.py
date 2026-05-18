@@ -8,7 +8,7 @@ sentinels are tagged tuples - immutable arms of the Value variant.
 C port layout:
    ConsCell     -> struct ConsCell { GcHeader h; Value car; Value cdr; SourceInfo* src; };
    SourceInfo   -> struct SourceInfo { int line; int col; char* source_line; char* filename; };
-   (SYMBOL, name, src) -> Value tag SYMBOL; no scope_set (alpha-renamed at expand time)
+   (SYMBOL, sid, src) -> Value tag SYMBOL; sid is a uint32 index into the intern pool
    (NIL,)       -> Value with tag NIL, no payload (singleton)
    (VOID,)      -> Value with tag VOID, no payload (singleton)
 
@@ -275,8 +275,28 @@ def make_character(c, src=None):
 def make_string(s, src=None):
    return SchemeString(s, src)
 
+# --- Symbol intern pool ------------------------------------------------
+# Maps symbol name strings to a stable integer id.  All symbol tuples
+# store the id rather than the raw string; equality and hashing use the
+# integer.  C port: global std::vector<std::string> + std::unordered_map.
+
+_SYMBOL_POOL:  dict = {}   # name str -> int id
+_SYMBOL_NAMES: list = []   # int id   -> name str  (index IS the id)
+
+def intern_symbol(name: str) -> int:
+   nid = _SYMBOL_POOL.get(name)
+   if nid is None:
+      nid = len(_SYMBOL_NAMES)
+      _SYMBOL_NAMES.append(name)
+      _SYMBOL_POOL[name] = nid
+   return nid
+
+def symbol_name(sid: int) -> str:
+   return _SYMBOL_NAMES[sid]
+
+
 def make_symbol(name, src=None):
-   return (SYMBOL, name, src)
+   return (SYMBOL, intern_symbol(name), src)
 
 def make_closure(params, body, env, rest_name, docstring):
    """Build a CLOSURE value.
@@ -555,6 +575,9 @@ def as_string(val):
    return val._s
 
 def as_symbol(val):
+   return _SYMBOL_NAMES[val[1]]
+
+def as_symbol_id(val):
    return val[1]
 
 def as_closure_params(val):

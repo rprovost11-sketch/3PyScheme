@@ -25,6 +25,9 @@ class Context:
       self.debugger      = None    # Debugger instance; set by Interpreter
       self.tracer        = None    # Tracer instance; set by Interpreter
       self.lEval         = None    # (env, expr) -> Value; set by Interpreter
+      self.wind_stack    = []      # active dynamic-wind frames; (before, after) tuples
+      self.handler_stack = []      # active with-exception-handler handlers
+      self.shadow_stack  = []      # call-stack entries for error backtraces
 
    def _update_instrumented(self):
       """Recompute the single instrumentation gate after any flag change."""

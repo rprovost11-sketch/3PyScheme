@@ -20,6 +20,7 @@ decimal digits (e.g. `(srfi 1)` -> `"srfi.1"`).
 from pyscheme.AST import (
    is_cons, is_nil, is_symbol, is_integer,
    as_symbol, as_integer,
+   intern_symbol, symbol_name,
 )
 from pyscheme.Environment import Environment
 
@@ -164,8 +165,8 @@ def resolve_import_set(import_set):
 
    # Copy every binding from exports_env.
    result = {}
-   for n in exports_env._bindings:
-      result[n] = exports_env.lookup(n)
+   for sid, val in exports_env._bindings.items():
+      result[symbol_name(sid)] = val
    return result
 
 
@@ -211,7 +212,7 @@ def _register_filtered(global_env, key, names):
    i = 0
    while i < len(names):
       n = names[i]
-      if n in global_env._bindings:
+      if intern_symbol(n) in global_env._bindings:
          exports_env.bind(n, global_env.lookup(n))
       i = i + 1
    exports_env.freeze()

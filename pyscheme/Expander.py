@@ -39,6 +39,7 @@ from pyscheme.AST import (
    is_vector, as_vector_items, make_vector,
    as_symbol, as_string, src_of,
    make_symbol, ConsCell, REPL_FILENAME,
+   intern_symbol, symbol_name,
    SYMBOL, VOID,
 )
 from pyscheme.syntax_rules import hygiene_gensym
@@ -76,15 +77,11 @@ _expand_depth = [0]
 
 def _lookup_macro(sym):
    """Return the SyntaxTransformer bound to sym, or None."""
-   from pyscheme.Environment import SchemeUnboundError
    env = _runtime_env_ref[0]
    if env is None:
       return None
-   try:
-      val = env.lookup(as_symbol(sym))
-   except SchemeUnboundError:
-      return None
-   if is_syntax_transformer(val):
+   val = env.lookup_optional(as_symbol(sym))
+   if val is not None and is_syntax_transformer(val):
       return val
    return None
 
@@ -100,7 +97,7 @@ def _current_macro_env():
    i = len(chain) - 1
    while i >= 0:
       for k, v in chain[i]._bindings.items():
-         merged[k] = v
+         merged[symbol_name(k)] = v
       i = i - 1
    return merged
 
@@ -247,8 +244,9 @@ def _expand_let_syntax(sexpr, is_letrec):
          global_env = child_env.getGlobalEnv()
          for t_obj in transformers:
             for fid, gs in t_obj.free_id_map.items():
-               if fid in child_env._bindings:
-                  global_env.bind(gs, child_env._bindings[fid])
+               fid_sid = intern_symbol(fid)
+               if fid_sid in child_env._bindings:
+                  global_env.bind(gs, child_env._bindings[fid_sid])
       _runtime_env_ref[0] = child_env
       if is_cons(body.cdr):
          body_items = [make_symbol('begin', src)]
@@ -576,6 +574,35 @@ def _collect_let_bound_names(bindings):
    return names
 
 
+def _mask_table(table, bound):
+   """Return table with keys in bound removed. Returns table itself if bound is empty."""
+   if not bound:
+      return table
+   return {k: v for k, v in table.items() if k not in bound}
+
+
+def _map_list_cars(cons_list, fn):
+   """Apply fn to each car of cons_list; rebuild list only if any car changed.
+   Preserves the tail (possibly non-NIL for improper lists)."""
+   changed = False
+   items = []
+   cur = cons_list
+   while is_cons(cur):
+      new_item = fn(cur.car)
+      if new_item is not cur.car:
+         changed = True
+      items.append((new_item, cur.src))
+      cur = cur.cdr
+   if not changed:
+      return cons_list
+   tail = cur
+   i = len(items) - 1
+   while i >= 0:
+      tail = alloc_cons(items[i][0], tail, items[i][1])
+      i -= 1
+   return tail
+
+
 def _gensym_rename_formals(formals, rename_table, src):
    """Walk formals (possibly improper list), gensym each name,
    populate rename_table {original: gensym}, return new formals.
@@ -681,18 +708,11 @@ def _rrif_lambda(form, rename_table):
       return _rrif_default(form, rename_table)
    formals = form.cdr.car
    body_cons = form.cdr.cdr
-   bound = _collect_formals_names(formals)
-   inner = rename_table
-   if bound:
-      inner = {}
-      for k, v in rename_table.items():
-         if k not in bound:
-            inner[k] = v
+   inner = _mask_table(rename_table, _collect_formals_names(formals))
    new_body = _rename_refs_in_form(body_cons, inner)
    if new_body is body_cons:
       return form
-   new_cdr = alloc_cons(formals, new_body, form.cdr.src)
-   return alloc_cons(form.car, new_cdr, form.src)
+   return alloc_cons(form.car, alloc_cons(formals, new_body, form.cdr.src), form.src)
 
 
 def _rrif_let(form, rename_table, kind):
@@ -700,41 +720,29 @@ def _rrif_let(form, rename_table, kind):
    head = form.car
    if not is_cons(form.cdr):
       return _rrif_default(form, rename_table)
-   # Named let: (let <name> <bindings> <body>...)
    if kind == 'let' and is_symbol(form.cdr.car):
       if not is_cons(form.cdr.cdr):
          return _rrif_default(form, rename_table)
       loop_sym = form.cdr.car
-      loop_name = as_symbol(loop_sym)
       bindings = form.cdr.cdr.car
       body_cons = form.cdr.cdr.cdr
-      bound = _collect_let_bound_names(bindings)
-      body_table = {}
-      for k, v in rename_table.items():
-         if k not in bound and k != loop_name:
-            body_table[k] = v
+      bound = _collect_let_bound_names(bindings) | {as_symbol(loop_sym)}
       new_bindings = _rrif_bindings_parallel(bindings, rename_table)
-      new_body = _rename_refs_in_form(body_cons, body_table)
+      new_body = _rename_refs_in_form(body_cons, _mask_table(rename_table, bound))
       if new_bindings is bindings and new_body is body_cons:
          return form
       rest = alloc_cons(new_bindings, new_body, form.cdr.cdr.src)
       return alloc_cons(head, alloc_cons(loop_sym, rest, form.cdr.src), form.src)
    bindings = form.cdr.car
    body_cons = form.cdr.cdr
-   bound = _collect_let_bound_names(bindings)
-   body_table = {}
-   for k, v in rename_table.items():
-      if k not in bound:
-         body_table[k] = v
+   body_table = _mask_table(rename_table, _collect_let_bound_names(bindings))
    if kind == 'let':
       new_bindings = _rrif_bindings_parallel(bindings, rename_table)
-      new_body = _rename_refs_in_form(body_cons, body_table)
    elif kind == 'let*':
       new_bindings = _rrif_bindings_let_star(bindings, rename_table)
-      new_body = _rename_refs_in_form(body_cons, body_table)
    else:
       new_bindings = _rrif_bindings_parallel(bindings, body_table)
-      new_body = _rename_refs_in_form(body_cons, body_table)
+   new_body = _rename_refs_in_form(body_cons, body_table)
    if new_bindings is bindings and new_body is body_cons:
       return form
    return alloc_cons(head, alloc_cons(new_bindings, new_body, form.cdr.src), form.src)
@@ -742,36 +750,20 @@ def _rrif_let(form, rename_table, kind):
 
 def _rrif_case_lambda(form, rename_table):
    """_rename_refs_in_form for (case-lambda (formals body...)...) forms."""
-   changed = False
-   clauses = []
-   cur = form.cdr
-   while is_cons(cur):
-      clause = cur.car
-      if is_cons(clause):
-         formals = clause.car
-         body_cons = clause.cdr
-         bound = _collect_formals_names(formals)
-         inner = {}
-         for k, v in rename_table.items():
-            if k not in bound:
-               inner[k] = v
-         new_body = _rename_refs_in_form(body_cons, inner)
-         if new_body is body_cons:
-            clauses.append((clause, cur.src))
-         else:
-            changed = True
-            clauses.append((alloc_cons(formals, new_body, clause.src), cur.src))
-      else:
-         clauses.append((clause, cur.src))
-      cur = cur.cdr
-   if not changed:
+   def _rename_clause(clause):
+      if not is_cons(clause):
+         return clause
+      formals = clause.car
+      body_cons = clause.cdr
+      inner = _mask_table(rename_table, _collect_formals_names(formals))
+      new_body = _rename_refs_in_form(body_cons, inner)
+      if new_body is body_cons:
+         return clause
+      return alloc_cons(formals, new_body, clause.src)
+   new_cdr = _map_list_cars(form.cdr, _rename_clause)
+   if new_cdr is form.cdr:
       return form
-   tail = cur
-   i = len(clauses) - 1
-   while i >= 0:
-      tail = alloc_cons(clauses[i][0], tail, clauses[i][1])
-      i = i - 1
-   return alloc_cons(form.car, tail, form.src)
+   return alloc_cons(form.car, new_cdr, form.src)
 
 
 def _rrif_default(form, rename_table):
@@ -789,39 +781,22 @@ def _rrif_case(form, rename_table):
    if not is_cons(form.cdr):
       return _rrif_default(form, rename_table)
    new_key = _rename_refs_in_form(form.cdr.car, rename_table)
-   clauses = form.cdr.cdr
-   changed = new_key is not form.cdr.car
-   new_clauses = []
-   cur = clauses
-   while is_cons(cur):
-      clause = cur.car
-      if is_cons(clause):
-         head = clause.car
-         body = clause.cdr
-         # A symbol head (i.e., 'else') is renamed so shadowing is detected.
-         # A list head is a datum-list; its contents are literal values, not renamed.
-         if is_symbol(head):
-            new_head = _rename_refs_in_form(head, rename_table)
-         else:
-            new_head = head
-         new_body = _rename_refs_in_form(body, rename_table)
-         if new_head is head and new_body is body:
-            new_clauses.append((clause, cur.src))
-         else:
-            changed = True
-            new_clauses.append((alloc_cons(new_head, new_body, clause.src), cur.src))
-      else:
-         new_clauses.append((clause, cur.src))
-      cur = cur.cdr
-   if not changed:
+   def _rename_clause(clause):
+      if not is_cons(clause):
+         return clause
+      head = clause.car
+      body = clause.cdr
+      # A symbol head (i.e., 'else') is renamed so shadowing is detected.
+      # A list head is a datum-list; its contents are literal values, not renamed.
+      new_head = _rename_refs_in_form(head, rename_table) if is_symbol(head) else head
+      new_body = _rename_refs_in_form(body, rename_table)
+      if new_head is head and new_body is body:
+         return clause
+      return alloc_cons(new_head, new_body, clause.src)
+   new_clauses = _map_list_cars(form.cdr.cdr, _rename_clause)
+   if new_key is form.cdr.car and new_clauses is form.cdr.cdr:
       return form
-   tail = cur
-   i = len(new_clauses) - 1
-   while i >= 0:
-      tail = alloc_cons(new_clauses[i][0], tail, new_clauses[i][1])
-      i = i - 1
-   new_cdr = alloc_cons(new_key, tail, form.cdr.src)
-   return alloc_cons(form.car, new_cdr, form.src)
+   return alloc_cons(form.car, alloc_cons(new_key, new_clauses, form.cdr.src), form.src)
 
 
 def _rrif_let_syntax(form, rename_table, is_letrec):
@@ -834,49 +809,18 @@ def _rrif_let_syntax(form, rename_table, is_letrec):
       return _rrif_default(form, rename_table)
    bindings = form.cdr.car
    body_cons = form.cdr.cdr
-   bound = set()
-   cur = bindings
-   while is_cons(cur):
-      b = cur.car
-      if is_cons(b) and is_symbol(b.car):
-         bound.add(as_symbol(b.car))
-      cur = cur.cdr
-   body_table = rename_table
-   if bound:
-      body_table = {}
-      for k, v in rename_table.items():
-         if k not in bound:
-            body_table[k] = v
+   body_table = _mask_table(rename_table, _collect_let_bound_names(bindings))
    tr_table = body_table if is_letrec else rename_table
-   changed = False
-   new_binding_items = []
-   tail = bindings
-   cur = bindings
-   while is_cons(cur):
-      b = cur.car
-      tail = cur.cdr
+   def _rename_binding(b):
       if is_cons(b) and is_symbol(b.car) and is_cons(b.cdr):
          new_tr = _rename_refs_in_form(b.cdr.car, tr_table)
          if new_tr is not b.cdr.car:
-            changed = True
-            new_b = alloc_cons(b.car,
-                               alloc_cons(new_tr, b.cdr.cdr, b.cdr.src),
-                               b.src)
-            new_binding_items.append((new_b, cur.src))
-         else:
-            new_binding_items.append((b, cur.src))
-      else:
-         new_binding_items.append((b, cur.src))
-      cur = cur.cdr
+            return alloc_cons(b.car, alloc_cons(new_tr, b.cdr.cdr, b.cdr.src), b.src)
+      return b
+   new_bindings = _map_list_cars(bindings, _rename_binding)
    new_body = _rename_refs_in_form(body_cons, body_table)
-   if not changed and new_body is body_cons:
+   if new_bindings is bindings and new_body is body_cons:
       return form
-   new_bindings = tail
-   i = len(new_binding_items) - 1
-   while i >= 0:
-      new_bindings = alloc_cons(new_binding_items[i][0], new_bindings,
-                                new_binding_items[i][1])
-      i = i - 1
    new_cdr = alloc_cons(new_bindings, new_body, form.cdr.src)
    return alloc_cons(form.car, new_cdr, form.src)
 
@@ -885,32 +829,14 @@ def _rrif_bindings_parallel(bindings, table):
    """Rename init expressions in binding pairs with table; don't touch names."""
    if not table:
       return bindings
-   changed = False
-   items = []
-   cur = bindings
-   while is_cons(cur):
-      pair = cur.car
+   def _rename_pair(pair):
       if is_cons(pair) and is_cons(pair.cdr):
          new_init = _rename_refs_in_form(pair.cdr.car, table)
          if new_init is not pair.cdr.car:
-            changed = True
-            new_pair = alloc_cons(pair.car,
-                         alloc_cons(new_init, pair.cdr.cdr, pair.cdr.src),
-                         pair.src)
-            items.append((new_pair, cur.src))
-         else:
-            items.append((pair, cur.src))
-      else:
-         items.append((pair, cur.src))
-      cur = cur.cdr
-   if not changed:
-      return bindings
-   result = cur
-   i = len(items) - 1
-   while i >= 0:
-      result = alloc_cons(items[i][0], result, items[i][1])
-      i = i - 1
-   return result
+            return alloc_cons(pair.car,
+                     alloc_cons(new_init, pair.cdr.cdr, pair.cdr.src), pair.src)
+      return pair
+   return _map_list_cars(bindings, _rename_pair)
 
 
 def _rrif_bindings_let_star(bindings, table):
@@ -918,34 +844,16 @@ def _rrif_bindings_let_star(bindings, table):
    if not table:
       return bindings
    current_table = dict(table)
-   changed = False
-   items = []
-   cur = bindings
-   while is_cons(cur):
-      pair = cur.car
+   def _rename_pair(pair):
       if is_cons(pair) and is_symbol(pair.car) and is_cons(pair.cdr):
          name = as_symbol(pair.car)
          new_init = _rename_refs_in_form(pair.cdr.car, current_table)
-         if new_init is not pair.cdr.car:
-            changed = True
-            new_pair = alloc_cons(pair.car,
-                         alloc_cons(new_init, pair.cdr.cdr, pair.cdr.src),
-                         pair.src)
-            items.append((new_pair, cur.src))
-         else:
-            items.append((pair, cur.src))
          current_table.pop(name, None)
-      else:
-         items.append((pair, cur.src))
-      cur = cur.cdr
-   if not changed:
-      return bindings
-   result = cur
-   i = len(items) - 1
-   while i >= 0:
-      result = alloc_cons(items[i][0], result, items[i][1])
-      i = i - 1
-   return result
+         if new_init is not pair.cdr.car:
+            return alloc_cons(pair.car,
+                     alloc_cons(new_init, pair.cdr.cdr, pair.cdr.src), pair.src)
+      return pair
+   return _map_list_cars(bindings, _rename_pair)
 
 
 # ---- let family (let, let*, letrec, letrec*) -----------------------------

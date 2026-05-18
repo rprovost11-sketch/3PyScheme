@@ -78,11 +78,13 @@ from pyscheme.Environment import (
 )
 from pyscheme.AST import (
    ConsCell, NIL_VALUE, VOID_VALUE, alloc_cons,
-   is_cons, is_nil, is_symbol, is_boolean, is_string, is_primitive,
+   is_cons, is_nil, is_void, is_symbol, is_boolean, is_integer, is_real,
+   is_character, is_string, is_primitive,
    is_closure, is_promise,
    is_case_closure, is_multi_values, is_parameter, is_continuation,
    is_environment, is_record, is_record_accessor, is_record_mutator,
-   as_symbol, as_boolean, as_string, as_primitive_fn, as_primitive_name,
+   as_symbol, as_symbol_id, as_boolean, as_integer, as_real, as_character,
+   as_string, as_primitive_fn, as_primitive_name,
    as_closure_params, as_closure_body, as_closure_env, as_closure_rest_name,
    as_case_closure_clauses, as_case_closure_env, as_parameter_value,
    as_continuation_k, as_continuation_wind, as_continuation_shadow,
@@ -97,7 +99,7 @@ from pyscheme.AST import (
    make_boolean, make_closure, make_case_closure, make_promise_lazy,
    make_continuation, make_multi_values, make_primitive, make_parameter, make_symbol,
    make_read_error_object,
-   eqv_atom,
+   eqv_atom, intern_symbol,
    src_of,
    VOID, BOOLEAN, COMPLEX, REAL, RATIONAL, INTEGER, CHARACTER, STRING,
    CLOSURE, PAIR, NIL, PRIMITIVE, CASE_CLOSURE, PROMISE, MULTI_VALUES, SYMBOL,
@@ -149,10 +151,6 @@ _MULTI_VALUES_OK_FRAMES = frozenset([
    FRAME_TRACE_EXIT,
 ])
 
-# Shadow call stack for error backtraces.  Each entry is a mutable
-# 3-list [label, src, count] where count > 1 means consecutive tail-replaced
-# or collapsed recursive calls.
-_shadow_stack = []
 _SHADOW_DEPTH_LIMIT = 50
 
 # Global environment reference for the .py extension loader.  Set by
@@ -174,30 +172,31 @@ def _shadow_label(app_node):
    return '#<procedure>'
 
 
-def _shadow_push(K, app_node):
+def _shadow_push(ctx, K, app_node):
    """Push a shadow-stack entry for a closure entry.  If the top of K is
    FRAME_SHADOW_POP this is a tail call: replace the current top entry
    rather than pushing a new one (keeps the shadow stack bounded under TCO).
    Otherwise push a new entry and a FRAME_SHADOW_POP return marker onto K."""
+   ss = ctx.shadow_stack
    label = _shadow_label(app_node)
    src   = src_of(app_node) if app_node is not None else None
    if K and K[-1][0] == FRAME_SHADOW_POP:
-      if _shadow_stack:
-         top = _shadow_stack[-1]
+      if ss:
+         top = ss[-1]
          if top[0] == label and top[1] is src:
             top[2] = top[2] + 1
             return
-         _shadow_stack[-1] = [label, src, 1]
+         ss[-1] = [label, src, 1]
       return
-   if len(_shadow_stack) >= _SHADOW_DEPTH_LIMIT:
+   if len(ss) >= _SHADOW_DEPTH_LIMIT:
       return
-   if _shadow_stack:
-      top = _shadow_stack[-1]
+   if ss:
+      top = ss[-1]
       if top[0] == label and top[1] is src:
          top[2] = top[2] + 1
          K.append((FRAME_SHADOW_POP,))
          return
-   _shadow_stack.append([label, src, 1])
+   ss.append([label, src, 1])
    K.append((FRAME_SHADOW_POP,))
 
 
@@ -405,69 +404,17 @@ def _is_eval_primitive(V):
 # Thread-local CEK exception handler stack and dynamic-wind stack.
 # Each thread sees its own list; this maps to __thread storage in the C
 # port so concurrent evaluations don't share continuation-relevant state.
-import threading as _threading
-_thread_state = _threading.local()
-
-
-class _ThreadLocalList:
-   """List-like proxy backed by per-thread storage in _thread_state.
-   Supports the operations used by the evaluator: len, bool, iter,
-   indexing, append, pop, clear, extend.  Storing the proxy at module
-   level lets call sites continue using `_wind_stack.append(x)` etc.
-   without knowing about the thread-local backing."""
-   def __init__(self, attr_name):
-      self._attr = attr_name
-
-   def _get(self):
-      if not hasattr(_thread_state, self._attr):
-         setattr(_thread_state, self._attr, [])
-      return getattr(_thread_state, self._attr)
-
-   def __len__(self):
-      return len(self._get())
-
-   def __bool__(self):
-      return bool(self._get())
-
-   def __iter__(self):
-      return iter(self._get())
-
-   def __getitem__(self, i):
-      return self._get()[i]
-
-   def append(self, x):
-      self._get().append(x)
-
-   def pop(self):
-      return self._get().pop()
-
-   def clear(self):
-      self._get().clear()
-
-   def extend(self, items):
-      self._get().extend(items)
-
-
-_handler_stack = _ThreadLocalList('handler_stack')
-
-
-def _restore_handler_stack(snapshot):
-   """Replace _handler_stack contents with snapshot in place.  Continuation
+def _restore_handler_stack(ctx, snapshot):
+   """Replace ctx.handler_stack contents with snapshot in place.  Continuation
    invocation uses this so a captured continuation's K-stack frames
    (including FRAME_POP_HANDLER) find the matching handler entries."""
-   _handler_stack.clear()
-   _handler_stack.extend(snapshot)
+   ctx.handler_stack.clear()
+   ctx.handler_stack.extend(snapshot)
 
 
-def get_shadow_stack():
-   return _shadow_stack
-
-def clear_shadow_stack():
-   _shadow_stack.clear()
-
-def _restore_shadow_stack(snapshot):
-   _shadow_stack.clear()
-   _shadow_stack.extend(snapshot)
+def _restore_shadow_stack(ctx, snapshot):
+   ctx.shadow_stack.clear()
+   ctx.shadow_stack.extend(snapshot)
 
 
 def _build_parameterize_winds(params_list, values_list, ctx, saved_env, app_node):
@@ -561,7 +508,7 @@ def _enter_proc(fn_value, args, ctx, saved_env, app_node):
                                     not None (multi-form body)"""
    if is_continuation(fn_value):
       _wind_walk(ctx, as_continuation_wind(fn_value))
-      _restore_handler_stack(as_continuation_handlers(fn_value))
+      _restore_handler_stack(ctx, as_continuation_handlers(fn_value))
       return ('cont',
               list(as_continuation_k(fn_value)),
               _continuation_value(fn_value, args))
@@ -614,34 +561,28 @@ def _continuation_value(cont, arg_values):
    return make_multi_values(list(arg_values))
 
 
-# Dynamic-wind stack.  Thread-local (matches the __thread storage in the
-# C port) so concurrent evaluations don't share active winds.  Each entry
-# is a (before, after) tuple of 0-arg procedure Values.  The innermost
-# active wind is at the end.
-_wind_stack = _ThreadLocalList('wind_stack')
-
-
 def _wind_walk(ctx, target):
-   """Adjust _wind_stack to match `target` (a list of (before, after) pairs).
+   """Adjust ctx.wind_stack to match `target` (a list of (before, after) pairs).
    For frames being exited (below the common prefix of current and target),
    call the after thunk and pop.  For frames being entered, push and call
    the before thunk.  Used when invoking a continuation whose wind-stack
    snapshot differs from the current stack."""
    from pyscheme.primitives.meta import _apply_scheme_proc
+   ws = ctx.wind_stack
    common = 0
-   while common < len(_wind_stack) and common < len(target):
-      cur = _wind_stack[common]
+   while common < len(ws) and common < len(target):
+      cur = ws[common]
       tgt = target[common]
       if cur[0] is not tgt[0] or cur[1] is not tgt[1]:
          break
       common = common + 1
-   while len(_wind_stack) > common:
-      wf = _wind_stack[len(_wind_stack) - 1]
-      _wind_stack.pop()
+   while len(ws) > common:
+      wf = ws[len(ws) - 1]
+      ws.pop()
       _apply_scheme_proc(wf[1], [], ctx, None, None)
    i = common
    while i < len(target):
-      _wind_stack.append(target[i])
+      ws.append(target[i])
       _apply_scheme_proc(target[i][0], [], ctx, None, None)
       i = i + 1
 
@@ -745,8 +686,8 @@ def cek_eval(expr, env, ctx=None):
    # FRAME_DYNAMIC_WIND_AFTER frames installed during this cek_eval call
    # if an exception escapes the inner loop.  The inner loop is in a
    # helper function so we can wrap it in a single try/except.
-   wind_depth_entry    = len(_wind_stack)
-   handler_depth_entry = len(_handler_stack)
+   wind_depth_entry    = len(ctx.wind_stack)
+   handler_depth_entry = len(ctx.handler_stack)
    from pyscheme.Parser import SchemeSyntaxError
    _CATCHABLE = (SchemeRaised, SchemeTypeError, SchemeArityError,
                  SchemeUnboundError, SchemeSyntaxError)
@@ -759,25 +700,25 @@ def cek_eval(expr, env, ctx=None):
       # any dynamic-wind entries installed during this call (their
       # after-thunks errors are swallowed, matching the C++ reference)
       # and re-raise so the caller (often an outer cek_eval) can continue
-      # propagation.  Truncate _handler_stack defensively in case a
+      # propagation.  Truncate handler_stack defensively in case a
       # handler push escaped without its matching pop.
       _unwind_winds_on_error(ctx, wind_depth_entry)
-      while len(_handler_stack) > handler_depth_entry:
-         _handler_stack.pop()
-      if isinstance(e, _PositionedSchemeError) and e.call_stack is None and _shadow_stack:
+      while len(ctx.handler_stack) > handler_depth_entry:
+         ctx.handler_stack.pop()
+      if isinstance(e, _PositionedSchemeError) and e.call_stack is None and ctx.shadow_stack:
          _cs = []
          _j = 0
-         while _j < len(_shadow_stack):
-            _cs.append(_shadow_stack[_j])
+         while _j < len(ctx.shadow_stack):
+            _cs.append(ctx.shadow_stack[_j])
             _j = _j + 1
          e.call_stack = _cs
-      _shadow_stack.clear()
+      ctx.shadow_stack.clear()
       raise
    except BaseException:
       _unwind_winds_on_error(ctx, wind_depth_entry)
-      while len(_handler_stack) > handler_depth_entry:
-         _handler_stack.pop()
-      _shadow_stack.clear()
+      while len(ctx.handler_stack) > handler_depth_entry:
+         ctx.handler_stack.pop()
+      ctx.shadow_stack.clear()
       raise
 
 
@@ -1059,7 +1000,7 @@ def _process_define_library(C, ctx):
    while i < len(export_names):
       internal = export_names[i][0]
       external = export_names[i][1]
-      if internal not in lib_env._bindings:
+      if intern_symbol(internal) not in lib_env._bindings:
          raise SchemeSyntaxError(
             'define-library: exported name not defined: ' + internal,
             src_of(C))
@@ -1077,9 +1018,10 @@ def _unwind_winds_on_error(ctx, target_depth):
    the original error continues to propagate, and we match that choice
    here for C-port consistency."""
    from pyscheme.primitives.meta import _apply_scheme_proc
-   while len(_wind_stack) > target_depth:
-      wf = _wind_stack[len(_wind_stack) - 1]
-      _wind_stack.pop()
+   ws = ctx.wind_stack
+   while len(ws) > target_depth:
+      wf = ws[len(ws) - 1]
+      ws.pop()
       try:
          _apply_scheme_proc(wf[1], [], ctx, None, None)
       except BaseException:
@@ -1397,7 +1339,7 @@ def _cek_loop(expr, env, ctx):
 
                if is_symbol(C):
                   try:
-                     V = E.lookup(as_symbol(C))
+                     V = E.lookup_id(as_symbol_id(C))
                   except SchemeUnboundError as e:
                      e.src = src_of(C)
                      raise
@@ -1429,14 +1371,14 @@ def _cek_loop(expr, env, ctx):
 
                if ftag == FRAME_DEFINE:
                   E = frame[2]
-                  E.bind(as_symbol(frame[1]), V)
+                  E.bind_id(as_symbol_id(frame[1]), V)
                   V = VOID_VALUE
                   continue
 
                if ftag == FRAME_SET:
                   E = frame[2]
                   try:
-                     E.set(as_symbol(frame[1]), V)
+                     E.set_id(as_symbol_id(frame[1]), V)
                   except SchemeUnboundError as e:
                      e.src = frame[3]
                      raise
@@ -1459,8 +1401,8 @@ def _cek_loop(expr, env, ctx):
                   from pyscheme.primitives.meta import _apply_scheme_proc
                   after_thunk = frame[1]
                   body_result = V
-                  if _wind_stack:
-                     _wind_stack.pop()
+                  if ctx.wind_stack:
+                     ctx.wind_stack.pop()
                   _apply_scheme_proc(after_thunk, [], ctx, None, None)
                   V = body_result
                   continue
@@ -1492,8 +1434,8 @@ def _cek_loop(expr, env, ctx):
                if ftag == FRAME_POP_HANDLER:
                   # Thunk returned normally; pop the installed handler and let V
                   # flow.  No work needed beyond popping the stack entry.
-                  if _handler_stack:
-                     _handler_stack.pop()
+                  if ctx.handler_stack:
+                     ctx.handler_stack.pop()
                   continue
 
                if ftag == FRAME_REINSTALL_HANDLER:
@@ -1501,7 +1443,7 @@ def _cek_loop(expr, env, ctx):
                   # raises in the enclosing with-exception-handler scope still
                   # see it.  V (handler's return) flows back to the raise-
                   # continuable's call site unchanged.
-                  _handler_stack.append(frame[1])
+                  ctx.handler_stack.append(frame[1])
                   continue
 
                if ftag == FRAME_NONCONTIN_RETURN:
@@ -1556,9 +1498,9 @@ def _cek_loop(expr, env, ctx):
                   if len(args) == 0:
                      if is_continuation(V):
                         _wind_walk(ctx, as_continuation_wind(V))
-                        _restore_handler_stack(as_continuation_handlers(V))
+                        _restore_handler_stack(ctx, as_continuation_handlers(V))
                         K = list(as_continuation_k(V))
-                        _restore_shadow_stack(as_continuation_shadow(V))
+                        _restore_shadow_stack(ctx, as_continuation_shadow(V))
                         V = _continuation_value(V, [])
                         continue
                      pv = _apply_parameter_if(V, 0, app_node)
@@ -1588,7 +1530,7 @@ def _cek_loop(expr, env, ctx):
                         V = result
                         continue
                      r = _apply_value(V, [], app_node)
-                     _shadow_push(K, app_node)
+                     _shadow_push(ctx, K, app_node)
                      if _trc_printed:
                         K.append((FRAME_TRACE_EXIT, _trc_name, _trc_depth))
                      E = r.new_env
@@ -1621,9 +1563,9 @@ def _cek_loop(expr, env, ctx):
                      # Invoke continuation: replace K with its snapshot.
                      if is_continuation(fn_value):
                         _wind_walk(ctx, as_continuation_wind(fn_value))
-                        _restore_handler_stack(as_continuation_handlers(fn_value))
+                        _restore_handler_stack(ctx, as_continuation_handlers(fn_value))
                         K = list(as_continuation_k(fn_value))
-                        _restore_shadow_stack(as_continuation_shadow(fn_value))
+                        _restore_shadow_stack(ctx, as_continuation_shadow(fn_value))
                         V = _continuation_value(fn_value, new_collected)
                         continue
                      # Capture continuation: call/cc intercepted before its body.
@@ -1634,8 +1576,8 @@ def _cek_loop(expr, env, ctx):
                                                  1, 1, len(new_collected)),
                               src_of(app_node) if app_node is not None else None)
                         cont = make_continuation(
-                           list(K), list(_wind_stack), list(_handler_stack),
-                           list(_shadow_stack))
+                           list(K), list(ctx.wind_stack), list(ctx.handler_stack),
+                           list(ctx.shadow_stack))
                         user_proc = new_collected[0]
                         # Apply the user proc with the continuation as its arg,
                         # reusing the normal dispatch paths below.
@@ -1713,7 +1655,7 @@ def _cek_loop(expr, env, ctx):
                         K.append((FRAME_MAKE_PARAMETER, converter))
                         fn_value = converter
                         new_collected = [init]
-                     # with-exception-handler: push handler on _handler_stack,
+                     # with-exception-handler: push handler on handler_stack,
                      # push FRAME_POP_HANDLER, tail-call thunk.  Handler is
                      # popped on normal return via FRAME_POP_HANDLER, or
                      # consumed by raise / raise-continuable.
@@ -1725,7 +1667,7 @@ def _cek_loop(expr, env, ctx):
                               src_of(app_node) if app_node is not None else None)
                         handler = new_collected[0]
                         thunk   = new_collected[1]
-                        _handler_stack.append(handler)
+                        ctx.handler_stack.append(handler)
                         K.append((FRAME_POP_HANDLER,))
                         fn_value = thunk
                         new_collected = []
@@ -1750,9 +1692,9 @@ def _cek_loop(expr, env, ctx):
                                                  len(new_collected)),
                               src_of(app_node) if app_node is not None else None)
                         raised_val = new_collected[0]
-                        if not _handler_stack:
+                        if not ctx.handler_stack:
                            raise SchemeRaised(raised_val, app_node, continuable=True)
-                        handler = _handler_stack.pop()
+                        handler = ctx.handler_stack.pop()
                         K.append((FRAME_REINSTALL_HANDLER, handler))
                         fn_value = handler
                         new_collected = [raised_val]
@@ -1820,7 +1762,7 @@ def _cek_loop(expr, env, ctx):
                            ctx, saved_env, app_node)
                         install_prim = _param_winds[0]
                         restore_prim = _param_winds[1]
-                        _wind_stack.append((install_prim, restore_prim))
+                        ctx.wind_stack.append((install_prim, restore_prim))
                         K.append((FRAME_DYNAMIC_WIND_AFTER, restore_prim))
                         fn_value = new_collected[2]
                         new_collected = []
@@ -1838,7 +1780,7 @@ def _cek_loop(expr, env, ctx):
                         after  = new_collected[2]
                         from pyscheme.primitives.meta import _apply_scheme_proc
                         _apply_scheme_proc(before, [], ctx, saved_env, app_node)
-                        _wind_stack.append((before, after))
+                        ctx.wind_stack.append((before, after))
                         K.append((FRAME_DYNAMIC_WIND_AFTER, after))
                         fn_value = thunk
                         new_collected = []
@@ -1906,7 +1848,7 @@ def _cek_loop(expr, env, ctx):
                         continue
                      r = _apply_value(fn_value, new_collected, app_node)
                      if fn_value is original_fn:
-                        _shadow_push(K, app_node)
+                        _shadow_push(ctx, K, app_node)
                      if _trc_printed:
                         K.append((FRAME_TRACE_EXIT, _trc_name, _trc_depth))
                      E = r.new_env
@@ -2030,7 +1972,7 @@ def _cek_loop(expr, env, ctx):
                   saved_env  = frame[2]
                   if is_continuation(V):
                      _wind_walk(ctx, as_continuation_wind(V))
-                     _restore_handler_stack(as_continuation_handlers(V))
+                     _restore_handler_stack(ctx, as_continuation_handlers(V))
                      K = list(as_continuation_k(V))
                      V = _continuation_value(V, [test_value])
                      continue
@@ -2053,7 +1995,7 @@ def _cek_loop(expr, env, ctx):
                   saved_env = frame[2]
                   if is_continuation(V):
                      _wind_walk(ctx, as_continuation_wind(V))
-                     _restore_handler_stack(as_continuation_handlers(V))
+                     _restore_handler_stack(ctx, as_continuation_handlers(V))
                      K = list(as_continuation_k(V))
                      V = _continuation_value(V, [key_value])
                      continue
@@ -2201,8 +2143,8 @@ def _cek_loop(expr, env, ctx):
                   break
 
                if ftag == FRAME_SHADOW_POP:
-                  if _shadow_stack:
-                     _shadow_stack.pop()
+                  if ctx.shadow_stack:
+                     ctx.shadow_stack.pop()
                   continue
 
                if ftag == FRAME_TRACE_EXIT:
@@ -2238,16 +2180,16 @@ def _cek_loop(expr, env, ctx):
             frame = _w.pop()
             ftag  = frame[0]
             if ftag == FRAME_POP_HANDLER:
-               if not _handler_stack:
+               if not ctx.handler_stack:
                   break
-               handler = _handler_stack.pop()
+               handler = ctx.handler_stack.pop()
                break
             if ftag == FRAME_REINSTALL_HANDLER:
                continue
             if ftag == FRAME_DYNAMIC_WIND_AFTER:
                after = frame[1]
-               if _wind_stack:
-                  _wind_stack.pop()
+               if ctx.wind_stack:
+                  ctx.wind_stack.pop()
                try:
                   _apply_scheme_proc(after, [], ctx, None, None)
                except BaseException:
@@ -2308,18 +2250,15 @@ if __name__ == '__main__':
             return '(' + ' '.join(items) + ')'
          return '(' + ' '.join(items) + ' . ' + _to_text(cur) + ')'
       if is_string(v):    return '"' + as_string(v) + '"'
-      if not isinstance(v, tuple) or len(v) == 0:
-         return repr(v)
-      tag = v[0]
-      if tag == NIL:      return '()'
-      if tag == VOID:     return '#<void>'
-      if tag == INTEGER:  return str(v[1])
-      if tag == REAL:     return repr(v[1])
-      if tag == BOOLEAN:  return '#t' if v[1] else '#f'
-      if tag == CHARACTER: return '#\\' + v[1]
-      if tag == SYMBOL:   return v[1]
-      if tag == CLOSURE:  return '#<closure>'
-      if tag == PRIMITIVE: return '#<primitive ' + v[1] + '>'
+      if is_nil(v):       return '()'
+      if is_void(v):      return '#<void>'
+      if is_integer(v):   return str(as_integer(v))
+      if is_real(v):      return repr(as_real(v))
+      if is_boolean(v):   return '#t' if as_boolean(v) else '#f'
+      if is_character(v): return '#\\' + as_character(v)
+      if is_symbol(v):    return as_symbol(v)
+      if is_closure(v):   return '#<closure>'
+      if is_primitive(v): return '#<primitive ' + as_primitive_name(v) + '>'
       return repr(v)
 
    def _eval_source(source, env, static_env, ctx):

@@ -6,7 +6,7 @@ strictly decreasing, non-decreasing, or non-increasing.  With a single
 argument, all are vacuously #t.
 """
 
-from fractions import Fraction
+from pyscheme.rational import _Rat
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
@@ -27,7 +27,7 @@ def _num(v, name, app_node, i):
    if is_integer(v):
       return as_integer(v)
    if is_rational(v):
-      return Fraction(as_rational_num(v), as_rational_den(v))
+      return _Rat(as_rational_num(v), as_rational_den(v))
    if is_real(v):
       return as_real(v)
    if is_complex(v):
@@ -40,7 +40,7 @@ def _num(v, name, app_node, i):
          if is_integer(re):
             return as_integer(re)
          if is_rational(re):
-            return Fraction(as_rational_num(re), as_rational_den(re))
+            return _Rat(as_rational_num(re), as_rational_den(re))
    raise SchemeTypeError(
       '%s: argument %d is not a real number' % (name, i),
       app_node)
@@ -53,7 +53,7 @@ def _num_eq(v, name, app_node, i):
    if is_integer(v):
       return as_integer(v)
    if is_rational(v):
-      return Fraction(as_rational_num(v), as_rational_den(v))
+      return _Rat(as_rational_num(v), as_rational_den(v))
    if is_real(v):
       return as_real(v)
    if is_complex(v):
@@ -61,8 +61,8 @@ def _num_eq(v, name, app_node, i):
    if is_exact_complex(v):
       re = as_exact_complex_real(v)
       im = as_exact_complex_imag(v)
-      re_py = as_integer(re) if is_integer(re) else Fraction(as_rational_num(re), as_rational_den(re))
-      im_py = as_integer(im) if is_integer(im) else Fraction(as_rational_num(im), as_rational_den(im))
+      re_py = as_integer(re) if is_integer(re) else _Rat(as_rational_num(re), as_rational_den(re))
+      im_py = as_integer(im) if is_integer(im) else _Rat(as_rational_num(im), as_rational_den(im))
       return complex(float(re_py), float(im_py))
    raise SchemeTypeError(
       '%s: argument %d is not a number' % (name, i),
