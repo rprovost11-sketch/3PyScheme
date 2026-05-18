@@ -778,3 +778,27 @@ caught
 ...   (parameterize ((vp -1)) (vp)))
 ==> "negative"
 
+... ; ==========================================================
+... ; 21. cond => and case => with call/cc escape
+... ; ==========================================================
+
+;;; cond => with a continuation as the arrow procedure: k is applied with
+;;; the test value #t, escaping the enclosing call/cc entirely.
+>>> (call/cc (lambda (k) (cond (#t => k)) 'unreached))
+==> #t
+
+;;; cond => with a truthy non-boolean test value.
+>>> (call/cc (lambda (k) (cond (42 => k)) 'unreached))
+==> 42
+
+;;; cond => with assv: continuation receives the matching pair.
+>>> (call/cc
+...   (lambda (k)
+...     (cond ((assv 2 '((1 . a) (2 . b) (3 . c))) => (lambda (p) (k (cdr p))))
+...           (else 'miss))))
+==> b
+
+;;; case => with a continuation as the arrow procedure: k receives the datum.
+>>> (call/cc (lambda (k) (case 5 ((5) => k) (else 'no)) 'unreached))
+==> 5
+

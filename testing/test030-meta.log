@@ -204,3 +204,68 @@
 %%% SchemeArityError: line 1, col 1: runtime: 1 argument provided; 0 expected
 %%% (runtime 1)
 %%% ^
+
+;;; ==========================================================
+;;; trace / untrace
+;;; ==========================================================
+
+;;; (trace) with no args returns the set of traced names (empty at start)
+>>> (trace)
+==> ()
+
+>>> (define (double x) (* x 2))
+==> #<void>
+
+;;; (trace f) registers f and returns the updated set
+>>> (trace double)
+==> (double)
+
+;;; calling a traced function prints enter and exit lines
+>>> (double 5)
+ 0: (double 5)
+ 0: double returned 10
+==> 10
+
+;;; (untrace f) removes f and returns the updated set
+>>> (untrace double)
+==> ()
+
+;;; after untracing, no output
+>>> (double 7)
+==> 14
+
+;;; recursive function: trace shows nested calls
+>>> (define (fact n) (if (= n 0) 1 (* n (fact (- n 1)))))
+==> #<void>
+
+>>> (trace fact)
+==> (fact)
+
+>>> (fact 3)
+ 0: (fact 3)
+ 1:   (fact 2)
+ 2:     (fact 1)
+ 3:       (fact 0)
+ 3:       fact returned 1
+ 2:     fact returned 1
+ 1:   fact returned 2
+ 0: fact returned 6
+==> 6
+
+;;; (untrace) with no args clears all
+>>> (untrace)
+==> ()
+
+>>> (trace)
+==> ()
+
+;;; type errors
+>>> (trace 42)
+%%% SchemeTypeError: line 1, col 1: trace: arguments must be symbols
+%%% (trace 42)
+%%% ^
+
+>>> (untrace 42)
+%%% SchemeTypeError: line 1, col 1: untrace: arguments must be symbols
+%%% (untrace 42)
+%%% ^
