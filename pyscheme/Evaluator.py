@@ -69,11 +69,13 @@ Frame forms (runtime continuation state):
 """
 from __future__ import annotations
 
+import time
+
 from pyscheme.Environment import (
    Environment,
    _PositionedSchemeError,
    SchemeArityError, SchemeUnboundError, SchemeTypeError,
-   SchemeUserError, SchemeRaised, SchemeFileError,
+   SchemeRuntimeError, SchemeUserError, SchemeRaised, SchemeFileError,
    arity_mismatch_msg,
 )
 from pyscheme.AST import (
@@ -134,6 +136,7 @@ FRAME_REINSTALL_HANDLER  = 21
 FRAME_SHADOW_POP         = 23
 FRAME_TRACE_EXIT         = 24
 FRAME_NONCONTIN_RETURN   = 25
+FRAME_GUARD              = 26
 
 
 # Frames that are not single-value continuations: FRAME_CWV_CONSUMER
@@ -149,6 +152,7 @@ _MULTI_VALUES_OK_FRAMES = frozenset([
    FRAME_NONCONTIN_RETURN,
    FRAME_SHADOW_POP,
    FRAME_TRACE_EXIT,
+   FRAME_GUARD,
 ])
 
 _SHADOW_DEPTH_LIMIT = 50
@@ -383,6 +387,10 @@ def _is_make_parameter_primitive(V):
 
 def _is_with_exception_handler_primitive(V):
    return is_primitive(V) and as_primitive_name(V) == 'with-exception-handler'
+
+
+def _is_guard_eval_primitive(V):
+   return is_primitive(V) and as_primitive_name(V) == '%guard-eval'
 
 
 def _is_raise_primitive(V):
@@ -1045,6 +1053,9 @@ def _cek_loop(expr, env, ctx):
    while True:
       try:
          while True:
+            ctx._timeout_step = (ctx._timeout_step + 1) & 0xFFFF
+            if ctx._timeout_step == 0 and ctx.timeout_at and time.monotonic() > ctx.timeout_at:
+               raise SchemeRuntimeError('Evaluation timed out.')
 
             # ----- EVAL: descend until a value is produced at a leaf -----
             while True:
@@ -1434,6 +1445,12 @@ def _cek_loop(expr, env, ctx):
                      ctx.handler_stack.pop()
                   continue
 
+               if ftag == FRAME_GUARD:
+                  # Guard body returned normally; pop the guard handler, V flows.
+                  if ctx.handler_stack:
+                     ctx.handler_stack.pop()
+                  continue
+
                if ftag == FRAME_REINSTALL_HANDLER:
                   # raise-continuable's handler returned; push it back so nested
                   # raises in the enclosing with-exception-handler scope still
@@ -1663,8 +1680,53 @@ def _cek_loop(expr, env, ctx):
                               src_of(app_node) if app_node is not None else None)
                         handler = new_collected[0]
                         thunk   = new_collected[1]
+                        # Tail-call optimization: if K's top is FRAME_POP_HANDLER
+                        # this call is in tail position of the previous thunk.
+                        # That thunk is done so its handler is dead; replace it.
+                        if K and K[-1][0] == FRAME_POP_HANDLER:
+                           K.pop()
+                           if ctx.handler_stack:
+                              ctx.handler_stack.pop()
                         ctx.handler_stack.append(handler)
                         K.append((FRAME_POP_HANDLER,))
+                        fn_value = thunk
+                        new_collected = []
+                     # %guard-eval: guard's dedicated evaluator.  Uses FRAME_GUARD
+                     # (not FRAME_POP_HANDLER) so the tail-call optimization only
+                     # fires within guard chains, not across weh/guard boundaries.
+                     # Guard handlers may return normally (no FRAME_NONCONTIN_RETURN).
+                     if _is_guard_eval_primitive(fn_value):
+                        if len(new_collected) != 2:
+                           raise SchemeArityError(
+                              arity_mismatch_msg('%guard-eval', 2, 2,
+                                                 len(new_collected)),
+                              src_of(app_node) if app_node is not None else None)
+                        handler = new_collected[0]
+                        thunk   = new_collected[1]
+                        # Tail-call optimization: replace a prior FRAME_GUARD only
+                        # when this is the SAME guard form (tail-recursive loop).
+                        # Check by comparing handler body cons cell identity:
+                        # same parsed lambda means same guard form, not a new
+                        # nested guard.  Different forms (nested guards) must NOT
+                        # be replaced so exception propagation to outer guards works.
+                        # Skip past FRAME_SHADOW_POP frames to find the real top.
+                        _gi = len(K) - 1
+                        while _gi >= 0 and K[_gi][0] == FRAME_SHADOW_POP:
+                           _gi -= 1
+                        if _gi >= 0 and K[_gi][0] == FRAME_GUARD:
+                           _prev = ctx.handler_stack[-1] if ctx.handler_stack else None
+                           if (_prev is not None and
+                               is_closure(_prev) and is_closure(handler) and
+                               _prev[2] is handler[2]):
+                              # Pop shadow frames above FRAME_GUARD, then FRAME_GUARD itself
+                              while len(K) - 1 > _gi:
+                                 K.pop()
+                                 if ctx.shadow_stack:
+                                    ctx.shadow_stack.pop()
+                              K.pop()
+                              ctx.handler_stack.pop()
+                        ctx.handler_stack.append(handler)
+                        K.append((FRAME_GUARD,))
                         fn_value = thunk
                         new_collected = []
                      # raise (non-continuable): throw Python SchemeRaised so the
@@ -1753,6 +1815,27 @@ def _cek_loop(expr, env, ctx):
                               arity_mismatch_msg('%with-parameters', 3, 3,
                                                  len(new_collected)),
                               src_of(app_node) if app_node is not None else None)
+                        # TCO: if K's top is a FRAME_DYNAMIC_WIND_AFTER from a prior
+                        # parameterize restore, eagerly fire it now so that K and
+                        # wind_stack stay O(1) for tail-recursive parameterize loops.
+                        # Mirrors the %guard-eval FRAME_GUARD replacement above.
+                        # Skip past FRAME_SHADOW_POP frames to find the real top.
+                        _pi = len(K) - 1
+                        while _pi >= 0 and K[_pi][0] == FRAME_SHADOW_POP:
+                           _pi -= 1
+                        if (_pi >= 0 and K[_pi][0] == FRAME_DYNAMIC_WIND_AFTER and
+                                is_primitive(K[_pi][1]) and
+                                as_primitive_name(K[_pi][1]) == '%parameterize-restore'):
+                           _prev_restore = K[_pi][1]
+                           # Pop shadow frames above FRAME_DYNAMIC_WIND_AFTER, then it
+                           while len(K) - 1 > _pi:
+                              K.pop()
+                              if ctx.shadow_stack:
+                                 ctx.shadow_stack.pop()
+                           K.pop()
+                           if ctx.wind_stack:
+                              ctx.wind_stack.pop()
+                           as_primitive_fn(_prev_restore)(ctx, saved_env, [], app_node)
                         _param_winds = _build_parameterize_winds(
                            new_collected[0], new_collected[1],
                            ctx, saved_env, app_node)
@@ -2172,6 +2255,7 @@ def _cek_loop(expr, env, ctx):
          from pyscheme.AST import make_error_object
          _w = K
          handler = None
+         is_guard_handler = False
          while _w:
             frame = _w.pop()
             ftag  = frame[0]
@@ -2179,6 +2263,12 @@ def _cek_loop(expr, env, ctx):
                if not ctx.handler_stack:
                   break
                handler = ctx.handler_stack.pop()
+               break
+            if ftag == FRAME_GUARD:
+               if not ctx.handler_stack:
+                  break
+               handler = ctx.handler_stack.pop()
+               is_guard_handler = True
                break
             if ftag == FRAME_REINSTALL_HANDLER:
                continue
@@ -2198,7 +2288,7 @@ def _cek_loop(expr, env, ctx):
             raised_value = make_read_error_object(e.msg, [])
          else:
             raised_value = make_error_object(e.msg, [])
-         if isinstance(e, SchemeRaised) and not e.continuable:
+         if isinstance(e, SchemeRaised) and not e.continuable and not is_guard_handler:
             K.append((FRAME_NONCONTIN_RETURN, raised_value))
          result = _enter_proc(handler, [raised_value], ctx, E, None)
          if result[0] == 'value':

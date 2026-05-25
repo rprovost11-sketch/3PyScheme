@@ -708,7 +708,7 @@ def _render_display(val):
       is_string, is_character, is_void, is_cons, is_nil,
       as_string, as_character,
    )
-   from pyscheme.PrettyPrinter import pretty_print
+   from pyscheme.PrettyPrinter import pretty_print, _has_cycle
    if is_string(val):
       return as_string(val)
    if is_character(val):
@@ -716,6 +716,8 @@ def _render_display(val):
    if is_void(val):
       return ''
    if is_cons(val):
+      if _has_cycle(val):
+         return pretty_print(val)
       items = []
       cur = val
       while is_cons(cur):
@@ -740,7 +742,7 @@ def _prim_write(ctx, env, args, app_node):
    v = args[0]
    port_val = _resolve_output_port(ctx, args, 1)
    p = _check_textual_output(port_val, 'write', app_node, 2)
-   _emit_to_port(p, pretty_print(v))
+   _emit_to_port(p, pretty_print(v))  # pretty_print routes to pretty_print_shared for cycles
    return VOID_VALUE
 
 

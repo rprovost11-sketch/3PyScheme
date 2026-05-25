@@ -1,0 +1,3182 @@
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test000-parser.log
+-------------------------------------------------------------
+    1. FAIL  1abc
+         expected error:  [line 1, col 1: malformed number or identifier: '1abc'
+1abc
+^]
+         actual error:    [unbound variable: 1abc]
+    2. FAIL  #z
+         expected error:  [line 1, col 1: unknown #-syntax: '#z'
+#z
+^]
+         actual error:    [parse error: unknown # syntax: #z]
+    3. FAIL  #\unknown
+         expected error:  [line 1, col 1: unknown character name: #\unknown
+#\unknown
+^]
+         actual error:    [parse error: unknown character name: unknown]
+    4. FAIL  (.)
+         expected error:  [line 1, col 2: dot must be preceded by at least one element
+(.)
+ ^]
+         actual error:    [parse error: unexpected ')']
+    5. FAIL  (a .)
+         expected error:  [line 1, col 5: dot must be followed by an expression
+(a .)
+    ^]
+         actual error:    [parse error: unexpected ')']
+    6. FAIL  (a . b c)
+         expected error:  [line 1, col 8: expected ')' after dotted tail
+(a . b c)
+       ^]
+         actual error:    [parse error: expected ')' after dotted pair tail]
+    7. PASS  0
+    8. PASS  1
+    9. PASS  -1
+   10. PASS  -99
+   11. PASS  1000000
+   12. PASS  -2.5
+   13. PASS  0.0
+   14. PASS  1.5
+   15. FAIL  1e10
+         expected return: [10000000000.0]
+         actual return:   [1e+10]
+   16. PASS  +nan.0
+   17. PASS  -nan.0
+   18. PASS  #f
+   19. PASS  #\A
+   20. PASS  #\0
+   21. PASS  #\newline
+   22. PASS  #\tab
+   23. PASS  #\x41
+   24. PASS  #\x61
+   25. PASS  #\x0a
+   26. PASS  #\x20
+   27. PASS  ""
+   28. PASS  "hello world"
+   29. PASS  "with \"quotes\""
+   30. PASS  "line\nnewline"
+   31. PASS  'hello-world
+   32. PASS  'x
+   33. PASS  '+
+   34. PASS  '()
+   35. PASS  '(a b c)
+   36. PASS  '((1 2) (3 4))
+   37. PASS  '(1 . 2)
+   38. PASS  '(1 2 . 3)
+   39. PASS  '#(1 2 3)
+   40. PASS  '#()
+   41. PASS  #x0
+   42. PASS  #xFF
+   43. PASS  #x1234
+   44. PASS  #xDEAD
+   45. PASS  #x-10
+   46. PASS  #X1A
+   47. PASS  #b0
+   48. PASS  #b1
+   49. PASS  #b1111
+   50. PASS  #b-101
+   51. PASS  #b11111111
+   52. PASS  #o0
+   53. PASS  #o7
+   54. PASS  #o777
+   55. PASS  #o-10
+   56. PASS  #d0
+   57. PASS  #d-99
+   58. PASS  #e1.0
+   59. FAIL  #e3.7
+         expected return: [4165829655317709/1125899906842624]
+         actual return:   [3]
+   60. FAIL  #e-2.9
+         expected return: [-6530219459687219/2251799813685248]
+         actual return:   [-2]
+   61. PASS  #i0
+   62. PASS  #i5
+   63. PASS  #i-3
+   64. PASS  #i1.5
+   65. PASS  '(1 2 3)
+   66. PASS  `(a b c)
+   67. PASS  (char=? #\x61 #\a)
+   68. PASS  (char=? #\x0a #\newline)
+   69. PASS  (char=? #\x20 #\space)
+   70. PASS  (char->integer #\x7f)
+   71. PASS  (string-ref "\x61;" 0)
+   72. PASS  (string-ref "\x0a;" 0)
+   73. PASS  (string-length "\x41;\x42;\x43;")
+   74. PASS  (string=? "\x41;" "A")
+   75. PASS  (string=? "\x61;\x62;\x63;" "abc")
+   76. FAIL  (string=? "ab\
+         expected return: [#t]
+         actual return:   [#f]
+   77. FAIL  (string-length "ab\
+         expected return: [4]
+         actual return:   [7]
+   78. PASS  (string-ref "\|" 0)
+   79. PASS  (symbol? '|has (parens)|)
+   80. PASS  (symbol->string '|hello world|)
+   81. PASS  (symbol->string '||)
+   82. PASS  (symbol? '|123|)
+   83. PASS  (eq? '|foo| '|foo|)
+   84. PASS  (eq? '|foo| 'foo)
+   85. PASS  (symbol? '|has \| bar|)
+   86. PASS  (symbol? '|has "quotes"|)
+   87. PASS  (read (open-input-string "#u8(1 2 3)"))
+   88. PASS  (read (open-input-string "#u8()"))
+   89. PASS  (bytevector? (read (open-input-string "#u8(10 20 30)")))
+   90. PASS  (bytevector-u8-ref (read (open-input-string "#u8(5 10...
+   91. PASS  (+ #xFF 1)
+   92. PASS  (* #x10 #x10)
+   93. PASS  (exact? #e3.7)
+   94. PASS  (exact? #e0.0)
+   95. PASS  (inexact? #i42)
+   96. PASS  (inexact? #i0)
+   97. PASS  (= #b1111 #o17 #d15 #xF)
+   98. PASS  (= #b11111111 #o377 #d255 #xFF)
+   99. PASS  (list #xFF #b1010 #o17)
+  100. PASS  (let ((x 5)) `(a ,x c))
+  101. PASS  (let ((xs '(1 2 3))) `(a ,@xs b))
+  102. PASS  (read (open-input-string "#0=hello"))
+  103. PASS  (read (open-input-string "(#0=hello #0#)"))
+  104. PASS  (let* ((x (read (open-input-string "(#0=(a b) #0#)"))))
+  105. PASS  (let ((x (read (open-input-string "#0=(1 2 . #0#)"))))
+  106. PASS  (let ((x (read (open-input-string "#0=(1 . #0#)"))))
+  107. PASS  (read (open-input-string "(#10=foo #10#)"))
+  108. FAIL  (let* ((p (cons 1 2))
+         expected error:  [line 3, col 4: unbound variable: with-output-to-string
+  (with-output-to-string (lambda () (write-shared q))))
+   ^]
+         actual error:    [unbound variable: with-output-to-string]
+  109. FAIL  (let* ((x (list 1 2 3))
+         expected error:  [line 3, col 12: unbound variable: with-output-to-string
+       (s (with-output-to-string (lambda () (write-shared x))))
+           ^]
+         actual error:    [unbound variable: with-output-to-string]
+  110. FAIL  (let* ((p (cons 'a 'b))
+         expected error:  [line 3, col 12: unbound variable: with-output-to-string
+       (s (with-output-to-string (lambda () (write-shared q)))))
+           ^]
+         actual error:    [unbound variable: with-output-to-string]
+  111. PASS  (let* ((s "(#0=(a . b) . #0#)")
+  112. FAIL  (let* ((x (list 1 2))
+         expected error:  [line 3, col 4: unbound variable: with-output-to-string
+  (with-output-to-string (lambda () (write x))))
+   ^]
+         actual error:    [unbound variable: with-output-to-string]
+  113. FAIL  '[1 2 3]
+         expected return: [(1 2 3)]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: 3]]
+  114. FAIL  '[]
+         expected return: [()]
+         actual return:   [[]]
+  115. FAIL  (let ([x 1]) x)
+         expected return: [1]
+         actual return:   []
+         expected error:  []
+         actual error:    [analysis error: let binding must be (name value), got [x]
+  116. FAIL  (let ([x 1] [y 2]) (+ x y))
+         expected return: [3]
+         actual return:   []
+         expected error:  []
+         actual error:    [analysis error: let binding must be (name value), got [x]
+  117. FAIL  '[[1 2] [3 4]]
+         expected return: [((1 2) (3 4))]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: 2]]
+  118. FAIL  '[1 . 2]
+         expected return: [(1 . 2)]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: unexpected '.' outside list]
+  119. FAIL  '[1 2 . 3]
+         expected return: [(1 2 . 3)]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: unexpected '.' outside list]
+  120. FAIL  (car '[a b])
+         expected return: [a]
+         actual return:   []
+         expected error:  []
+         actual error:    [SchemeArityError: car: 2 arguments provided; 1 expected]
+  121. FAIL  (equal? '(1 2 3) '[1 2 3])
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [SchemeArityError: equal?: 4 arguments provided; 2 expected]
+  122. FAIL  (read (open-input-string "]"))
+         expected return: []
+         actual return:   []]
+         expected error:  ["<input-string>" line 1, col 1: unexpected ']'
+]
+^]
+         actual error:    []
+  123. FAIL  (read (open-input-string "[1 2)"))
+         expected return: []
+         actual return:   [[1]
+         expected error:  ["<input-string>" line 1, col 5: mismatched bracket: expected ']'
+[1 2)
+    ^]
+         actual error:    []
+  124. FAIL  (read (open-input-string "(1 2]"))
+         expected error:  ["<input-string>" line 1, col 5: mismatched bracket: expected ')'
+(1 2]
+    ^]
+         actual error:    [parse error: unterminated list]
+  125. PASS  (symbol? '+.foo)
+  126. PASS  (symbol? '-.bar)
+  127. PASS  (symbol? '+..)
+  128. FAIL  (exact? #e3/4)
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: malformed number after #e: 3/4]
+  129. FAIL  (= #e3/4 3/4)
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: malformed number after #e: 3/4]
+  130. FAIL  (inexact? #i3/4)
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: malformed number after #i: 3/4]
+  131. FAIL  (= #i3/4 0.75)
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: malformed number after #i: 3/4]
+  132. FAIL  #b101/10
+         expected return: [5/2]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: malformed number after #b: 101/10]
+  133. FAIL  #o7/4
+         expected return: [7/4]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: malformed number after #o: 7/4]
+  134. FAIL  #d3/4
+         expected return: [3/4]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: malformed number after #d: 3/4]
+  135. FAIL  (= #b101/10 5/2)
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: malformed number after #b: 101/10]
+  136. FAIL  (read (open-input-string "#!fold-case ABC"))
+         expected return: [abc]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: unknown # syntax: #!]
+  137. FAIL  (read (open-input-string "#!fold-case #!no-fold-case ...
+         expected return: [ABC]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: unknown # syntax: #!]
+  138. FAIL  (eq? (read (open-input-string "#!fold-case Foo")) 'foo)
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: unknown # syntax: #!]
+  139. PASS  (car (read (open-input-string "(3 |foo| 4)")))
+  140. PASS  (symbol? (cadr (read (open-input-string "(3 |foo| 4)"...
+  141. FAIL  (read (open-input-string "@foo"))
+         expected return: []
+         actual return:   [@foo]
+         expected error:  ["<input-string>" line 1, col 1: '@' is not a valid identifier initial: '@foo'
+@foo
+^]
+         actual error:    []
+  142. FAIL  (read (open-input-string "#true2"))
+         expected return: []
+         actual return:   [#t]
+         expected error:  ["<input-string>" line 1, col 1: unknown #-syntax: '#true2'
+#true2
+^]
+         actual error:    []
+
+40 of 142 FAILED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test001-literals.log
+---------------------------------------------------------------
+    1. PASS  42
+    2. PASS  -7
+    3. PASS  3.14
+    4. PASS  3/4
+    5. PASS  #t
+    6. PASS  #f
+    7. PASS  #\a
+    8. PASS  #\space
+    9. PASS  "hello"
+
+9 TESTS PASSED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test002-expander.log
+---------------------------------------------------------------
+    1. FAIL  (cond-expand ((library (scheme base)) 'yes) (else 'no))
+         expected return: [yes]
+         actual return:   [no]
+    2. PASS  (cond-expand ((library (srfi 1)) 'yes) (else 'no))
+    3. PASS  (cond-expand ((library (no such lib)) 'yes) (else 'no))
+    4. PASS  (cond-expand (r7rs 'yes-r7rs) (else 'no))
+    5. PASS  (cond-expand (nosuch-feature 'no) (else 'fallback))
+    6. FAIL  (cond-expand ((and r7rs pyscheme) 'both) (else 'parti...
+         expected return: [both]
+         actual return:   [partial]
+    7. PASS  (cond-expand ((or nosuch r7rs) 'matched) (else 'no))
+    8. PASS  (cond-expand ((not nosuch) 'yes) (else 'no))
+    9. PASS  (cond-expand ((library (srfi 1)) 'have-srfi) (else 'n...
+   10. PASS  (cond-expand (r7rs (define sq (lambda (x) (* x x)))) ...
+   11. FAIL  (cond-expand)
+         expected error:  [line 1, col 1: cond-expand requires at least one clause
+(cond-expand)
+^]
+         actual error:    [analysis error: cond-expand requires at least one clause]
+   12. FAIL  (cond-expand (nosuch 1))
+         expected error:  [line 1, col 1: cond-expand: no clause matched
+(cond-expand (nosuch 1))
+^]
+         actual error:    [analysis error: cond-expand: no clause matched]
+
+4 of 12 FAILED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test003-analyzer.log
+---------------------------------------------------------------
+    1. FAIL  ()
+         expected error:  [line 1, col 1: empty list () is not a valid expression; use (quote ()) for the empty list
+()
+^]
+         actual error:    [analysis error: empty list () is not a valid expression; use (quote ()) for the empty list]
+    2. FAIL  (lambda 1 x)
+         expected error:  [line 1, col 9: lambda parameter list must be a list or identifier, got 1
+(lambda 1 x)
+        ^]
+         actual error:    [analysis error: lambda parameter list must be a list or identifier, got 1]
+    3. FAIL  (lambda (x x) x)
+         expected error:  [line 1, col 12: duplicate parameter name in lambda: x
+(lambda (x x) x)
+           ^]
+         actual error:    [syntax error: duplicate parameter name in lambda: x]
+    4. FAIL  (lambda (1) 1)
+         expected error:  [line 1, col 10: expected an identifier in lambda parameter list, got 1
+(lambda (1) 1)
+         ^]
+         actual error:    [analysis error: expected an identifier in lambda parameter list, got 1]
+    5. FAIL  (define)
+         expected error:  [line 1, col 1: define requires a name and a value (got 0 arguments)
+(define)
+^]
+         actual error:    [analysis error: define requires a name and a value (got 0 arguments)]
+    6. FAIL  (define 5 6)
+         expected error:  [line 1, col 9: expected an identifier in define, got 5
+(define 5 6)
+        ^]
+         actual error:    [analysis error: expected an identifier in define, got 5]
+    7. FAIL  (set!)
+         expected error:  [line 1, col 1: set! requires a name and a value (got 0 arguments)
+(set!)
+^]
+         actual error:    [analysis error: set! requires a name and a value (got 0 arguments)]
+    8. FAIL  (if)
+         expected error:  [line 1, col 1: if requires 2 or 3 arguments (test, then, optional else), got 0
+(if)
+^]
+         actual error:    [analysis error: if requires 2 or 3 arguments (test, then, optional else), got 0]
+    9. FAIL  (if a b c d)
+         expected error:  [line 1, col 1: if requires 2 or 3 arguments (test, then, optional else), got 4
+(if a b c d)
+^]
+         actual error:    [analysis error: if requires 2 or 3 arguments (test, then, optional else), got 4]
+   10. FAIL  (begin)
+         expected error:  [line 1, col 1: begin must have at least one body expression
+(begin)
+^]
+         actual error:    [analysis error: begin must have at least one body expression]
+   11. FAIL  (let ((x)) x)
+         expected error:  [line 1, col 7: let binding must be (name value), got (x)
+(let ((x)) x)
+      ^]
+         actual error:    [analysis error: let binding must be (name value), got (x)]
+   12. FAIL  (let ((1 2)) x)
+         expected error:  [line 1, col 8: expected an identifier in let binding, got 1
+(let ((1 2)) x)
+       ^]
+         actual error:    [analysis error: expected an identifier in let binding, got 1]
+   13. FAIL  (cond)
+         expected error:  [line 1, col 1: cond must have at least one clause
+(cond)
+^]
+         actual error:    [analysis error: cond must have at least one clause]
+   14. FAIL  (cond ())
+         expected error:  [line 1, col 7: cond clause must be a non-empty list, got ()
+(cond ())
+      ^]
+         actual error:    [analysis error: cond clause must be a non-empty list, got ()]
+   15. FAIL  (cond (else 1) (#t 2))
+         expected error:  [line 1, col 7: cond 'else' clause must be the last clause
+(cond (else 1) (#t 2))
+      ^]
+         actual error:    [analysis error: cond 'else' clause must be the last clause]
+   16. FAIL  (cond (else))
+         expected error:  [line 1, col 7: cond 'else' clause must have at least one expression
+(cond (else))
+      ^]
+         actual error:    [analysis error: cond 'else' clause must have at least one expression]
+   17. FAIL  (when)
+         expected error:  [line 1, col 1: when requires a test and at least one body expression
+(when)
+^]
+         actual error:    [analysis error: when requires a test and at least one body expression]
+   18. FAIL  (when #t)
+         expected error:  [line 1, col 1: when requires a test and at least one body expression
+(when #t)
+^]
+         actual error:    [analysis error: when requires a test and at least one body expression]
+   19. FAIL  (quote)
+         expected error:  [line 1, col 1: quote requires exactly 1 argument, got 0
+(quote)
+^]
+         actual error:    [analysis error: quote requires exactly 1 argument, got 0]
+   20. FAIL  (quote a b)
+         expected error:  [line 1, col 1: quote requires exactly 1 argument, got 2
+(quote a b)
+^]
+         actual error:    [analysis error: quote requires exactly 1 argument, got 2]
+   21. FAIL  (if #t 1 2 3)
+         expected error:  [line 1, col 1: if requires 2 or 3 arguments (test, then, optional else), got 4
+(if #t 1 2 3)
+^]
+         actual error:    [analysis error: if requires 2 or 3 arguments (test, then, optional else), got 4]
+   22. FAIL  (lambda ())
+         expected error:  [line 1, col 1: lambda requires a parameter list and at least one body expression
+(lambda ())
+^]
+         actual error:    [analysis error: lambda requires a parameter list and at least one body expression]
+   23. FAIL  (set! 42 1)
+         expected error:  [line 1, col 7: expected an identifier in set!, got 42
+(set! 42 1)
+      ^]
+         actual error:    [analysis error: expected an identifier in set!, got 42]
+   24. FAIL  (let)
+         expected error:  [line 1, col 1: let requires a binding list and at least one body expression
+(let)
+^]
+         actual error:    [analysis error: let requires a binding list and at least one body expression]
+   25. FAIL  (let ((x 1)))
+         expected error:  [line 1, col 1: let requires a binding list and at least one body expression
+(let ((x 1)))
+^]
+         actual error:    [analysis error: let requires a binding list and at least one body expression]
+   26. FAIL  (let*)
+         expected error:  [line 1, col 1: let* requires a binding list and at least one body expression
+(let*)
+^]
+         actual error:    [analysis error: let* requires a binding list and at least one body expression]
+   27. FAIL  (letrec)
+         expected error:  [line 1, col 1: letrec requires a binding list and at least one body expression
+(letrec)
+^]
+         actual error:    [analysis error: letrec requires a binding list and at least one body expression]
+   28. FAIL  (define-record-type)
+         expected error:  [SchemeArityError: line 1, col 1: define-record-type: 0 arguments provided; at least 4 expected
+(define-record-type)
+^]
+         actual error:    [unbound variable: define-record-type]
+   29. FAIL  (guard)
+         expected error:  [SchemeArityError: line 1, col 1: guard: 0 arguments provided; at least 2 expected
+(guard)
+^]
+         actual error:    [unbound variable: guard]
+   30. FAIL  (parameterize)
+         expected error:  [SchemeArityError: line 1, col 1: parameterize: 0 arguments provided; at least 2 expected
+(parameterize)
+^]
+         actual error:    [unbound variable: parameterize]
+   31. FAIL  (case-lambda ())
+         expected error:  [line 1, col 14: case-lambda clause must be a list, got ()
+(case-lambda ())
+             ^]
+         actual error:    [analysis error: case-lambda clause must be a list, got ()]
+   32. FAIL  (case-lambda (()))
+         expected error:  [line 1, col 14: case-lambda clause must have formals and a non-empty body, got (())
+(case-lambda (()))
+             ^]
+         actual error:    [analysis error: case-lambda clause must have formals and a non-empty body, got (())]
+   33. FAIL  (call/cc car cdr)
+         expected error:  [SchemeArityError: line 1, col 1: call/cc: 2 arguments provided; 1 expected
+(call/cc car cdr)
+^]
+         actual error:    [SchemeArityError: call/cc: 2 arguments provided; 1 expected]
+   34. FAIL  (car '(1 2) '(3 4))
+         expected error:  [SchemeArityError: line 1, col 1: car: 2 arguments provided; 1 expected
+(car '(1 2) '(3 4))
+^]
+         actual error:    [SchemeArityError: car: 2 arguments provided; 1 expected]
+   35. FAIL  (not #t #f)
+         expected error:  [SchemeArityError: line 1, col 1: not: 2 arguments provided; 1 expected
+(not #t #f)
+^]
+         actual error:    [SchemeArityError: not: 2 arguments provided; 1 expected]
+   36. FAIL  (sqrt)
+         expected error:  [SchemeArityError: line 1, col 1: sqrt: 0 arguments provided; 1 expected
+(sqrt)
+^]
+         actual error:    [SchemeArityError: sqrt: 0 arguments provided; 1 expected]
+   37. FAIL  (sqrt 4 9)
+         expected error:  [SchemeArityError: line 1, col 1: sqrt: 2 arguments provided; 1 expected
+(sqrt 4 9)
+^]
+         actual error:    [SchemeArityError: sqrt: 2 arguments provided; 1 expected]
+   38. FAIL  (expt)
+         expected error:  [SchemeArityError: line 1, col 1: expt: 0 arguments provided; 2 expected
+(expt)
+^]
+         actual error:    [SchemeArityError: expt: 0 arguments provided; 2 expected]
+   39. FAIL  (quotient 6 2 1)
+         expected error:  [SchemeArityError: line 1, col 1: quotient: 3 arguments provided; 2 expected
+(quotient 6 2 1)
+^]
+         actual error:    [SchemeArityError: quotient: 3 arguments provided; 2 expected]
+   40. FAIL  (=)
+         expected error:  [SchemeArityError: line 1, col 1: =: 0 arguments provided; at least 1 expected
+(=)
+^]
+         actual error:    [SchemeArityError: =: 0 arguments provided; at least 1 expected]
+   41. FAIL  (<)
+         expected error:  [SchemeArityError: line 1, col 1: <: 0 arguments provided; at least 1 expected
+(<)
+^]
+         actual error:    [SchemeArityError: <: 0 arguments provided; at least 1 expected]
+   42. FAIL  (>)
+         expected error:  [SchemeArityError: line 1, col 1: >: 0 arguments provided; at least 1 expected
+(>)
+^]
+         actual error:    [SchemeArityError: >: 0 arguments provided; at least 1 expected]
+   43. FAIL  (eof-object 42)
+         expected error:  [SchemeArityError: line 1, col 1: eof-object: 1 argument provided; 0 expected
+(eof-object 42)
+^]
+         actual error:    [SchemeArityError: eof-object: 1 argument provided; 0 expected]
+   44. PASS  (car '(1 2))
+   45. PASS  (+ 1 2 3)
+   46. PASS  (sqrt 4)
+   47. PASS  (define (sq x) (* x x))
+   48. FAIL  (sq)
+         expected error:  [SchemeArityError: line 1, col 1: sq: 0 arguments provided; 1 expected
+(sq)
+^]
+         actual error:    [SchemeArityError: sq: 0 arguments provided; 1 expected]
+   49. FAIL  (sq 4 5)
+         expected error:  [SchemeArityError: line 1, col 1: sq: 2 arguments provided; 1 expected
+(sq 4 5)
+^]
+         actual error:    [SchemeArityError: sq: 2 arguments provided; 1 expected]
+   50. PASS  (sq 5)
+   51. PASS  (define (variadic x . rest) (cons x rest))
+   52. PASS  (variadic 1)
+   53. PASS  (variadic 1 2 3)
+   54. FAIL  (let-values)
+         expected error:  [SchemeArityError: line 1, col 1: let-values: 0 arguments provided; at least 2 expected
+(let-values)
+^]
+         actual error:    [unbound variable: let-values]
+   55. FAIL  (define-values)
+         expected error:  [SchemeArityError: line 1, col 1: define-values: 0 arguments provided; 2 expected
+(define-values)
+^]
+         actual error:    [unbound variable: define-values]
+
+47 of 55 FAILED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test004-core-forms.log
+-----------------------------------------------------------------
+    1. PASS  (define a 5)
+    2. PASS  a
+    3. PASS  (define b 99)
+    4. PASS  b
+    5. PASS  (set! a 100)
+    6. PASS  a
+    7. FAIL  (set! undefined-var 1)
+         expected error:  [line 1, col 7: set! on unbound variable: undefined-var
+(set! undefined-var 1)
+      ^]
+         actual error:    [unbound variable: set! on unbound variable: undefined-var]
+    8. FAIL  unbound-ref
+         expected error:  [line 1, col 1: unbound variable: unbound-ref
+unbound-ref
+^]
+         actual error:    [unbound variable: unbound-ref]
+    9. PASS  (if #t 1 2)
+   10. PASS  (if #f 1 2)
+   11. PASS  (if #t 1)
+   12. PASS  (if #f 1)
+   13. PASS  (if 0 'true 'false-branch)
+   14. PASS  ((lambda (x) x) 7)
+   15. PASS  (((lambda (x) (lambda (y) x)) 3) 9)
+   16. PASS  ((lambda (f) (f 3)) (lambda (x) x))
+   17. PASS  (define (id x) x)
+   18. PASS  (id 42)
+   19. PASS  (define id2 (lambda (x) x))
+   20. PASS  (id2 99)
+   21. PASS  ((lambda (x y) x) 11 22)
+   22. PASS  ((lambda (x y) y) 11 22)
+   23. PASS  ((lambda (a b c) b) 10 20 30)
+   24. PASS  ((lambda () 42))
+   25. PASS  (define (pick-second a b) b)
+   26. PASS  (pick-second 1 2)
+   27. PASS  (define (third a b c) c)
+   28. PASS  (third 100 200 300)
+   29. PASS  ((lambda (x) (set! x 1) (set! x 2) x) 0)
+   30. PASS  (define outer-x 1)
+   31. PASS  ((lambda (_) (set! outer-x 99)) 0)
+   32. PASS  outer-x
+   33. FAIL  ((lambda (x y) x) 1)
+         expected error:  [SchemeArityError: line 1, col 1: 1 argument provided; 2 expected
+((lambda (x y) x) 1)
+^]
+         actual error:    [SchemeArityError: 1 argument provided; 2 expected]
+   34. FAIL  ((lambda (x) x) 1 2)
+         expected error:  [SchemeArityError: line 1, col 1: 2 arguments provided; 1 expected
+((lambda (x) x) 1 2)
+^]
+         actual error:    [SchemeArityError: 2 arguments provided; 1 expected]
+   35. FAIL  ((lambda () 1) 99)
+         expected error:  [SchemeArityError: line 1, col 1: 1 argument provided; 0 expected
+((lambda () 1) 99)
+^]
+         actual error:    [SchemeArityError: 1 argument provided; 0 expected]
+   36. PASS  (define square
+   37. PASS  (square 7)
+   38. PASS  ((lambda args args) 1 2 3)
+   39. PASS  ((lambda args args))
+   40. PASS  ((lambda (a . rest) rest) 1 2 3)
+   41. PASS  ((lambda (a . rest) rest) 1)
+   42. PASS  ((lambda (a b . rest) (cons a rest)) 1 2 3 4)
+   43. PASS  (define (f . args) args)
+   44. PASS  (f 1 2 3)
+   45. PASS  (f)
+   46. PASS  (define (g x . rest) rest)
+   47. PASS  (g 1 2 3)
+   48. PASS  (g 1)
+   49. FAIL  ((lambda (a b . rest) rest) 1)
+         expected error:  [SchemeArityError: line 1, col 1: 1 argument provided; at least 2 expected
+((lambda (a b . rest) rest) 1)
+^]
+         actual error:    [SchemeArityError: 1 argument provided; at least 2 expected]
+   50. FAIL  (lambda (x . x) x)
+         expected error:  [line 1, col 14: rest parameter name conflicts with fixed parameter: x
+(lambda (x . x) x)
+             ^]
+         actual error:    [syntax error: rest parameter name conflicts with fixed parameter: x]
+   51. PASS  '(a . b)
+   52. PASS  '(1 2 . 3)
+   53. PASS  '((a . b) c)
+   54. PASS  'foo
+   55. PASS  '()
+   56. PASS  '(1 2 3)
+   57. PASS  '(a (b c) d)
+   58. PASS  (quote x)
+   59. PASS  (quote ())
+   60. PASS  (quote (1 2 3))
+   61. PASS  car
+   62. PASS  ((lambda (f) (f '(1 2))) car)
+   63. PASS  (let ((x (list 1 2 3))) (set-car! x x) (equal? x x))
+   64. PASS  (let ((p (open-output-string))) (write-string "hello"...
+   65. FAIL  (let ((p (open-output-string))) (write-string "hello"...
+         expected return: ["ello"]
+         actual return:   ["hello"]
+   66. FAIL  (let ((p (open-output-string))) (write-string "hello"...
+         expected return: ["el"]
+         actual return:   ["hello"]
+   67. FAIL  (let ((p (open-output-string))) (write-string "hello"...
+         expected return: [""]
+         actual return:   ["hello"]
+   68. FAIL  (let ((p (open-output-string))) (write-string "hello"...
+         expected return: [""]
+         actual return:   ["hello"]
+   69. PASS  (let ((p (open-input-bytevector (bytevector 1 2 3))))...
+   70. PASS  (let ((p (open-input-bytevector (bytevector 1 2 3))))...
+   71. PASS  (let ((p (open-input-bytevector (bytevector)))) (eof-...
+   72. PASS  (let ((bv (make-bytevector 3 0)) (p (open-input-bytev...
+   73. PASS  (let ((bv (make-bytevector 4 0)) (p (open-input-bytev...
+   74. PASS  (let ((p (open-output-bytevector))) (write-u8 65 p) (...
+   75. PASS  (let ((p (open-output-bytevector))) (write-u8 0 p) (w...
+   76. PASS  (let ((p (open-output-bytevector))) (write-bytevector...
+   77. PASS  (let ((p (open-output-bytevector))) (write-bytevector...
+   78. PASS  (let ((p (open-output-bytevector))) (write-bytevector...
+   79. PASS  #| this is ignored |# 42
+   80. PASS  #| outer #| nested |# still outer |# 99
+   81. PASS  #;(skipped) 'kept
+   82. PASS  '#2=(a b c)
+   83. PASS  (let ((x '#0=(1 2 . #0#))) (list (car x) (cadr x)))
+   84. PASS  (let ((x '#1=(a #1# b))) (car x))
+   85. FAIL  (#3# . 5)
+         expected error:  [line 1, col 2: undefined datum label #3#
+(#3# . 5)
+ ^]
+         actual error:    [parse error: datum label #33# used before definition]
+   86. PASS  (case 6 ((2 3 5 7) 'prime) ((1 4 6 8 9) => (lambda (x...
+   87. PASS  (case 5 ((2 3 5 7) => (lambda (x) (list 'prime x))))
+   88. PASS  (case 1 (else => (lambda (x) (list 'got x))))
+   89. PASS  (case 0 ((0) => (lambda (x) (* x x))))
+   90. PASS  (let* ((p (open-output-string)))
+   91. PASS  (let* ((x (list 1 2)) (p (open-output-string)))
+   92. PASS  (let* ((x (list 1 2)) (p (open-output-string)))
+   93. PASS  (let* ((v (vector 1 2 3)) (p (open-output-string)))
+   94. PASS  (let ((p (open-output-string))) (write (string->symbo...
+   95. PASS  (let ((p (open-output-string))) (write 'foo p) (get-o...
+   96. PASS  (let ((p (open-output-string))) (write (string->symbo...
+   97. PASS  (quote 42)
+   98. PASS  (quote hello)
+   99. PASS  (quote (1 2 3))
+  100. PASS  ''x
+  101. PASS  (if #f 1 2)
+  102. PASS  (if 0 'yes 'no)
+  103. PASS  (if '() 'yes 'no)
+  104. PASS  (if #f 'never)
+  105. PASS  (if #t 'yes)
+  106. FAIL  (if #t)
+         expected error:  [line 1, col 1: if requires 2 or 3 arguments (test, then, optional else), got 1
+(if #t)
+^]
+         actual error:    [analysis error: if requires 2 or 3 arguments (test, then, optional else), got 1]
+  107. PASS  (cond (#f 1) (#t 2))
+  108. PASS  (cond (#f 1) (#f 2) (else 3))
+  109. PASS  (cond (#f 'never) (else 'default))
+  110. PASS  (cond ((= 1 1) 'yes) (else 'no))
+  111. PASS  (cond ((assv 2 '((1 one) (2 two) (3 three))) => cadr)
+  112. PASS  (cond (#f => car)
+  113. PASS  (cond (#f => car)
+  114. PASS  (cond ('() => null?)
+  115. PASS  (cond ((+ 3 4) => (lambda (n) (* n n))))
+  116. PASS  (case 2
+  117. PASS  (case 99
+  118. PASS  (case 1
+  119. PASS  (case (* 2 3)
+  120. PASS  (case 'foo
+  121. PASS  (case 10
+  122. PASS  (case 99
+  123. PASS  (and 1 #f 3)
+  124. PASS  (and #f (error "never"))
+  125. PASS  (and 1 2 #f)
+  126. PASS  (or #f)
+  127. PASS  (or #f 2 3)
+  128. PASS  (or #f #f #f)
+  129. PASS  (or 1 (error "never"))
+  130. PASS  (when #f 1 2 3)
+  131. PASS  (unless #f 42)
+  132. PASS  (unless #t 42)
+  133. PASS  (begin 1)
+  134. PASS  (begin (define x 10) (* x 2))
+  135. PASS  (define x 42)
+  136. PASS  x
+  137. FAIL  (define y)
+         expected error:  [line 1, col 1: define requires a name and a value (got 1 arguments)
+(define y)
+^]
+         actual error:    [analysis error: define requires a name and a value (got 1 arguments)]
+  138. PASS  (define (square n) (* n n))
+  139. PASS  (define (fact n)
+  140. PASS  (fact 0)
+  141. PASS  (define (sum . args)
+  142. FAIL  (sum 1 2 3 4 5)
+         expected return: []
+         actual return:   [15]
+         expected error:  [line 2, col 4: unbound variable: fold-left
+  (fold-left + 0 args))
+   ^]
+         actual error:    []
+  143. FAIL  (sum)
+         expected return: []
+         actual return:   [0]
+         expected error:  [line 2, col 4: unbound variable: fold-left
+  (fold-left + 0 args))
+   ^]
+         actual error:    []
+  144. PASS  (define z 1)
+  145. PASS  (set! z 99)
+  146. PASS  z
+  147. FAIL  (set! unbound-var 42)
+         expected error:  [line 1, col 7: set! on unbound variable: unbound-var
+(set! unbound-var 42)
+      ^]
+         actual error:    [unbound variable: set! on unbound variable: unbound-var]
+  148. PASS  ((lambda (x) (* x x)) 5)
+  149. PASS  ((lambda (x y) (+ x y)) 3 4)
+  150. PASS  ((lambda () 42))
+  151. PASS  ((lambda (x . rest) rest) 1 2 3)
+  152. PASS  ((lambda args args) 1 2 3)
+  153. PASS  (let ((x 10))
+  154. FAIL  (lambda)
+         expected error:  [line 1, col 1: lambda requires a parameter list and at least one body expression
+(lambda)
+^]
+         actual error:    [analysis error: lambda requires a parameter list and at least one body expression]
+  155. PASS  (let ((x 1) (y 2)) (+ x y))
+  156. PASS  (let ((x 5)) (* x x))
+  157. PASS  (let ((x 1) (y 2)) (let ((x y) (y x)) (list x y)))
+  158. PASS  (let loop ((n 5) (acc 1))
+  159. PASS  (let loop ((i 0) (acc '()))
+  160. PASS  (let* ((x 1) (y (+ x 1))) y)
+  161. PASS  (let* ((x 2) (y (* x 3)) (z (+ y 1))) z)
+  162. PASS  (letrec ((even? (lambda (n) (if (= n 0) #t (odd? (- n...
+  163. PASS  (letrec ((even? (lambda (n) (if (= n 0) #t (odd? (- n...
+  164. PASS  (letrec* ((x 1) (y (+ x 1))) y)
+  165. PASS  (do ((i 0 (+ i 1)))
+  166. PASS  (do ((i 1 (+ i 1))
+  167. PASS  (do ((i 0 (+ i 1))
+  168. PASS  ((case-lambda
+  169. PASS  ((case-lambda
+  170. PASS  ((case-lambda
+  171. PASS  (define-values (a b c) (values 1 2 3))
+  172. PASS  b
+  173. PASS  c
+  174. PASS  (let-values (((a b) (values 1 2))) (+ a b))
+  175. PASS  (let-values (((x) (values 42))) x)
+  176. PASS  (let-values (((a b) (values 1 2))
+  177. PASS  (let-values (((first . rest) (values 1 2 3)))
+  178. PASS  (let-values ((all (values 1 2 3)))
+  179. PASS  (let-values () 99)
+  180. PASS  (let-values (((x y) (values 10 20)))
+  181. PASS  (let*-values (((a b) (values 1 2))
+  182. PASS  (let*-values (((x) (values 5))
+  183. PASS  `foo
+  184. PASS  `(1 2 3)
+  185. PASS  `42
+  186. FAIL  (let ((x 42)) `x)
+         expected return: [x]
+         actual return:   [h.x.155]
+  187. PASS  (let ((x 42)) `,x)
+  188. PASS  (let ((a 1) (b 2)) `(,a ,b))
+  189. PASS  (let ((x 5)) `(before ,x after))
+  190. PASS  (let ((x '(a b))) `(1 ,x 2))
+  191. PASS  `(,(+ 1 2) ,(* 3 4))
+  192. PASS  (let ((x 5)) `(a ,x c))
+  193. PASS  (let ((x 10) (y 20)) `(,x + ,y = ,(+ x y)))
+  194. PASS  (let ((xs '(1 2 3))) `(,@xs))
+  195. PASS  (let ((xs '(1 2 3))) `(0 ,@xs 4))
+  196. PASS  (let ((a '(1 2)) (b '(3 4))) `(,@a ,@b))
+  197. PASS  (let ((xs '(2 3))) `(1 ,@xs 4 5))
+  198. PASS  (let ((xs '())) `(1 ,@xs 2))
+  199. PASS  (let ((x 0) (ys '(1 2))) `(,x ,@ys 3))
+  200. PASS  (let ((a 'hello) (bs '(world how)) (c 'are)) `(,a ,@b...
+  201. PASS  (let ((x 2)) `(1 . ,x))
+  202. PASS  (define (make-point x y) `(point ,x ,y))
+  203. PASS  (make-point 3 4)
+  204. PASS  (define (wrap . args) `(wrapped ,@args end))
+  205. PASS  (wrap 'a 'b 'c)
+  206. PASS  `(a b c)
+  207. PASS  `()
+  208. PASS  `42
+  209. PASS  (define x 42) `(x is ,x)
+  210. PASS  `(,(+ 1 2) ,(* 3 4))
+  211. PASS  `(a ,@(list 1 2 3) b)
+  212. PASS  `(,@(list 1 2) ,@(list 3 4))
+  213. PASS  `(,@(list 1 2) z)
+  214. PASS  `(start ,@(list 1 2))
+  215. PASS  (define xs '(10 20 30)) `(first is ,(car xs) rest ,@(...
+  216. PASS  (define c 100) `(a `b ,c)
+  217. PASS  (define c 100) `(a `(b ,,c))
+  218. PASS  (define c 100) `(a `(b ,c))
+  219. PASS  (define v 7) `,v
+  220. FAIL  (unquote 5)
+         expected error:  [line 1, col 1: unquote is only valid inside a quasiquote template
+(unquote 5)
+^]
+         actual error:    [analysis error: unquote is only valid inside a quasiquote template]
+  221. FAIL  (unquote-splicing (list 1 2))
+         expected error:  [line 1, col 1: unquote-splicing is only valid inside a quasiquote template
+(unquote-splicing (list 1 2))
+^]
+         actual error:    [analysis error: unquote-splicing is only valid inside a quasiquote template]
+  222. PASS  `#(1 2 3)
+  223. PASS  `#()
+  224. FAIL  (let ((x 5)) `#(,x))
+         expected return: [#(5)]
+         actual return:   [#(42)]
+  225. FAIL  (let ((x 5) (y 6)) `#(,x ,y))
+         expected return: [#(5 6)]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: y]
+  226. PASS  `#(,(+ 1 1) ,(+ 2 2))
+  227. PASS  `#(,@(list 1 2 3))
+  228. PASS  `#(1 ,@(list 2 3) 4)
+  229. PASS  `#(,@(list 1 2) ,@(list 3 4))
+  230. FAIL  (let ((xs '(a b c))) `#(x ,@xs y))
+         expected return: [#(x a b c y)]
+         actual return:   [#(x 10 20 30 y)]
+  231. PASS  (let () (define f (lambda () (g))) (define g (lambda ...
+  232. PASS  (let () (define x 1) (define y (+ x 1)) y)
+  233. PASS  (let () (define h (lambda () g)) (define-values (g) 9...
+  234. PASS  (let () (define x 1) (define-values (a b) (values 2 3...
+  235. PASS  (let () (begin (define x 10) (define y 20)) (+ x y))
+  236. PASS  ((lambda () (define x 100) (define y (+ x 1)) y))
+  237. PASS  ((case-lambda ((x) (define y 100) (+ x y)) ((x y) (* ...
+  238. PASS  (when #t (define x 7) (define y 8) (+ x y))
+  239. PASS  (unless #f (define-values (a b) (values 5 6)) (* a b))
+  240. PASS  (let*-values (((a) (values 10))) (define b (+ a 1)) (...
+  241. PASS  (parameterize () (define z 9) (* z z))
+  242. PASS  (guard (e (#t e)) (define ok 42) ok)
+
+24 of 242 FAILED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test005-derived-forms.log
+--------------------------------------------------------------------
+    1. PASS  (begin 1 2 3)
+    2. PASS  (begin 42)
+    3. PASS  (define counter 0)
+    4. PASS  (begin (set! counter 1) (set! counter 2) counter)
+    5. PASS  (when #t 1 2 3)
+    6. PASS  (when #f 99)
+    7. PASS  (when 0 'truthy)
+    8. PASS  (when (null? (list)) (cons 1 (list)))
+    9. PASS  (unless #f 1 2 3)
+   10. PASS  (unless #t 99)
+   11. PASS  (unless (null? (list 1)) 'runs)
+   12. PASS  (and)
+   13. PASS  (and 1)
+   14. PASS  (and 1 2 3)
+   15. PASS  (and #f 99)
+   16. PASS  (and 1 #f 3)
+   17. PASS  (or)
+   18. PASS  (or 1)
+   19. PASS  (or #f #f 3)
+   20. PASS  (or #f #f #f)
+   21. PASS  (or 1 'would-not-evaluate)
+   22. PASS  (cond (#t 1))
+   23. PASS  (cond (#f 1) (#t 2) (else 3))
+   24. PASS  (cond (#f 1) (#f 2) (else 'fallback))
+   25. PASS  (cond (#f 1))
+   26. PASS  (cond (42))
+   27. PASS  (cond (#f) (else 99))
+   28. PASS  (cond ((cons 1 2) => car))
+   29. PASS  (cond (#f => car) (else 'skipped))
+   30. PASS  (cond ((cons 10 20) => cdr) (else 0))
+   31. PASS  (case 2 ((1 2 3) 'small) ((4 5) 'med) (else 'big))
+   32. PASS  (case 5 ((1 2 3) 'small) ((4 5) 'med) (else 'big))
+   33. PASS  (case 99 ((1 2 3) 'small) ((4 5) 'med) (else 'big))
+   34. PASS  (case 'b ((a) 1) ((b c) 2) (else 3))
+   35. PASS  (case 99 ((1) 'one))
+   36. PASS  (case 2 ((1 2) 'a 'b 'c) (else 'd))
+   37. PASS  (case 7 ((7) 'found) (else 'missing))
+   38. PASS  (case 2 ((2.0) 'real) (else 'int))
+   39. PASS  (case 2.0 ((2) 'int) (else 'real))
+   40. FAIL  (case)
+         expected error:  [line 1, col 1: case requires a key and at least one clause
+(case)
+^]
+         actual error:    [analysis error: case requires a key and at least one clause]
+   41. FAIL  (case 1 (else 1) (else 2))
+         expected error:  [line 1, col 9: case 'else' clause must be the last clause
+(case 1 (else 1) (else 2))
+        ^]
+         actual error:    [analysis error: case 'else' clause must be the last clause]
+   42. FAIL  (case 1 (else 1) ((2) 'b))
+         expected error:  [line 1, col 9: case 'else' clause must be the last clause
+(case 1 (else 1) ((2) 'b))
+        ^]
+         actual error:    [analysis error: case 'else' clause must be the last clause]
+   43. FAIL  (case 1 ())
+         expected error:  [line 1, col 9: case clause must be (<datum-list> <expr>...) or (else <expr>...), got ()
+(case 1 ())
+        ^]
+         actual error:    [analysis error: case clause must be (<datum-list> <expr>...) or (else <expr>...), got ()]
+   44. PASS  (let ((x 1)) x)
+   45. PASS  (let () 42)
+   46. PASS  (let ((x 1) (y 2)) (cons x y))
+   47. PASS  (let ((a 1) (b 2) (c 3)) (list a b c))
+   48. PASS  (define outer 10)
+   49. PASS  (let ((outer 1)) outer)
+   50. PASS  outer
+   51. PASS  (let ((x 99) (y outer)) (cons x y))
+   52. PASS  (let* ((x 1) (y x)) y)
+   53. PASS  (let* ((x 1) (y (cons x (list)))) y)
+   54. PASS  (let* ((a 1) (b (cons a (list))) (c (cons 2 b))) c)
+   55. PASS  (letrec ((f (lambda (x) x))) (f 42))
+   56. PASS  (letrec ((last (lambda (lst) (if (null? (cdr lst)) (c...
+   57. PASS  (letrec ((p? (lambda (lst) (if (null? lst) #t (q? (cd...
+   58. PASS  (letrec* ((f (lambda (x) x)) (g (lambda (x) (f x)))) ...
+   59. PASS  (do ((i 0 (+ i 1))) ((= i 5) i))
+   60. PASS  (do ((i 0 (+ i 1)) (s 0 (+ s i))) ((= i 5) s))
+   61. PASS  (do ((i 0 (+ i 1))) ((= i 3)))
+   62. PASS  (do ((i 0 (+ i 1)) (acc (list) (cons i acc))) ((= i 4...
+   63. PASS  (do ((a 1 b) (b 2 (+ a b))) ((> a 10) a))
+   64. PASS  (do ((i 0 (+ i 1)) (v 'a)) ((= i 2) v))
+   65. PASS  (do ((x 'hi)) (#t x))
+   66. PASS  (do ((i 0 (+ i 1))) ((= i 3) 'first 'second 'third))
+   67. FAIL  (do)
+         expected error:  [line 1, col 1: do requires a binding list and a test clause
+(do)
+^]
+         actual error:    [analysis error: do requires a binding list and a test clause]
+   68. FAIL  (do () ())
+         expected error:  [line 1, col 8: do test clause must be a list starting with a test expression
+(do () ())
+       ^]
+         actual error:    [analysis error: do test clause must be a list starting with a test expression]
+   69. FAIL  (do ((i)) ((= i 0) i))
+         expected error:  [line 1, col 6: do binding must be (var init) or (var init step), got (i)
+(do ((i)) ((= i 0) i))
+     ^]
+         actual error:    [analysis error: do binding must be (var init) or (var init step), got (i)]
+   70. FAIL  (do ((1 0)) ((= 1 0)))
+         expected error:  [line 1, col 7: expected an identifier in do binding, got 1
+(do ((1 0)) ((= 1 0)))
+      ^]
+         actual error:    [analysis error: expected an identifier in do binding, got 1]
+   71. FAIL  (do ((i 0 (+ i 1)) (i 0)) ((= i 5) i))
+         expected error:  [line 1, col 21: duplicate variable name in do bindings: i
+(do ((i 0 (+ i 1)) (i 0)) ((= i 5) i))
+                    ^]
+         actual error:    [analysis error: duplicate variable name in do bindings: i]
+   72. PASS  (define-values (p q r) (values 1 2 3)) (list p q r)
+   73. PASS  (define-values (head . tail) (values 10 20 30 40)) (l...
+   74. PASS  (define-values all (values 'x 'y 'z)) all
+   75. PASS  (define-values (solo) 77) solo
+
+9 of 75 FAILED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test006-advanced-forms.log
+---------------------------------------------------------------------
+    1. PASS  (call-with-values (lambda () (floor/ 13 4))
+    2. PASS  (call-with-values (lambda () (floor/ -13 4))
+    3. PASS  (call-with-values (lambda () (floor/ 13 -4))
+    4. PASS  (call-with-values (lambda () (floor/ -13 -4))
+    5. PASS  (call-with-values (lambda () (truncate/ 13 4))
+    6. PASS  (call-with-values (lambda () (truncate/ -13 4))
+    7. PASS  (call-with-values (lambda () (exact-integer-sqrt 14))
+    8. PASS  (call-with-values (lambda () (exact-integer-sqrt 9))
+    9. PASS  (call-with-values (lambda () (exact-integer-sqrt 0))
+   10. PASS  (call-with-values (lambda () (exact-integer-sqrt 1))
+   11. PASS  (call-with-values (lambda () (exact-integer-sqrt 100))
+   12. PASS  (guard (e (#t 'ok)) (< 1+2i 3+4i))
+   13. PASS  (guard (e (#t 'ok)) (exact 1+2i))
+   14. FAIL  (call-with-values (lambda () (partition odd? '(1 2 3 ...
+         expected error:  [line 1, col 31: unbound variable: partition
+(call-with-values (lambda () (partition odd? '(1 2 3 4 5))) list)
+                              ^]
+         actual error:    [unbound variable: partition]
+   15. FAIL  (call-with-values (lambda () (partition odd? '())) list)
+         expected error:  [line 1, col 31: unbound variable: partition
+(call-with-values (lambda () (partition odd? '())) list)
+                              ^]
+         actual error:    [unbound variable: partition]
+   16. PASS  (file-error?
+   17. FAIL  (file-error?
+         expected return: [#t]
+         actual return:   [#f]
+   18. PASS  (file-error?
+   19. FAIL  (file-error?
+         expected return: [#t]
+         actual return:   [#f]
+   20. PASS  (define f (case-lambda ((x) (list 'one x)) ((x y) (li...
+   21. PASS  (define f (case-lambda ((x) (list 'one x)) ((x y) (li...
+   22. PASS  (define f (case-lambda ((x) (list 'one x)) ((x y) (li...
+   23. PASS  (define g (case-lambda (() 'zero) ((a) a))) (g)
+   24. PASS  (define g (case-lambda (() 'zero) ((a) a))) (g 42)
+   25. PASS  (procedure? (case-lambda ((x) x)))
+   26. PASS  (apply (case-lambda ((x) 'one) ((x y z) 'three)) '(1 ...
+   27. FAIL  (define g (case-lambda (() 'zero) ((a) a))) (g 1 2 3)
+         expected error:  [SchemeArityError: line 1, col 45: case-lambda: no clause matches 3 arguments
+(define g (case-lambda (() 'zero) ((a) a))) (g 1 2 3)
+                                            ^]
+         actual error:    [SchemeArityError: case-lambda: no clause matches 3 arguments]
+   28. FAIL  (case-lambda)
+         expected error:  [line 1, col 1: case-lambda requires at least one clause
+(case-lambda)
+^]
+         actual error:    [analysis error: case-lambda requires at least one clause]
+   29. FAIL  (case-lambda (() . body))
+         expected error:  [line 1, col 14: case-lambda clause must have formals and a non-empty body, got (() . body)
+(case-lambda (() . body))
+             ^]
+         actual error:    [analysis error: case-lambda clause must have formals and a non-empty body, got (() . body)]
+   30. PASS  (force (delay 42))
+   31. PASS  (force (delay (+ 1 2 3)))
+   32. PASS  (promise? (delay 1))
+   33. PASS  (promise? 1)
+   34. PASS  (promise? "hi")
+   35. PASS  (promise? (lambda () 1))
+   36. PASS  (define p (delay 7)) (force p) (promise? p)
+   37. PASS  (define c 0) (define p (delay (begin (set! c (+ c 1))...
+   38. PASS  (define c 0) (define p (delay (begin (set! c (+ c 1))...
+   39. PASS  (force (make-promise 100))
+   40. PASS  (promise? (make-promise 5))
+   41. PASS  (define q (make-promise 'hello)) (force q) (force q)
+   42. PASS  (define x 10) (define p (delay (* x x))) (set! x 99) ...
+   43. PASS  (force (delay (delay 42)))
+   44. PASS  (force (delay (make-promise 'inner)))
+   45. PASS  (force (delay-force 42))
+   46. PASS  (force (delay-force (delay 17)))
+   47. PASS  (define (loop n) (if (zero? n) (delay 'done) (delay-f...
+   48. PASS  (force 5)
+   49. PASS  (force '(1 2 3))
+   50. PASS  (force "hi")
+   51. FAIL  (delay)
+         expected error:  [line 1, col 1: delay requires exactly 1 argument, got 0
+(delay)
+^]
+         actual error:    [analysis error: delay requires exactly 1 argument, got 0]
+   52. FAIL  (delay 1 2)
+         expected error:  [line 1, col 1: delay requires exactly 1 argument, got 2
+(delay 1 2)
+^]
+         actual error:    [analysis error: delay requires exactly 1 argument, got 2]
+   53. FAIL  (delay-force)
+         expected error:  [line 1, col 1: delay-force requires exactly 1 argument, got 0
+(delay-force)
+^]
+         actual error:    [analysis error: delay-force requires exactly 1 argument, got 0]
+   54. FAIL  (help delay)
+         expected return: [#<void>]
+         actual return:   []
+         expected output: [Special Form  |  args: unevaluated
+
+   Usage: (delay <expr>)
+
+   Return a promise whose forced value is the value of <expr>.
+   <expr> is not evaluated until the promise is forced; its value is
+   then cached so subsequent forces are O(1).  R7RS 4.2.5.  Use force
+   to retrieve the value.]
+         actual output:   []
+         expected error:  []
+         actual error:    [unbound variable: help]
+   55. FAIL  (help force)
+         expected return: [#<void>]
+         actual return:   []
+         expected output: [Primitive  |  args: pre-evaluated
+
+   Usage: (force a)
+
+   Force a promise, returning its value.  The promise's thunk runs
+   at most once; subsequent forces return the cached value.  If the
+   thunk yields another promise, force follows the chain iteratively,
+   so (delay-force ...) promise chains run in constant stack.  A
+   non-promise argument is returned unchanged (R7RS-small 6.10 leaves
+   this implementation-defined; we follow SRFI 155).]
+         actual output:   []
+         expected error:  []
+         actual error:    [unbound variable: help]
+   56. PASS  (values)
+   57. PASS  (values 42)
+   58. PASS  (values "hi")
+   59. PASS  (+ 1 (values 2))
+   60. PASS  (define values-single (values 42)) values-single
+   61. PASS  (if (values #t) (quote yes) (quote no))
+   62. PASS  (values 1 2 3)
+   63. PASS  (call-with-values (lambda () (values 10 20 30)) +)
+   64. PASS  (call-with-values (lambda () (values 1 2)) list)
+   65. PASS  (call-with-values (lambda () 42) (lambda (x) (* x 2)))
+   66. PASS  (call-with-values (lambda () (values)) (lambda () 'ok))
+   67. PASS  (call-with-values (lambda () (values 3 4)) (lambda (a...
+   68. PASS  (call-with-values (lambda () (values 1 2 3 4)) (lambd...
+   69. PASS  (let-values (((a b) (values 1 2))) (+ a b))
+   70. PASS  (let-values (((a b) (values 10 20)) ((c) (values 30))...
+   71. PASS  (define x 100) (let-values (((x) (values 1)) ((y) (va...
+   72. PASS  (let-values (((head . rest) (values 1 2 3 4))) (list ...
+   73. PASS  (let-values ((all (values 'a 'b 'c))) all)
+   74. PASS  (let-values () 1 2 3)
+   75. PASS  (let-values ((() (values))) 'body-ran)
+   76. PASS  (let*-values (((a b) (values 1 2)) ((c) (values (+ a ...
+   77. PASS  (let*-values (((x) (values 10)) ((x) (values (* x x))...
+   78. FAIL  (+ 1 (values 2 3))
+         expected error:  [SchemeTypeError: line 1, col 6: multiple values delivered to a single-value context
+(+ 1 (values 2 3))
+     ^]
+         actual error:    [SchemeTypeError: multiple values delivered to a single-value context]
+   79. FAIL  (if (values 1 2) 'yes 'no)
+         expected error:  [SchemeTypeError: line 1, col 5: multiple values delivered to a single-value context
+(if (values 1 2) 'yes 'no)
+    ^]
+         actual error:    [SchemeTypeError: multiple values delivered to a single-value context]
+   80. FAIL  (let ((x (values 1 2))) x)
+         expected error:  [SchemeTypeError: line 1, col 10: multiple values delivered to a single-value context
+(let ((x (values 1 2))) x)
+         ^]
+         actual error:    [SchemeTypeError: multiple values delivered to a single-value context]
+   81. FAIL  (define mv-bad (values 1 2))
+         expected error:  [SchemeTypeError: line 1, col 16: multiple values delivered to a single-value context
+(define mv-bad (values 1 2))
+               ^]
+         actual error:    [SchemeTypeError: multiple values delivered to a single-value context]
+   82. PASS  (begin (values 1 2) (+ 3 4))
+   83. PASS  (let () (values 1 2) 'ok)
+   84. PASS  (define mv-tail (begin (values 1 2) 42)) mv-tail
+   85. PASS  (call-with-values (lambda () (dynamic-wind (lambda ()...
+   86. PASS  (call-with-values (lambda () (with-exception-handler ...
+   87. PASS  (define (loop n) (if (zero? n) 'done (call-with-value...
+   88. PASS  (make-parameter 10)
+   89. PASS  (parameter? (make-parameter 10))
+   90. PASS  (parameter? 42)
+   91. PASS  (procedure? (make-parameter 10))
+   92. PASS  (define p (make-parameter 10)) (p)
+   93. PASS  (define p (make-parameter 10)) (parameterize ((p 99))...
+   94. PASS  (define p (make-parameter 10)) (parameterize ((p 99))...
+   95. PASS  (define p (make-parameter 1)) (parameterize ((p 2)) (...
+   96. PASS  (define p (make-parameter 1)) (parameterize ((p 2)) (...
+   97. PASS  (define p (make-parameter 1)) (define q (make-paramet...
+   98. PASS  (define c (make-parameter 3 (lambda (x) (* x x)))) (c)
+   99. FAIL  (define c (make-parameter 3 (lambda (x) (* x x)))) (p...
+         expected return: [25]
+         actual return:   [5]
+  100. FAIL  (define c (make-parameter 1 (lambda (x) (+ x 100)))) ...
+         expected return: [(101 102 103 101)]
+         actual return:   [(101 2 3 101)]
+  101. PASS  (define p (make-parameter 0)) (define (loop n) (if (z...
+  102. FAIL  (define p (make-parameter 1)) (parameterize ((p 99)) ...
+         expected error:  [SchemeUserError: line 1, col 54: boom
+(define p (make-parameter 1)) (parameterize ((p 99)) (error "boom"))
+                                                     ^]
+         actual error:    [SchemeRaised: #<error-object ""boom"">]
+  103. FAIL  (define p (make-parameter 1)) (parameterize ((p 99)) ...
+         expected error:  [SchemeUserError: line 1, col 54: boom
+(define p (make-parameter 1)) (parameterize ((p 99)) (error "boom")) (p)
+                                                     ^]
+         actual error:    [SchemeRaised: #<error-object ""boom"">]
+  104. FAIL  (define p (make-parameter 1)) (parameterize ((p 99)) ...
+         expected error:  [SchemeUserError: line 1, col 54: boom
+(define p (make-parameter 1)) (parameterize ((p 99)) (error "boom")) #f (p)
+                                                     ^]
+         actual error:    [SchemeRaised: #<error-object ""boom"">]
+  105. FAIL  (define p (make-parameter 10)) (p 1 2)
+         expected error:  [SchemeArityError: line 1, col 32: parameter: 2 arguments provided; 0 expected
+(define p (make-parameter 10)) (p 1 2)
+                               ^]
+         actual error:    [SchemeArityError: parameter: 2 arguments provided; 0 expected]
+  106. FAIL  (make-parameter 1 42)
+         expected error:  [SchemeTypeError: line 1, col 1: make-parameter: converter must be a procedure
+(make-parameter 1 42)
+^]
+         actual error:    [SchemeTypeError: application of non-procedure: 42]
+  107. FAIL  (parameterize ((42 10)) 'body)
+         expected error:  [SchemeTypeError: line 1, col 1: %with-parameters: non-parameter in parameterize binding
+(parameterize ((42 10)) 'body)
+^]
+         actual error:    [SchemeTypeError: %with-parameters: non-parameter]
+  108. PASS  (call/cc (lambda (k) (with-exception-handler (lambda ...
+  109. PASS  (call/cc (lambda (k) (with-exception-handler (lambda ...
+  110. PASS  (call/cc (lambda (k) (with-exception-handler (lambda ...
+  111. PASS  (call/cc (lambda (k) (with-exception-handler (lambda ...
+  112. PASS  (with-exception-handler (lambda (v) 'never) (lambda (...
+  113. PASS  (call/cc (lambda (k) (with-exception-handler (lambda ...
+  114. PASS  (call/cc (lambda (k) (with-exception-handler (lambda ...
+  115. PASS  (call/cc (lambda (k) (with-exception-handler (lambda ...
+  116. PASS  (call/cc (lambda (k) (with-exception-handler (lambda ...
+  117. PASS  (error-object? 42)
+  118. PASS  (error-object? "string")
+  119. FAIL  (error-object-message 42)
+         expected error:  [SchemeTypeError: line 1, col 1: error-object-message: not an error object
+(error-object-message 42)
+^]
+         actual error:    [SchemeTypeError: error-object-message: not an error object]
+  120. PASS  (with-exception-handler (lambda (v) (+ v 1)) (lambda ...
+  121. PASS  (with-exception-handler (lambda (v) (+ v 1)) (lambda ...
+  122. PASS  (define (loop n) (with-exception-handler (lambda (v) ...
+  123. PASS  (guard (e ((symbol? e) (list 'sym e)) ((number? e) (l...
+  124. PASS  (guard (e ((symbol? e) (list 'sym e)) ((number? e) (l...
+  125. FAIL  (guard (e ((string? e) 'got-string)) (raise 99))
+         expected error:  [SchemeRaised: line 1, col 1: 99
+(guard (e ((string? e) 'got-string)) (raise 99))
+^]
+         actual error:    [SchemeRaised: 99]
+  126. PASS  (guard (e ((symbol? e) 'sym) (else (list 'other e))) ...
+  127. PASS  (guard (e ((error-object? e) (error-object-message e)...
+  128. PASS  (guard (e (else 'never)) (+ 1 2 3))
+  129. PASS  (guard (e (else 'outer-caught)) (guard (e (else (list...
+  130. PASS  (guard (e ((number? e) (list 'outer-num e))) (guard (...
+  131. PASS  (guard (e (else (list 'outer e))) (with-exception-han...
+  132. FAIL  (guard (e (else e)) (error "fail" 'a 1))
+         expected return: [#<error-object "fail" (a 1)>]
+         actual return:   [#<error-object ""fail"" (a 1)>]
+  133. FAIL  (guard (e (else (list 'caught e))) (car 5))
+         expected return: [(caught #<error-object "car: expected pair, got non-pair value">)]
+         actual return:   [(caught #<error-object ""type error: expected pair, got fixnum"">)]
+  134. FAIL  (guard (e ((error-object? e) (error-object-message e)...
+         expected return: ["car: expected pair, got non-pair value"]
+         actual return:   ["type error: expected pair, got fixnum"]
+  135. FAIL  (guard (e (else (list 'caught e))) does-not-exist)
+         expected return: [(caught #<error-object "unbound variable: does-not-exist">)]
+         actual return:   [(caught #<error-object ""unbound variable: does-not-exist"">)]
+  136. FAIL  (define eval-arity-h (lambda () (lambda (x) x))) (gua...
+         expected return: [(caught #<error-object "3 arguments provided; 1 expected">)]
+         actual return:   [(caught #<error-object ""arity error: 3 arguments provided; 1 expected"">)]
+  137. FAIL  (with-exception-handler (lambda (v) (list 'handled v)...
+         expected return: [(handled #<error-object "car: expected pair, got non-pair value">)]
+         actual return:   [(handled #<error-object ""type error: expected pair, got fixnum"">)]
+  138. FAIL  (guard (e (else 'caught)) (car))
+         expected error:  [SchemeArityError: line 1, col 27: car: 0 arguments provided; 1 expected
+(guard (e (else 'caught)) (car))
+                          ^]
+         actual error:    [SchemeArityError: car: 0 arguments provided; 1 expected]
+  139. PASS  (call/cc (lambda (k) (+ 1 2 3)))
+  140. PASS  (call/cc (lambda (k) (+ 1 (k 99) 1000)))
+  141. PASS  (call/cc (lambda (k) (list 'a 'b (k 'escape) 'c 'd)))
+  142. PASS  (+ 1 (call/cc (lambda (k) (let loop ((n 0)) (if (= n ...
+  143. PASS  (define cc #f) (+ 10 (call/cc (lambda (k) (set! cc k)...
+  144. PASS  (cc 200)
+  145. PASS  (define cc #f) (call/cc (lambda (k) (set! cc k) 'firs...
+  146. PASS  (define cc #f) (call/cc (lambda (k) (set! cc k) 'firs...
+  147. PASS  (define cc #f) (+ 0 (call/cc (lambda (k) (set! cc k) ...
+  148. PASS  (call-with-current-continuation (lambda (k) (+ 10 (k ...
+  149. PASS  (call/cc (lambda (k) (procedure? k)))
+  150. PASS  (define cc #f) (call/cc (lambda (k) (set! cc k) 0)) cc
+  151. PASS  (define (find-first pred xs) (call/cc (lambda (return...
+  152. PASS  (define (find-first pred xs) (call/cc (lambda (return...
+  153. FAIL  (call/cc 1 2 3)
+         expected error:  [SchemeArityError: line 1, col 1: call/cc: 3 arguments provided; 1 expected
+(call/cc 1 2 3)
+^]
+         actual error:    [SchemeArityError: call/cc: 3 arguments provided; 1 expected]
+  154. FAIL  (call/cc)
+         expected error:  [SchemeArityError: line 1, col 1: call/cc: 0 arguments provided; 1 expected
+(call/cc)
+^]
+         actual error:    [SchemeArityError: call/cc: 0 arguments provided; 1 expected]
+  155. PASS  (call/cc (lambda (escape) (with-exception-handler (la...
+  156. PASS  (define log '()) (dynamic-wind (lambda () (set! log (...
+  157. PASS  (define log '()) (dynamic-wind (lambda () (set! log (...
+  158. PASS  (define log '()) (guard (e (else 'caught)) (dynamic-w...
+  159. PASS  (define log '()) (dynamic-wind (lambda () (set! log (...
+  160. PASS  (define log '()) (define k-out #f) (+ 100 (call/cc (l...
+  161. PASS  (define log '()) (define k-in #f) (dynamic-wind (lamb...
+  162. PASS  (dynamic-wind (lambda () 'ignored-before) (lambda () ...
+  163. FAIL  (dynamic-wind (lambda () 1) (lambda () 2))
+         expected error:  [SchemeArityError: line 1, col 1: dynamic-wind: 2 arguments provided; 3 expected
+(dynamic-wind (lambda () 1) (lambda () 2))
+^]
+         actual error:    [SchemeArityError: dynamic-wind: 2 arguments provided; 3 expected]
+  164. PASS  (define captured-k #f) (with-exception-handler (lambd...
+  165. PASS  (guard (e (#t (list 'caught e))) (dynamic-wind (lambd...
+
+36 of 165 FAILED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test007-programs.log
+---------------------------------------------------------------
+    1. PASS  (define (fact n) (if (zero? n) 1 (* n (fact (- n 1)))))
+    2. PASS  (fact 0)
+    3. PASS  (fact 5)
+    4. PASS  (fact 10)
+    5. PASS  (define (fib n) (if (< n 2) n (+ (fib (- n 1)) (fib (...
+    6. PASS  (fib 10)
+    7. PASS  (define (length lst) (if (null? lst) 0 (+ 1 (length (...
+    8. PASS  (length (list 10 20 30 40 50))
+    9. PASS  (define (reverse lst) (let loop ((xs lst) (acc '())) ...
+   10. PASS  (reverse (list 1 2 3 4 5))
+   11. PASS  (define (map1 f lst) (if (null? lst) '() (cons (f (ca...
+   12. PASS  (map1 (lambda (x) (* x x)) (list 1 2 3 4))
+   13. PASS  (define (sum-list lst) (if (null? lst) 0 (+ (car lst)...
+   14. PASS  (sum-list (list 1 2 3 4 5))
+   15. PASS  (define (gcd a b) (if (zero? b) a (gcd b (modulo a b))))
+   16. PASS  (gcd 48 18)
+   17. PASS  (gcd 17 5)
+   18. PASS  (let loop ((i 1) (acc 1)) (if (> i 10) acc (loop (+ i...
+   19. PASS  (let loop ((lst (list 5 4 3 2 1)) (acc 0)) (if (null?...
+   20. PASS  (let loop ((lst (list 1 2 3))) (if (null? lst) 'done ...
+   21. PASS  (let loop ((lst (list 1 2 3)) (acc (list))) (if (null...
+
+21 TESTS PASSED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test008-macros.log
+-------------------------------------------------------------
+    1. PASS  (define-syntax hyg-m
+    2. PASS  (let-syntax ((hyg-h (syntax-rules () ((_) 0)))) (hyg-m))
+    3. PASS  (define-syntax hyg-swap!
+    4. PASS  (define hyg-tmp 99)
+    5. PASS  (define hyg-p 1)
+    6. PASS  (define hyg-q 2)
+    7. PASS  (hyg-swap! hyg-p hyg-q)
+    8. PASS  (list hyg-p hyg-q hyg-tmp)
+    9. PASS  (let ((t 42)) (or #f t))
+   10. PASS  (define-syntax hyg-m1 (syntax-rules () ((_ x) (hyg-m2...
+   11. PASS  (define-syntax hyg-m2 (syntax-rules () ((_ x) (* x x))))
+   12. PASS  (hyg-m1 7)
+   13. PASS  (letrec-syntax
+   14. PASS  (define defenv-x 1)
+   15. PASS  (let-syntax ((dm (syntax-rules () ((_) defenv-x))))
+   16. PASS  (let-syntax ((hs (syntax-rules () ((_) 0))))
+   17. PASS  (define-syntax my-or
+   18. PASS  (my-or #f #f 42)
+   19. PASS  (my-or #f #f #f)
+   20. PASS  (my-or 1 2 3)
+   21. PASS  (define-syntax my-list2 (syntax-rules () ((_ x ...) (...
+   22. PASS  (my-list2 1 2 3)
+   23. PASS  (my-list2)
+   24. PASS  (define-syntax my-if
+   25. PASS  (my-if #f then 1 else 2)
+   26. PASS  (my-if #t then 10 else 20)
+   27. PASS  (define-syntax add1x (syntax-rules () ((_ x) (+ x 1))))
+   28. PASS  (define-syntax add2x (syntax-rules () ((_ x) (add1x (...
+   29. PASS  (add2x 10)
+   30. PASS  (define-syntax scm
+   31. PASS  (let ((sct 42)) (scm sct))
+   32. PASS  (define (ids-sq x)
+   33. PASS  (ids-sq 7)
+   34. PASS  (define (ids-mixed x)
+   35. PASS  (ids-mixed 3)
+   36. PASS  (let ()
+   37. PASS  (letrec-syntax
+   38. PASS  (letrec-syntax
+   39. PASS  (define-syntax sr-fst (syntax-rules () ((_ a _) a)))
+   40. PASS  (sr-fst 1 99)
+   41. PASS  (define-syntax sr-snd (syntax-rules () ((_ _ b) b)))
+   42. PASS  (sr-snd 99 2)
+   43. PASS  (define-syntax sr-cadr (syntax-rules () ((_ (_ b . _)...
+   44. PASS  (sr-cadr (0 42 99 100))
+   45. PASS  (define-syntax sr-mid (syntax-rules () ((_ _ b _) b)))
+   46. PASS  (sr-mid 1 2 3)
+   47. PASS  (define-syntax sr-last (syntax-rules () ((_ _ ... x) ...
+   48. PASS  (sr-last 1 2 3)
+   49. PASS  (sr-last 42)
+   50. PASS  (define-syntax sr-wrap (syntax-rules ()
+   51. PASS  (sr-wrap 1 2 3 4)
+   52. PASS  (sr-wrap 1 2)
+   53. PASS  (define-syntax sr-drop-last2 (syntax-rules ()
+   54. PASS  (sr-drop-last2 1 2 3 4 5)
+   55. PASS  (define-syntax sr-mylist
+   56. PASS  (sr-mylist 1 2 3)
+   57. PASS  (sr-mylist)
+   58. PASS  (define-syntax sr-myappend
+   59. PASS  (sr-myappend 1 2 3 99)
+   60. PASS  (define-syntax vp-fst (syntax-rules () ((_ #(a b)) a)))
+   61. PASS  (vp-fst #(10 20))
+   62. PASS  (define-syntax vp-snd (syntax-rules () ((_ #(a b)) b)))
+   63. PASS  (vp-snd #(10 20))
+   64. PASS  (define-syntax vp->list (syntax-rules () ((_ #(x ...)...
+   65. PASS  (vp->list #(1 2 3))
+   66. PASS  (vp->list #())
+   67. PASS  (define-syntax vp-make (syntax-rules () ((_ a b c) #(...
+   68. PASS  (vp-make 1 2 3)
+   69. PASS  (define-syntax vp-list->vec (syntax-rules () ((_ x .....
+   70. PASS  (vp-list->vec 4 5 6)
+   71. PASS  (vp-list->vec)
+   72. PASS  (define-syntax vp-last (syntax-rules () ((_ #(_ ... z...
+   73. PASS  (vp-last #(1 2 3))
+   74. PASS  (vp-last #(99))
+   75. PASS  (define-syntax vp-is12 (syntax-rules ()
+   76. PASS  (vp-is12 #(1 2))
+   77. PASS  (vp-is12 #(1 3))
+   78. PASS  (vp-is12 #(1 2 3))
+   79. PASS  (vp-is12 (1 2))
+   80. PASS  (define-syntax vp-nested (syntax-rules ()
+   81. PASS  (vp-nested 0 #(1 2) 3)
+   82. PASS  (define-syntax vp-hyg (syntax-rules ()
+   83. PASS  (let ((vt 1)) (vp-hyg #(10 20)))
+   84. PASS  (define-syntax ne-id
+   85. PASS  (ne-id (1 2 3) (4 5) (6))
+   86. PASS  (ne-id)
+   87. PASS  (ne-id () ())
+   88. PASS  (define-syntax ne-add1
+   89. PASS  (ne-add1 (1 2) (3 4))
+   90. PASS  (define-syntax ne-vecs
+   91. PASS  (ne-vecs (1 2 3) (4 5))
+   92. PASS  (define-syntax ne-d3
+   93. PASS  (ne-d3 ((1 2) (3)) ((4 5 6)))
+   94. PASS  (define-syntax lb-cond
+   95. PASS  (lb-cond (#f 1) (else 42))
+   96. PASS  (let ((else #f)) (lb-cond (#f 1) (else 42) (#t 99)))
+   97. PASS  (let ((x 1)) (lb-cond (#f 1) (else 42)))
+   98. PASS  (define-syntax lb-if
+   99. PASS  (lb-if #t then 10 else 20)
+  100. FAIL  (define-syntax bad-underscore (syntax-rules (_) ((_ x...
+         expected error:  [line 1, col 46: syntax-rules: '_' cannot appear in literals list
+(define-syntax bad-underscore (syntax-rules (_) ((_ x) x)))
+                                             ^]
+         actual error:    [syntax error: syntax-rules: '_' cannot appear in literals list]
+  101. FAIL  (define-syntax bad-ellipsis (syntax-rules (...) ((_ x...
+         expected error:  [line 1, col 44: syntax-rules: '...' cannot appear in literals list
+(define-syntax bad-ellipsis (syntax-rules (...) ((_ x) x)))
+                                           ^]
+         actual error:    [syntax error: syntax-rules: '...' cannot appear in literals list]
+  102. FAIL  (define-syntax bad-custom-ell (syntax-rules ~~ (~~ ((...
+         expected error:  [line 1, col 49: syntax-rules: '~~' cannot appear in literals list
+(define-syntax bad-custom-ell (syntax-rules ~~ (~~ ((_ x) x))))
+                                                ^]
+         actual error:    [syntax error: syntax-rules: '~~' cannot appear in literals list]
+  103. PASS  (define-syntax esc-sym
+  104. PASS  (esc-sym)
+  105. PASS  (define-syntax def-collector
+  106. PASS  (def-collector esc-collect)
+  107. PASS  (esc-collect 1 2 3)
+  108. PASS  (esc-collect)
+  109. PASS  (define-syntax esc-pvar
+  110. PASS  (esc-pvar 42)
+  111. PASS  (define-syntax my-if
+  112. PASS  (my-if #t 'yes 'no)
+  113. PASS  (my-if #f 'yes 'no)
+  114. PASS  (define-syntax swap!
+  115. PASS  (define x 1)
+  116. PASS  (define y 2)
+  117. PASS  (swap! x y)
+  118. PASS  y
+  119. PASS  (define-syntax while
+  120. PASS  (define i 0)
+  121. PASS  (define sum 0)
+  122. PASS  (while (< i 5)
+  123. PASS  sum
+  124. PASS  (define-syntax my-and
+  125. PASS  (my-and)
+  126. PASS  (my-and 1)
+  127. PASS  (my-and 1 2 3)
+  128. PASS  (my-and 1 #f 3)
+  129. PASS  (define-syntax my-or
+  130. PASS  (my-or)
+  131. PASS  (my-or #f #f #f)
+  132. PASS  (define-syntax push!
+  133. PASS  (define stack '())
+  134. PASS  (push! 1 stack)
+  135. PASS  (push! 2 stack)
+  136. PASS  stack
+  137. PASS  (define-syntax my-case
+  138. PASS  (my-case 2 (2 => 'found))
+  139. PASS  (my-case 5 (2 => 'found))
+  140. PASS  (let-syntax ((double (syntax-rules ()
+  141. PASS  (let-syntax ((inc (syntax-rules ()
+  142. PASS  (letrec-syntax
+  143. PASS  (define-syntax inc-by
+  144. PASS  (define-syntax double-inc
+  145. PASS  (double-inc 5)
+  146. PASS  (define-syntax def-const
+  147. PASS  (def-const pi 3.14159)
+  148. PASS  pi
+  149. PASS  (define-syntax my-list
+  150. PASS  (my-list 1 2 3)
+  151. PASS  (my-list)
+  152. PASS  (begin
+  153. PASS  (define result
+  154. PASS  result
+  155. PASS  (let ((tmp 1) (x 2))
+  156. PASS  (define-syntax my-or
+  157. PASS  (let ((t 5))
+  158. PASS  (define-syntax my-and2
+  159. PASS  (let ((v 10))
+  160. PASS  (define-syntax inc2
+  161. PASS  (inc2 41)
+  162. PASS  (let ((+ *)) (inc2 5))
+  163. PASS  (let-syntax ((double (syntax-rules ()
+  164. PASS  (let ((+ *))
+  165. PASS  (let ((+ *)) (double-inc 5))
+  166. PASS  (define-syntax my-case2
+  167. PASS  (my-case2 5 (2 => 'found))
+  168. PASS  (define-syntax my-list-of-lists
+  169. PASS  (my-list-of-lists (1 2 3) (4 5))
+  170. PASS  (define-syntax labeled-rows
+  171. PASS  (labeled-rows (a 1 2) (b 3 4 5))
+  172. PASS  (my-list-of-lists)
+  173. PASS  (my-list-of-lists (10 20 30))
+  174. PASS  (define-syntax depth3
+  175. PASS  (depth3 ((1 2) (3)) ((4 5 6)))
+  176. PASS  (define-syntax my-list2
+  177. PASS  (my-list2 1 2 3)
+  178. PASS  (my-list2)
+  179. PASS  (define-syntax my-append
+  180. PASS  (my-append (1 2 3) (4 5))
+  181. PASS  (define-syntax my-cond
+  182. PASS  (my-cond (#f 'no) (#t 'yes 'extra) (else 'never))
+  183. PASS  (guard (e (#t "caught"))
+  184. PASS  (guard (e ((string? e) (> (string-length e) 0))
+  185. PASS  (define-syntax must-be-pair
+  186. PASS  (must-be-pair (1 2))
+  187. PASS  (guard (e (#t "caught"))
+  188. PASS  (let ((%mv0 'outer)) (let-values (((a) (values 1))) (...
+  189. PASS  (let ((%mv1 'outer)) (let*-values (((a) (values 1)) (...
+  190. PASS  (let ((%mv-tmp0 'outer)) (define-values (a b) (values...
+  191. PASS  (let ((%do-loop% 'outer)) (do ((i 0 (+ i 1))) ((= i 3...
+  192. PASS  (define %record-type:thing 'mine) (define-record-type...
+  193. PASS  (define-syntax my-when (syntax-rules () ((_ test body...
+  194. PASS  (define-syntax my-when (syntax-rules () ((_ test body...
+  195. PASS  (define-syntax my-list (syntax-rules () ((_ x ...) (l...
+  196. PASS  (define-syntax my-list (syntax-rules () ((_ x ...) (l...
+  197. PASS  (define-syntax pick (syntax-rules () ((_) 'none) ((_ ...
+  198. PASS  (define-syntax pick (syntax-rules () ((_) 'none) ((_ ...
+  199. PASS  (define-syntax pick (syntax-rules () ((_) 'none) ((_ ...
+  200. PASS  (define-syntax my-when-even (syntax-rules (then) ((_ ...
+  201. PASS  (define-syntax swap! (syntax-rules () ((_ a b) (let (...
+  202. PASS  (define-syntax one-more (syntax-rules () ((_ n) (+ n ...
+  203. FAIL  (letrec-syntax ((my-or (syntax-rules () ((_) #f) ((_ ...
+         expected return: [42]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: syntax-rules: no matching pattern for 'my-or']
+  204. FAIL  (letrec-syntax ((my-or (syntax-rules () ((_) #f) ((_ ...
+         expected return: [#f]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: syntax-rules: no matching pattern for 'my-or']
+  205. PASS  (define-syntax my-and (syntax-rules () ((_) #t) ((_ a...
+  206. PASS  (define-syntax my-and (syntax-rules () ((_) #t) ((_ a...
+  207. PASS  (define-syntax my-and (syntax-rules () ((_) #t) ((_ a...
+  208. PASS  (let-syntax ((sq (syntax-rules () ((_ x) (* x x))))) ...
+  209. PASS  (let-syntax ((sq (syntax-rules () ((_ x) (* x x)))) (...
+  210. FAIL  (define-syntax only-pairs (syntax-rules () ((_ (a b))...
+         expected error:  [line 1, col 69: syntax-rules: no matching pattern for 'only-pairs'
+(define-syntax only-pairs (syntax-rules () ((_ (a b)) (list a b)))) (only-pairs 1)
+                                                                    ^]
+         actual error:    [syntax error: syntax-rules: no matching pattern for 'only-pairs']
+  211. FAIL  (define-syntax bad 42)
+         expected error:  [line 1, col 20: define-syntax: transformer must be (syntax-rules ...)
+(define-syntax bad 42)
+                   ^]
+         actual error:    [syntax error: define-syntax: transformer must be (syntax-rules ...)]
+  212. FAIL  (define-syntax bad-let (syntax-rules () ((bad-let) (l...
+         expected error:  [line 1, col 61: let requires a binding list and at least one body expression
+(define-syntax bad-let (syntax-rules () ((bad-let) (let)))) (bad-let)
+                                                            ^]
+         actual error:    [analysis error: let requires a binding list and at least one body expression]
+  213. FAIL  (define-syntax bad-set (syntax-rules () ((bad-set x) ...
+         expected error:  [line 1, col 66: set! requires a name and a value (got 1 arguments)
+(define-syntax bad-set (syntax-rules () ((bad-set x) (set! x)))) (bad-set 5)
+                                                                 ^]
+         actual error:    [analysis error: set! requires a name and a value (got 1 arguments)]
+  214. PASS  (let ()
+  215. PASS  (let ()
+  216. PASS  (let ()
+  217. FAIL  (define-syntax multi-define-syntax
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: syntax-rules: each rule must be (pattern template)]
+  218. FAIL  (let ()
+         expected return: [15]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: multi-define-syntax]
+
+11 of 218 FAILED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test009-modules.log
+--------------------------------------------------------------
+    1. PASS  (char-foldcase #\A)
+    2. PASS  (char-foldcase #\Z)
+    3. PASS  (char-foldcase #\newline)
+    4. PASS  (char-ci=? #\A #\a)
+    5. PASS  (char-ci=? #\A #\b)
+    6. PASS  (char-ci<? #\A #\B)
+    7. PASS  (char-ci<? #\B #\A)
+    8. PASS  (char-ci<=? #\A #\A)
+    9. PASS  (char-ci>? #\B #\a)
+   10. PASS  (char-ci>=? #\Z #\a)
+   11. PASS  (char-ci>=? #\A #\z)
+   12. PASS  (char-ci=? #\A #\a #\A)
+   13. PASS  (char-ci<? #\A #\B #\C)
+   14. PASS  (string-foldcase "Hello")
+   15. PASS  (string-foldcase "WORLD")
+   16. PASS  (string-foldcase "already")
+   17. PASS  (string-ci=? "Hello" "hello")
+   18. PASS  (string-ci=? "Hello" "HELLO")
+   19. PASS  (string-ci=? "abc" "xyz")
+   20. PASS  (string-ci<? "abc" "XYZ")
+   21. PASS  (string-ci<? "xyz" "abc")
+   22. PASS  (string-ci<=? "abc" "ABC")
+   23. PASS  (string-ci>? "XYZ" "abc")
+   24. PASS  (string-ci>=? "ABC" "abc")
+   25. PASS  (string-ci<? "abc" "ABD" "xyz")
+   26. PASS  (member 2.0 (list 1 2 3) =)
+   27. PASS  (member 2.0 (list 1 2 3) eqv?)
+   28. PASS  (member "b" (list "a" "b" "c") string=?)
+   29. PASS  (member "B" (list "a" "b" "c") string-ci=?)
+   30. PASS  (assoc 2.0 (list (list 1 "a") (list 2 "b") (list 3 "c...
+   31. PASS  (assoc "B" (list (list "a" 1) (list "b" 2)) string-ci=?)
+   32. PASS  (let ((p (open-output-string))) (write-shared (list 1...
+   33. FAIL  (let ((p (open-output-string))) (write-simple "hello"...
+         expected return: ["\"hello\""]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: write-simple]
+   34. PASS  (file-exists? "testing/test000-parser.log")
+   35. PASS  (file-exists? "no-such-file-xyz.scm")
+   36. FAIL  (call-with-output-file "testing/test19-tmp.scm" (lamb...
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: call-with-output-file]
+   37. FAIL  (call-with-input-file "testing/test19-tmp.scm" read)
+         expected return: [(+ 1 2)]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: call-with-input-file]
+   38. FAIL  (with-input-from-file "testing/test19-tmp.scm" read)
+         expected return: [(+ 1 2)]
+         actual return:   []
+         expected error:  []
+         actual error:    [SchemeRaised: #<error-object ""with-input-from-file: cannot open: testing/test19-tmp.scm"">]
+   39. PASS  (with-output-to-file "testing/test19-tmp2.txt" (lambd...
+   40. PASS  (file-exists? "testing/test19-tmp2.txt")
+   41. FAIL  (delete-file "testing/test19-tmp2.txt")
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [SchemeRaised: #<error-object ""delete-file: testing/test19-tmp2.txt"">]
+   42. FAIL  (file-exists? "testing/test19-tmp2.txt")
+         expected return: [#f]
+         actual return:   [#t]
+   43. FAIL  (rename-file "testing/test19-tmp.scm" "testing/test19...
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: rename-file]
+   44. PASS  (file-exists? "testing/test19-tmp.scm")
+   45. FAIL  (file-exists? "testing/test19-tmp-renamed.scm")
+         expected return: [#t]
+         actual return:   [#f]
+   46. FAIL  (delete-file "testing/test19-tmp-renamed.scm")
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [SchemeRaised: #<error-object ""delete-file: testing/test19-tmp-renamed.scm"">]
+   47. FAIL  (call-with-output-file "testing/test19-load.scm" (lam...
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: call-with-output-file]
+   48. FAIL  (load "testing/test19-load.scm")
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [load: not implemented in this context]
+   49. FAIL  load-test-result
+         expected return: [42]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: load-test-result]
+   50. FAIL  (delete-file "testing/test19-load.scm")
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [SchemeRaised: #<error-object ""delete-file: testing/test19-load.scm"">]
+   51. PASS  (string? (get-environment-variable "PATH"))
+   52. PASS  (boolean? (get-environment-variable "NONEXISTENT_VAR_...
+   53. PASS  (get-environment-variable "NONEXISTENT_VAR_XYZ_999")
+   54. FAIL  (pair? (get-environment-variables))
+         expected return: [#t]
+         actual return:   [#f]
+   55. FAIL  (pair? (car (get-environment-variables)))
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [SchemeTypeError: type error: expected pair, got nil]
+   56. PASS  (jiffies-per-second)
+   57. PASS  (integer? (current-jiffy))
+   58. PASS  (real? (current-second))
+   59. PASS  (positive? (current-second))
+   60. FAIL  (procedure? (eval (quote car) (scheme-report-environm...
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [scheme-report-environment: not implemented]
+   61. FAIL  (eval (quote (+ 1 2)) (scheme-report-environment 5))
+         expected return: [3]
+         actual return:   []
+         expected error:  []
+         actual error:    [scheme-report-environment: not implemented]
+   62. FAIL  (eval (quote (+ 1 2)) (null-environment 5))
+         expected error:  [line 1, col 15: unbound variable: +
+(eval (quote (+ 1 2)) (null-environment 5))
+              ^]
+         actual error:    [null-environment: not implemented]
+   63. PASS  (import (scheme inexact))
+   64. PASS  (import (scheme base))
+   65. PASS  (map (lambda (x) (* x x)) '(1 2 3 4 5))
+   66. PASS  (import (scheme write))
+   67. PASS  (procedure? write)
+   68. PASS  (import (scheme char))
+   69. PASS  (char-upcase #\a)
+   70. PASS  (string-upcase "hello")
+   71. PASS  (sqrt 2.0)
+   72. PASS  (import (scheme complex))
+   73. PASS  (real-part 3.0)
+   74. PASS  (imag-part 3.0)
+   75. PASS  (import (scheme cxr))
+   76. PASS  (caddr '(1 2 3 4))
+   77. PASS  (import (scheme lazy))
+   78. PASS  (define p (delay (+ 1 2)))
+   79. PASS  (force p)
+   80. PASS  (promise? p)
+   81. PASS  (import (scheme process-context))
+   82. PASS  (procedure? exit)
+   83. PASS  (import (scheme time))
+   84. PASS  (number? (current-second))
+   85. PASS  (integer? (jiffies-per-second))
+   86. PASS  (import (scheme case-lambda))
+   87. PASS  (define dispatch
+   88. PASS  (dispatch 5)
+   89. PASS  (dispatch 3 4)
+   90. PASS  (dispatch 1 2 3 4)
+   91. FAIL  (define-library (my math)
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+   92. PASS  (import (my math))
+   93. FAIL  (cube 3)
+         expected return: [27]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: cube]
+   94. FAIL  (define-library (my priv)
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+   95. PASS  (import (my priv))
+   96. FAIL  (public-fn 5)
+         expected return: [12]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: public-fn]
+   97. FAIL  (define-library (my isolated)
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+   98. PASS  (import (my isolated))
+   99. FAIL  (get-x)
+         expected return: [42]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: get-x]
+  100. FAIL  (define-library (my renamed)
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  101. PASS  (import (my renamed))
+  102. FAIL  (plus 3 4)
+         expected return: [7]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: plus]
+  103. PASS  (import (only (scheme base) + - *))
+  104. PASS  (+ 10 5)
+  105. PASS  (import (except (scheme base) write display))
+  106. PASS  (- 10 3)
+  107. PASS  (import (rename (scheme base) (+ add) (- sub)))
+  108. FAIL  (add 3 5)
+         expected return: [8]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: add]
+  109. FAIL  (sub 10 4)
+         expected return: [6]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: sub]
+  110. PASS  (import (prefix (scheme base) s:))
+  111. FAIL  (s:+ 2 3)
+         expected return: [5]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: s:+]
+  112. FAIL  (s:car '(a b c))
+         expected return: [a]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: s:car]
+  113. FAIL  (define-library (my base-utils)
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  114. FAIL  (define-library (my derived)
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  115. PASS  (import (my derived))
+  116. FAIL  (sextupled 5)
+         expected return: [30]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: sextupled]
+  117. FAIL  (define-library (my multi)
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  118. PASS  (import (my multi))
+  119. FAIL  (add1 10)
+         expected return: [11]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: add1]
+  120. FAIL  (add2 10)
+         expected return: [12]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: add2]
+  121. PASS  (cond-expand
+  122. PASS  (cond-expand
+  123. PASS  (cond-expand
+  124. PASS  (cond-expand
+  125. PASS  (cond-expand
+  126. PASS  (cond-expand
+  127. PASS  (cond-expand
+  128. PASS  (cond-expand
+  129. FAIL  (cond-expand
+         expected return: [has-lib]
+         actual return:   [no-lib]
+  130. FAIL  (cond-expand ((library (scheme complex)) 'has-complex...
+         expected return: [has-complex]
+         actual return:   [no-complex]
+  131. FAIL  (cond-expand ((library (scheme inexact)) 'has-inexact...
+         expected return: [has-inexact]
+         actual return:   [no-inexact]
+  132. FAIL  (cond-expand ((library (scheme char)) 'has-char) (els...
+         expected return: [has-char]
+         actual return:   [no-char]
+  133. FAIL  (cond-expand ((library (scheme eval)) 'has-eval) (els...
+         expected return: [has-eval]
+         actual return:   [no-eval]
+  134. FAIL  (cond-expand ((library (scheme write)) 'has-write) (e...
+         expected return: [has-write]
+         actual return:   [no-write]
+  135. FAIL  (cond-expand ((library (scheme process-context)) 'has...
+         expected return: [has-proc]
+         actual return:   [no-proc]
+  136. FAIL  (cond-expand ((and (library (scheme base)) (library (...
+         expected return: [both]
+         actual return:   [not-both]
+  137. FAIL  (cond-expand ((or (library (scheme process-context)) ...
+         expected return: [one-of]
+         actual return:   [neither]
+  138. PASS  (cond-expand
+  139. PASS  (cond-expand
+  140. FAIL  (cond-expand (no-such-feature 42))
+         expected error:  [line 1, col 1: cond-expand: no clause matched
+(cond-expand (no-such-feature 42))
+^]
+         actual error:    [analysis error: cond-expand: no clause matched]
+  141. FAIL  (define-library (test cond-expand-lib)
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  142. PASS  (import (test cond-expand-lib))
+  143. FAIL  ce-val
+         expected return: [99]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: ce-val]
+  144. FAIL  (define-library (test ce-else)
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  145. PASS  (import (test ce-else))
+  146. FAIL  right-val
+         expected return: [77]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: right-val]
+  147. FAIL  (call-with-output-file "/tmp/scheme_include_ci_test.scm"
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: call-with-output-file]
+  148. PASS  (include-ci "/tmp/scheme_include_ci_test.scm")
+  149. PASS  include-ci-val
+  150. PASS  (import (scheme base))
+  151. FAIL  (define-library (t1) (import (scheme base)) (export a...
+         expected return: [7]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  152. FAIL  (define-library (t2) (export bad) (begin (define (bad...
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  153. FAIL  (import (t2)) (bad 5)
+         expected error:  [line 1, col 59: unbound variable: +
+(define-library (t2) (export bad) (begin (define (bad x) (+ x 1))))
+                                                          ^]
+         actual error:    [unbound variable: bad]
+  154. FAIL  (define-library (t3) (import (scheme base)) (export (...
+         expected return: [99]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  155. FAIL  (define-library (t3) (import (scheme base)) (export (...
+         expected error:  [line 1, col 121: unbound variable: private
+(define-library (t3) (import (scheme base)) (export (rename private public)) (begin (define private 99))) (import (t3)) private
+                                                                                                                        ^]
+         actual error:    [syntax error: define-library: not yet implemented]
+  156. FAIL  (define-library (t4) (import (scheme base)) (export a...
+         expected return: [(1 3)]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  157. FAIL  (define-library (t5) (import (scheme base)) (export a...
+         expected return: [(1 3)]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  158. FAIL  (define-library (t6) (import (scheme base)) (export a...
+         expected return: [10]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  159. FAIL  (define-library (t7) (import (scheme base)) (export a...
+         expected return: [pfx]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  160. FAIL  (define-library (t8) (import (scheme base)) (export m...
+         expected error:  [line 1, col 1: define-library: exported name not defined: missing
+(define-library (t8) (import (scheme base)) (export missing))
+^]
+         actual error:    [syntax error: define-library: not yet implemented]
+  161. FAIL  (import (no such library))
+         expected return: []
+         actual return:   [#<void>]
+         expected error:  [line 1, col 9: import: library not found: (no such library)
+(import (no such library))
+        ^]
+         actual error:    []
+  162. FAIL  (define-library (base-a) (import (scheme base)) (expo...
+         expected return: [from-base-a]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  163. FAIL  (define-library (sugar) (import (scheme base)) (expor...
+         expected return: [81]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  164. FAIL  (define-library (t9) (import (scheme base)) (export a...
+         expected error:  [line 1, col 86: import: 'only' references name not in library: nonexistent
+(define-library (t9) (import (scheme base)) (export a) (begin (define a 1))) (import (only (t9) nonexistent))
+                                                                                     ^]
+         actual error:    [syntax error: define-library: not yet implemented]
+  165. FAIL  (define-library (mw1) (import (scheme base)) (export ...
+         expected return: [still-yes]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  166. FAIL  (define-library (mw2) (import (scheme base)) (export ...
+         expected return: [#f]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  167. FAIL  (define-library (ce1) (cond-expand (pyscheme (import ...
+         expected return: [pyscheme]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  168. FAIL  (define-library (ce2) (cond-expand (no-such-feature (...
+         expected return: [fallback]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+  169. FAIL  (define-library (ild1) (include-library-declarations ...
+         expected return: [hi-from-include]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax error: define-library: not yet implemented]
+
+70 of 169 FAILED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test010-records.log
+--------------------------------------------------------------
+    1. PASS  (define-record-type point
+    2. PASS  (define p (make-point 3 4))
+    3. PASS  (point? p)
+    4. PASS  (point? '(3 4))
+    5. PASS  (point? 42)
+    6. PASS  (point-x p)
+    7. PASS  (point-y p)
+    8. PASS  (define-record-type counter
+    9. PASS  (define c (make-counter 0))
+   10. PASS  (counter-value c)
+   11. PASS  (set-counter-value! c 42)
+   12. PASS  (counter-value c)
+   13. PASS  (define-record-type person
+   14. PASS  (define alice (make-person "Alice" 30))
+   15. PASS  (person-name alice)
+   16. PASS  (person-age alice)
+   17. PASS  (set-person-age! alice 31)
+   18. PASS  (person-age alice)
+   19. PASS  (person? alice)
+   20. PASS  (person? "Alice")
+   21. PASS  (define-record-type node
+   22. PASS  (define n (make-node 10))
+   23. PASS  (node-value n)
+   24. PASS  (node-next n)
+   25. PASS  (set-node-next! n 'end)
+   26. PASS  (node-next n)
+   27. PASS  (define p1 (make-point 1 2))
+   28. PASS  (define p2 (make-point 5 6))
+   29. PASS  (point-x p1)
+   30. PASS  (point-x p2)
+   31. PASS  (point? (make-counter 0))
+   32. PASS  (counter? (make-point 0 0))
+   33. PASS  (define pts (list (make-point 1 2) (make-point 3 4)))
+   34. PASS  (point-x (car pts))
+   35. PASS  (point-y (cadr pts))
+   36. PASS  (define-record-type empty-rec
+   37. PASS  (empty-rec? (make-empty-rec))
+   38. PASS  (empty-rec? 42)
+   39. FAIL  (eval '(+ 1 2) (environment '(scheme base)))
+         expected return: [3]
+         actual return:   []
+         expected error:  []
+         actual error:    [environment: not implemented in this context]
+   40. PASS  (guard (e (#t 'caught))
+   41. FAIL  (eval '(finite? 1.0) (environment '(scheme inexact)))
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [environment: not implemented in this context]
+   42. FAIL  (eval '(+ (string-length "hi") 1)
+         expected return: [3]
+         actual return:   []
+         expected error:  []
+         actual error:    [environment: not implemented in this context]
+   43. PASS  (guard (e (#t 'caught))
+   44. PASS  (eval '(define x 42))
+   45. PASS  (eval 'x)
+   46. PASS  (eval '(list 1 2 3))
+   47. PASS  (eval (list '+ 1 2 3))
+   48. PASS  (eval '(let ((n 5)) (* n n)))
+   49. FAIL  (eval)
+         expected error:  [SchemeArityError: line 1, col 1: eval: 0 arguments provided; 1 or 2 expected
+(eval)
+^]
+         actual error:    [SchemeArityError: eval: 0 arguments provided; 1 or 2 expected]
+   50. FAIL  (eval '(+ 1 2) (interaction-environment))
+         expected return: [3]
+         actual return:   []
+         expected error:  []
+         actual error:    [interaction-environment: not available in primitives context]
+   51. FAIL  (eval '(map (lambda (x) (* x x)) '(1 2 3)) (interacti...
+         expected return: [(1 4 9)]
+         actual return:   []
+         expected error:  []
+         actual error:    [interaction-environment: not available in primitives context]
+   52. FAIL  (eval '(define test-env-var 777) (interaction-environ...
+         expected return: [#<void>]
+         actual return:   []
+         expected error:  []
+         actual error:    [interaction-environment: not available in primitives context]
+   53. FAIL  test-env-var
+         expected return: [777]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: test-env-var]
+   54. FAIL  (scheme-report-environment 7)
+         expected return: [#<environment>]
+         actual return:   []
+         expected error:  []
+         actual error:    [scheme-report-environment: not implemented]
+   55. FAIL  (scheme-report-environment 5)
+         expected return: [#<environment>]
+         actual return:   []
+         expected error:  []
+         actual error:    [scheme-report-environment: not implemented]
+   56. FAIL  (eval '(+ 1 2) (scheme-report-environment 7))
+         expected return: [3]
+         actual return:   []
+         expected error:  []
+         actual error:    [scheme-report-environment: not implemented]
+   57. FAIL  (eval '(car '(a b c)) (scheme-report-environment 7))
+         expected return: [a]
+         actual return:   []
+         expected error:  []
+         actual error:    [scheme-report-environment: not implemented]
+   58. FAIL  (scheme-report-environment 99)
+         expected return: [#<environment>]
+         actual return:   []
+         expected error:  []
+         actual error:    [scheme-report-environment: not implemented]
+   59. FAIL  (scheme-report-environment 0)
+         expected return: [#<environment>]
+         actual return:   []
+         expected error:  []
+         actual error:    [scheme-report-environment: not implemented]
+   60. FAIL  (null-environment 5)
+         expected return: [#<environment>]
+         actual return:   []
+         expected error:  []
+         actual error:    [null-environment: not implemented]
+   61. FAIL  (null-environment 7)
+         expected return: [#<environment>]
+         actual return:   []
+         expected error:  []
+         actual error:    [null-environment: not implemented]
+   62. FAIL  (eval '+ (null-environment 5))
+         expected error:  [line 1, col 8: unbound variable: +
+(eval '+ (null-environment 5))
+       ^]
+         actual error:    [null-environment: not implemented]
+   63. FAIL  (eval '(if #t 42 0) (null-environment 5))
+         expected return: [42]
+         actual return:   []
+         expected error:  []
+         actual error:    [null-environment: not implemented]
+   64. FAIL  (eval '(begin 1 2 3) (null-environment 5))
+         expected return: [3]
+         actual return:   []
+         expected error:  []
+         actual error:    [null-environment: not implemented]
+   65. FAIL  (eval '(lambda (x) x) (null-environment 5))
+         expected return: [#<procedure>]
+         actual return:   []
+         expected error:  []
+         actual error:    [null-environment: not implemented]
+   66. FAIL  (eval '(quote hello) (null-environment 5))
+         expected return: [hello]
+         actual return:   []
+         expected error:  []
+         actual error:    [null-environment: not implemented]
+   67. FAIL  (eval '(define x 99) (null-environment 5))
+         expected error:  [SchemeTypeError: cannot define 'x' in a frozen environment]
+         actual error:    [null-environment: not implemented]
+   68. FAIL  (eval '(let ((x 1) (y 2)) (+ x y)) (null-environment 5))
+         expected error:  [line 1, col 28: unbound variable: +
+(eval '(let ((x 1) (y 2)) (+ x y)) (null-environment 5))
+                           ^]
+         actual error:    [null-environment: not implemented]
+   69. FAIL  (null-environment 99)
+         expected return: [#<environment>]
+         actual return:   []
+         expected error:  []
+         actual error:    [null-environment: not implemented]
+   70. FAIL  (null-environment 0)
+         expected return: [#<environment>]
+         actual return:   []
+         expected error:  []
+         actual error:    [null-environment: not implemented]
+   71. FAIL  (interaction-environment)
+         expected return: [#<environment>]
+         actual return:   []
+         expected error:  []
+         actual error:    [interaction-environment: not available in primitives context]
+   72. FAIL  (eq? (interaction-environment) (interaction-environme...
+         expected return: [#f]
+         actual return:   []
+         expected error:  []
+         actual error:    [interaction-environment: not available in primitives context]
+   73. FAIL  (let ((e (null-environment 5)))
+         expected return: [99]
+         actual return:   []
+         expected error:  []
+         actual error:    [null-environment: not implemented]
+   74. FAIL  (let ((e (scheme-report-environment 7)))
+         expected return: [5]
+         actual return:   []
+         expected error:  []
+         actual error:    [scheme-report-environment: not implemented]
+   75. FAIL  (pair? (command-line))
+         expected return: [#t]
+         actual return:   [#f]
+   76. FAIL  (string? (car (command-line)))
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [SchemeTypeError: type error: expected pair, got nil]
+   77. FAIL  (features)
+         expected return: [(r7rs exact-closed exact-rational ratios ieee-float full-unicode pyscheme windows)]
+         actual return:   [(win32 windows cekscheme r7rs)]
+   78. PASS  (list? (features))
+   79. PASS  (symbol? (car (features)))
+   80. PASS  (if (member 'r7rs (features)) #t #f)
+   81. PASS  (string? (get-environment-variable "PATH"))
+   82. PASS  (get-environment-variable "NOSUCHVAR_XYZ_12345")
+   83. FAIL  (get-environment-variable 42)
+         expected error:  [SchemeTypeError: line 1, col 1: get-environment-variable: argument must be a string
+(get-environment-variable 42)
+^]
+         actual error:    [SchemeTypeError: type error: expected string, got fixnum]
+   84. PASS  (list? (get-environment-variables))
+   85. FAIL  (let ((vars (get-environment-variables)))
+         expected return: [#t]
+         actual return:   []
+         expected error:  []
+         actual error:    [SchemeTypeError: type error: expected pair, got nil]
+   86. FAIL  (let ((vars (get-environment-variables)))
+         expected return: [#t]
+         actual return:   [#f]
+   87. PASS  (number? (current-second))
+   88. PASS  (jiffies-per-second)
+   89. PASS  (positive? (current-jiffy))
+   90. PASS  (<= (current-jiffy) (current-jiffy))
+   91. FAIL  (current-second 1)
+         expected error:  [SchemeArityError: line 1, col 1: current-second: 1 argument provided; 0 expected
+(current-second 1)
+^]
+         actual error:    [SchemeArityError: current-second: 1 argument provided; 0 expected]
+   92. FAIL  (jiffies-per-second 1)
+         expected error:  [SchemeArityError: line 1, col 1: jiffies-per-second: 1 argument provided; 0 expected
+(jiffies-per-second 1)
+^]
+         actual error:    [SchemeArityError: jiffies-per-second: 1 argument provided; 0 expected]
+   93. FAIL  (current-jiffy 1)
+         expected error:  [SchemeArityError: line 1, col 1: current-jiffy: 1 argument provided; 0 expected
+(current-jiffy 1)
+^]
+         actual error:    [SchemeArityError: current-jiffy: 1 argument provided; 0 expected]
+   94. PASS  (define-record-type point (make-point x y) point? (x ...
+   95. PASS  (define-record-type point (make-point x y) point? (x ...
+   96. PASS  (define-record-type point (make-point x y) point? (x ...
+   97. PASS  (define-record-type point (make-point x y) point? (x ...
+   98. PASS  (define-record-type point (make-point x y) point? (x ...
+   99. PASS  (define-record-type point (make-point x y) point? (x ...
+  100. PASS  (define-record-type point (make-point x y) point? (x ...
+  101. PASS  (define-record-type point (make-point x y) point? (x ...
+  102. PASS  (define-record-type box (make-box v) box? (v box-v se...
+  103. PASS  (define-record-type box (make-box v) box? (v box-v se...
+  104. FAIL  (define-record-type point (make-point x y) point? (x ...
+         expected return: [#<point 3 4>]
+         actual return:   [#<record:point>]
+  105. PASS  (define-record-type box (make-box v) box? (v box-v)) ...
+  106. FAIL  (define-record-type bag (make-bag v) bag? (v bag-v)) ...
+         expected error:  [line 1, col 54: unbound variable: set-bag-v!
+(define-record-type bag (make-bag v) bag? (v bag-v)) set-bag-v!
+                                                     ^]
+         actual error:    [unbound variable: set-bag-v!]
+  107. PASS  (define-record-type rec (make-rec a) rec? (a rec-a) (...
+  108. PASS  (define-record-type rec (make-rec a) rec? (a rec-a) (...
+  109. PASS  (define-record-type a (make-a v) a? (v a-v)) (define-...
+  110. PASS  (define-record-type a (make-a v) a? (v a-v)) (define-...
+  111. PASS  (define-record-type a (make-a v) a? (v a-v)) (define-...
+  112. FAIL  (define-record-type a (make-a v) a? (v a-v)) (define-...
+         expected error:  [SchemeTypeError: line 1, col 91: a-v: argument is not a a
+(define-record-type a (make-a v) a? (v a-v)) (define-record-type b (make-b v) b? (v b-v)) (a-v (make-b 7))
+                                                                                          ^]
+         actual error:    [SchemeTypeError: a-v: wrong type]
+  113. FAIL  (define-record-type point (make-point x y) point? (x ...
+         expected error:  [SchemeTypeError: line 1, col 76: point-x: argument is not a point
+(define-record-type point (make-point x y) point? (x point-x) (y point-y)) (point-x 42)
+                                                                           ^]
+         actual error:    [SchemeTypeError: point-x: wrong type]
+  114. PASS  (define-record-type tag (make-tag) tag?) (tag? (make-...
+  115. FAIL  (define-record-type tag (make-tag) tag?) (make-tag)
+         expected return: [#<tag>]
+         actual return:   [#<record:tag>]
+
+43 of 115 FAILED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test011-hygiene.log
+--------------------------------------------------------------
+    1. PASS  (define-syntax h11-when
+    2. PASS  (let ((if 'redefined))
+    3. PASS  (let ((if (lambda args 'use-site-if)))
+    4. PASS  (define-syntax h11-or
+    5. PASS  (let ((t 'user)) (h11-or #f t))
+    6. PASS  (define-syntax h11-make-x
+    7. PASS  (define h11-x 'outer)
+    8. PASS  (h11-make-x h11-x)
+    9. PASS  (let ((else #f))
+   10. PASS  (let ((else 'truthy))
+   11. PASS  (let ((=> 'shadowed))
+   12. FAIL  (let ((else 'shadowed))
+         expected error:  [line 4, col 6: case clause head must be a list of datums, got else
+    (else 'last)))
+     ^]
+         actual error:    [analysis error: case clause head must be a list of datums, got else]
+   13. PASS  (letrec-syntax ((h11-a (syntax-rules () ((_) (h11-b))))
+   14. FAIL  (let-syntax ((h11-c (syntax-rules () ((_) 1)))
+         expected error:  [line 2, col 44: unbound variable: h11-c
+             (h11-d (syntax-rules () ((_) (h11-c)))))
+                                           ^]
+         actual error:    [unbound variable: h11-c]
+   15. FAIL  (let ((a 1) (a 2)) a)
+         expected error:  [line 1, col 1: duplicate variable name in let bindings: a
+(let ((a 1) (a 2)) a)
+^]
+         actual error:    [syntax error: duplicate variable name in let bindings: a]
+   16. FAIL  (letrec ((a 1) (a 2)) a)
+         expected error:  [line 1, col 1: duplicate variable name in letrec bindings: a
+(letrec ((a 1) (a 2)) a)
+^]
+         actual error:    [syntax error: duplicate variable name in letrec bindings: a]
+   17. FAIL  (letrec* ((a 1) (a 2)) a)
+         expected error:  [line 1, col 1: duplicate variable name in letrec* bindings: a
+(letrec* ((a 1) (a 2)) a)
+^]
+         actual error:    [syntax error: duplicate variable name in letrec* bindings: a]
+   18. PASS  (let* ((a 1) (a 2)) a)
+   19. PASS  (define-syntax h11-must-be-zero
+   20. PASS  (h11-must-be-zero 0)
+   21. FAIL  (h11-must-be-zero 5)
+         expected error:  [line 1, col 1: argument must be 0: 5
+(h11-must-be-zero 5)
+^]
+         actual error:    [syntax error: argument must be 0: 5]
+   22. PASS  (define-syntax h11-no-args
+   23. FAIL  (h11-no-args)
+         expected error:  [line 1, col 1: no args allowed
+(h11-no-args)
+^]
+         actual error:    [syntax error: no args allowed]
+   24. PASS  (define-syntax h11-bind-hidden
+   25. FAIL  (let ()
+         expected error:  [line 4, col 3: unbound variable: h11-hidden
+  h11-hidden)
+  ^]
+         actual error:    [unbound variable: h11-hidden]
+   26. PASS  (define-syntax h11-bind-visible
+   27. PASS  (let ()
+
+8 of 27 FAILED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test012-syntax-expand.log
+--------------------------------------------------------------------
+    1. FAIL  (syntax-expand '(define (f x) x))
+         expected return: [(define f (lambda (x) x))]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax-expand: not available at this level]
+    2. FAIL  (syntax-expand '(define (g a b) a))
+         expected return: [(define g (lambda (a b) a))]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax-expand: not available at this level]
+    3. FAIL  (syntax-expand '(if #t 1))
+         expected return: [(if #t 1 #<void>)]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax-expand: not available at this level]
+    4. FAIL  (syntax-expand '(if #t 1 2))
+         expected return: [(if #t 1 2)]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax-expand: not available at this level]
+    5. FAIL  (syntax-expand '(let ((x 1)) x))
+         expected return: [(let ((x 1)) x)]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax-expand: not available at this level]
+    6. FAIL  (syntax-expand '(let ((a 1) (b 2)) (+ a b)))
+         expected return: [(let ((a 1) (b 2)) (+ a b))]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax-expand: not available at this level]
+    7. PASS  (define-syntax h12-or
+    8. FAIL  (syntax-expand '(h12-or a b))
+         expected return: [(let ((t a)) (if t t b))]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax-expand: not available at this level]
+    9. PASS  (define-syntax h12-swap!
+   10. FAIL  (syntax-expand '(h12-swap! p q))
+         expected return: [(let ((tmp p)) (set! p q) (set! q tmp))]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax-expand: not available at this level]
+   11. PASS  (define-syntax h12-my-cond
+   12. FAIL  (syntax-expand '(h12-my-cond (#f 1) (else 2)))
+         expected return: [(if #f 1 2)]
+         actual return:   []
+         expected error:  []
+         actual error:    [syntax-expand: not available at this level]
+   13. PASS  (let ((t #f)) (h12-or t #t))
+   14. PASS  (let ((t #f)) (h12-or #f (h12-or t #t)))
+   15. PASS  (define-syntax h12-lit
+   16. PASS  (h12-lit foo)
+   17. PASS  (let ((foo 99)) (h12-lit foo))
+   18. PASS  (define h12-x 'outer)
+   19. PASS  (define-syntax h12-get-x (syntax-rules () ((_ ) h12-x)))
+   20. PASS  (let ((h12-x 'inner)) (h12-get-x))
+   21. PASS  (let ((tmp 1) (other 2))
+   22. PASS  (define-syntax h12-and
+   23. PASS  (let ((t #f)) (h12-and #t #t #t))
+   24. PASS  (let ((t #f)) (h12-and t #t #t))
+   25. PASS  (let ((t #f)) (h12-and #t t #t))
+   26. PASS  (let ((t #f)) (h12-and #t #t t))
+   27. PASS  (let ((x 'outer-x))
+   28. PASS  (letrec-syntax
+
+9 of 28 FAILED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test020-arithmetic.log
+-----------------------------------------------------------------
+    1. PASS  (+)
+    2. PASS  (+ 1 2 3 4 5)
+    3. PASS  (- 10)
+    4. PASS  (- 10 1 2 3)
+    5. PASS  (*)
+    6. PASS  (* 2 3 4)
+    7. PASS  (/ 12 3)
+    8. FAIL  (/ 1 0)
+         expected error:  [SchemeTypeError: line 1, col 1: /: division by zero
+(/ 1 0)
+^]
+         actual error:    [division by zero]
+    9. PASS  (abs -42)
+   10. PASS  (abs 42)
+   11. PASS  (quotient 13 4)
+   12. PASS  (quotient -13 4)
+   13. PASS  (remainder 13 4)
+   14. PASS  (remainder -13 4)
+   15. PASS  (modulo 13 4)
+   16. PASS  (modulo -13 4)
+   17. PASS  (min 3 1 4 1 5 9 2 6)
+   18. PASS  (max 3 1 4 1 5 9 2 6)
+   19. PASS  (+ +inf.0 1)
+   20. PASS  (+ +inf.0 +inf.0)
+   21. PASS  (- +inf.0 +inf.0)
+   22. PASS  (* 0 +inf.0)
+   23. PASS  (* 2 +inf.0)
+   24. PASS  (/ +inf.0 2)
+   25. FAIL  (/ 1 0.0)
+         expected return: [+inf.0]
+         actual return:   []
+         expected error:  []
+         actual error:    [division by zero]
+   26. FAIL  (/ -1 0.0)
+         expected return: [-inf.0]
+         actual return:   []
+         expected error:  []
+         actual error:    [division by zero]
+   27. FAIL  (/ 0 0.0)
+         expected return: [+nan.0]
+         actual return:   []
+         expected error:  []
+         actual error:    [division by zero]
+   28. PASS  (floor +inf.0)
+   29. PASS  (floor -inf.0)
+   30. PASS  (floor +nan.0)
+   31. PASS  (ceiling +inf.0)
+   32. PASS  (ceiling -inf.0)
+   33. PASS  (truncate +inf.0)
+   34. PASS  (truncate +nan.0)
+   35. PASS  (round +inf.0)
+   36. PASS  (* 4 (atan 1))
+   37. PASS  (number->string +inf.0)
+   38. PASS  (number->string -inf.0)
+   39. PASS  (number->string +nan.0)
+   40. PASS  (string->number "+inf.0")
+   41. PASS  (string->number "-inf.0")
+   42. PASS  (string->number "+nan.0")
+   43. PASS  (string->number "not-a-number")
+   44. FAIL  (number->string 3+4i)
+         expected return: ["3+4i"]
+         actual return:   ["3.0+4.0i"]
+   45. PASS  (number->string 0.0+1.0i)
+   46. PASS  (number->string 3.0-4.0i)
+   47. FAIL  (number->string 0.0+0.0i)
+         expected return: ["0.0+0.0i"]
+         actual return:   ["0.0"]
+   48. PASS  (string->number "#b1010")
+   49. PASS  (string->number "#o17")
+   50. PASS  (string->number "#xff")
+   51. PASS  (string->number "#e3.0")
+   52. PASS  (string->number "#i42")
+   53. PASS  (string->number "#e#b1010")
+   54. PASS  (string->number "#i#xff")
+   55. PASS  (string->number "#z42")
+   56. PASS  (string->number "3+4i")
+   57. PASS  (string->number "3-4i")
+   58. PASS  (string->number "+2i")
+   59. FAIL  (string->number "+i")
+         expected return: [0.0+1.0i]
+         actual return:   [0.0+i]
+   60. FAIL  (string->number "-i")
+         expected return: [0.0-1.0i]
+         actual return:   [0.0-i]
+   61. PASS  (+ 1/2 1/3)
+   62. PASS  (- 1/2 1/3)
+   63. PASS  (* 2/3 3)
+   64. PASS  (* 1/2 1/3)
+   65. PASS  (/ 1/2 2)
+   66. PASS  (/ 1 3)
+   67. PASS  (/ 2)
+   68. PASS  (/ 3/4)
+   69. PASS  (+ 1/2 0.5)
+   70. PASS  (floor 7/2)
+   71. PASS  (floor -7/2)
+   72. PASS  (ceiling 7/2)
+   73. PASS  (ceiling -7/2)
+   74. PASS  (truncate 7/2)
+   75. PASS  (truncate -7/2)
+   76. PASS  (round 7/2)
+   77. PASS  (round 5/2)
+   78. PASS  (abs -3/4)
+   79. PASS  (abs 3/4)
+   80. PASS  (min 1/3 1/2)
+   81. PASS  (max 1/3 1/2)
+   82. PASS  (min 1/3 0.4)
+   83. PASS  (expt 2 3)
+   84. PASS  (expt 2 -2)
+   85. PASS  (expt 2 -1)
+   86. PASS  (expt 1/2 3)
+   87. PASS  (expt 2/3 2)
+   88. PASS  (sqrt 4/9)
+   89. PASS  (sqrt 1/4)
+   90. PASS  (number->string 3/4)
+   91. PASS  (number->string -1/3)
+   92. PASS  (string->number "3/4")
+   93. PASS  (string->number "-1/3")
+   94. PASS  (string->number "4/2")
+   95. PASS  (string->number "#e3/4")
+   96. FAIL  (+ 3+4i 1-2i)
+         expected return: [4+2i]
+         actual return:   [4.0+2.0i]
+   97. FAIL  (+ 3+4i -3-4i)
+         expected return: [0]
+         actual return:   [0.0]
+   98. FAIL  (- 3+4i 1+2i)
+         expected return: [2+2i]
+         actual return:   [2.0+2.0i]
+   99. FAIL  (- 0+1i 0+1i)
+         expected return: [0]
+         actual return:   [0.0]
+  100. FAIL  (* 3+4i 1+2i)
+         expected return: [-5+10i]
+         actual return:   [-5.0+10.0i]
+  101. FAIL  (* 1+2i 1-2i)
+         expected return: [5]
+         actual return:   [5.0]
+  102. FAIL  (* 3+4i 2)
+         expected return: [6+8i]
+         actual return:   [6.0+8.0i]
+  103. PASS  (/ 4 2)
+  104. FAIL  (/ 0+2i 0+1i)
+         expected return: [2]
+         actual return:   [2.0]
+  105. FAIL  (/ 1+2i 1+1i)
+         expected return: [3/2+1/2i]
+         actual return:   [1.5+0.5i]
+  106. FAIL  (sqrt -1)
+         expected return: [0.0+1.0i]
+         actual return:   [0.0+i]
+  107. PASS  (sqrt -4)
+  108. PASS  (sqrt -1/4)
+  109. PASS  (sqrt 0+1i)
+  110. PASS  (abs 3+4i)
+  111. PASS  (abs 0+1i)
+  112. FAIL  (expt 2+0i 3)
+         expected return: [8]
+         actual return:   [8.0]
+  113. FAIL  (expt 0+1i 2)
+         expected return: [-1.0]
+         actual return:   [-1.0+1.2246467991473532e-16i]
+  114. FAIL  (expt 0+1i 4)
+         expected return: [1.0]
+         actual return:   [1.0-2.4492935982947064e-16i]
+  115. PASS  (number->string (sqrt -1))
+  116. FAIL  (number->string (+ 3+4i 0))
+         expected return: ["3+4i"]
+         actual return:   ["3.0+4.0i"]
+  117. PASS  (string->number "#e1.5")
+  118. PASS  (string->number "#e0.5")
+  119. PASS  (string->number "#e2.0")
+  120. PASS  (string->number "#e0.0")
+  121. FAIL  (sqrt -0.0)
+         expected return: [0.0]
+         actual return:   [-0.0]
+  122. FAIL  (expt -1 1/2)
+         expected return: [0.0+1.0i]
+         actual return:   [+nan.0]
+  123. PASS  (gcd 32.0 -36)
+  124. PASS  (lcm 32.0 -36)
+  125. PASS  (quotient 13.0 4)
+  126. PASS  (remainder 13 4.0)
+  127. PASS  (modulo -13.0 4)
+  128. PASS  (floor-quotient 5.0 2)
+  129. PASS  (floor-remainder 13 4.0)
+  130. PASS  (truncate-quotient -13.0 4)
+  131. PASS  (truncate-remainder -13 4.0)
+  132. FAIL  (+ 1+2i 3+4i)
+         expected return: [4+6i]
+         actual return:   [4.0+6.0i]
+  133. FAIL  (- 5+3i 2+1i)
+         expected return: [3+2i]
+         actual return:   [3.0+2.0i]
+  134. FAIL  (* 1+1i 1-1i)
+         expected return: [2]
+         actual return:   [2.0]
+  135. FAIL  (/ 1+2i 3+4i)
+         expected return: [11/25+2/25i]
+         actual return:   [0.44+0.08i]
+  136. FAIL  (number->string 1/3+1/2i)
+         expected return: ["1/3+1/2i"]
+         actual return:   []
+         expected error:  []
+         actual error:    [unbound variable: 1/3+1/2i]
+  137. FAIL  (string->number "#e3.0+4.0i")
+         expected return: [3+4i]
+         actual return:   [#f]
+  138. PASS  (+ 1 #| skip |# 2 #| skip |# 3)
+  139. PASS  (+ 1 #;(ignored expression) 4)
+  140. PASS  (+ 1)
+  141. PASS  (+ 1 2)
+  142. PASS  (+ 1.0 2)
+  143. PASS  (+ -3 3)
+  144. PASS  (- 5)
+  145. PASS  (- -5)
+  146. PASS  (- 10 3)
+  147. PASS  (- 10 3 2)
+  148. PASS  (- 1.5 0.5)
+  149. FAIL  (-)
+         expected error:  [SchemeArityError: line 1, col 1: -: 0 arguments provided; at least 1 expected
+(-)
+^]
+         actual error:    [SchemeArityError: -: 0 arguments provided; at least 1 expected]
+  150. PASS  (* 5)
+  151. PASS  (* 2 3)
+  152. PASS  (* -1 -1)
+  153. PASS  (* 2.0 3)
+  154. PASS  (/ 10 2)
+  155. PASS  (/ 7 2)
+  156. PASS  (/ 6 3)
+  157. PASS  (/ 1 4)
+  158. PASS  (/ 10 2 5)
+  159. FAIL  (/)
+         expected error:  [SchemeArityError: line 1, col 1: /: 0 arguments provided; at least 1 expected
+(/)
+^]
+         actual error:    [SchemeArityError: /: 0 arguments provided; at least 1 expected]
+  160. PASS  (/ 0 5)
+  161. PASS  (quotient 10 3)
+  162. PASS  (quotient -10 3)
+  163. PASS  (quotient 10 -3)
+  164. PASS  (quotient -10 -3)
+  165. PASS  (quotient 6 3)
+  166. PASS  (quotient 0 5)
+  167. FAIL  (quotient 1 0)
+         expected error:  [SchemeTypeError: line 1, col 1: quotient: division by zero
+(quotient 1 0)
+^]
+         actual error:    [division by zero]
+  168. FAIL  (quotient 1 2 3)
+         expected error:  [SchemeArityError: line 1, col 1: quotient: 3 arguments provided; 2 expected
+(quotient 1 2 3)
+^]
+         actual error:    [SchemeArityError: quotient: 3 arguments provided; 2 expected]
+  169. PASS  (quotient -13.0 4)
+  170. PASS  (remainder 10 3)
+  171. PASS  (remainder -10 3)
+  172. PASS  (remainder 10 -3)
+  173. PASS  (remainder -10 -3)
+  174. PASS  (remainder 0 5)
+  175. FAIL  (remainder 1 0)
+         expected error:  [SchemeTypeError: line 1, col 1: remainder: division by zero
+(remainder 1 0)
+^]
+         actual error:    [division by zero]
+  176. PASS  (remainder 13.0 4)
+  177. PASS  (remainder -13.0 4)
+  178. PASS  (modulo 10 3)
+  179. PASS  (modulo -10 3)
+  180. PASS  (modulo 10 -3)
+  181. PASS  (modulo -10 -3)
+  182. PASS  (modulo 0 5)
+  183. PASS  (modulo 13 -4)
+  184. FAIL  (modulo 1 0)
+         expected error:  [SchemeTypeError: line 1, col 1: modulo: division by zero
+(modulo 1 0)
+^]
+         actual error:    [division by zero]
+  185. PASS  (modulo 13.0 4)
+  186. PASS  (modulo -13.0 4)
+  187. FAIL  (floor/)
+         expected error:  [SchemeArityError: line 1, col 1: floor/: 0 arguments provided; 2 expected
+(floor/)
+^]
+         actual error:    [SchemeArityError: floor/: 0 arguments provided; 2 expected]
+  188. PASS  (floor-quotient 13 4)
+  189. PASS  (floor-quotient -13 4)
+  190. PASS  (floor-quotient 13 -4)
+  191. PASS  (floor-quotient -13 -4)
+  192. FAIL  (floor-quotient 10 0)
+         expected error:  [SchemeTypeError: line 1, col 1: floor-quotient: divide by zero
+(floor-quotient 10 0)
+^]
+         actual error:    [division by zero]
+  193. FAIL  (floor-quotient)
+         expected error:  [SchemeArityError: line 1, col 1: floor-quotient: 0 arguments provided; 2 expected
+(floor-quotient)
+^]
+         actual error:    [SchemeArityError: floor-quotient: 0 arguments provided; 2 expected]
+  194. PASS  (floor-remainder 13 4)
+  195. PASS  (floor-remainder -13 4)
+  196. PASS  (floor-remainder 13 -4)
+  197. PASS  (floor-remainder -13 -4)
+  198. FAIL  (floor-remainder)
+         expected error:  [SchemeArityError: line 1, col 1: floor-remainder: 0 arguments provided; 2 expected
+(floor-remainder)
+^]
+         actual error:    [SchemeArityError: floor-remainder: 0 arguments provided; 2 expected]
+  199. FAIL  (truncate/)
+         expected error:  [SchemeArityError: line 1, col 1: truncate/: 0 arguments provided; 2 expected
+(truncate/)
+^]
+         actual error:    [SchemeArityError: truncate/: 0 arguments provided; 2 expected]
+  200. PASS  (truncate-quotient 13 4)
+  201. PASS  (truncate-quotient -7 2)
+  202. FAIL  (truncate-quotient 10 0)
+         expected error:  [SchemeTypeError: line 1, col 1: truncate-quotient: divide by zero
+(truncate-quotient 10 0)
+^]
+         actual error:    [division by zero]
+  203. FAIL  (truncate-quotient)
+         expected error:  [SchemeArityError: line 1, col 1: truncate-quotient: 0 arguments provided; 2 expected
+(truncate-quotient)
+^]
+         actual error:    [SchemeArityError: truncate-quotient: 0 arguments provided; 2 expected]
+  204. PASS  (truncate-remainder 13 4)
+  205. PASS  (truncate-remainder -7 2)
+  206. FAIL  (truncate-remainder)
+         expected error:  [SchemeArityError: line 1, col 1: truncate-remainder: 0 arguments provided; 2 expected
+(truncate-remainder)
+^]
+         actual error:    [SchemeArityError: truncate-remainder: 0 arguments provided; 2 expected]
+  207. PASS  (abs 5)
+  208. PASS  (abs -5)
+  209. PASS  (abs 0)
+  210. PASS  (abs -3.14)
+  211. PASS  (abs 2.5)
+  212. PASS  (abs 3/4)
+  213. FAIL  (abs)
+         expected error:  [SchemeArityError: line 1, col 1: abs: 0 arguments provided; 1 expected
+(abs)
+^]
+         actual error:    [SchemeArityError: abs: 0 arguments provided; 1 expected]
+  214. PASS  (expt 2 0)
+  215. PASS  (expt 2 1)
+  216. PASS  (expt 2 10)
+  217. PASS  (expt 3 3)
+  218. PASS  (expt 4 0.5)
+  219. PASS  (expt 0 0)
+  220. PASS  (expt 0 3)
+  221. PASS  (expt 2 -1)
+  222. PASS  (expt -2 -1)
+  223. PASS  (expt 2/3 3)
+  224. PASS  (expt 3/2 -2)
+  225. PASS  (sqrt 0)
+  226. PASS  (sqrt 1)
+  227. PASS  (sqrt 4)
+  228. PASS  (sqrt 9)
+  229. PASS  (sqrt 25)
+  230. PASS  (sqrt 100)
+  231. PASS  (sqrt 2)
+  232. PASS  (sqrt 1/4)
+  233. PASS  (sqrt 9/25)
+  234. PASS  (sqrt 4/1)
+  235. FAIL  (exact-integer-sqrt)
+         expected error:  [SchemeArityError: line 1, col 1: exact-integer-sqrt: 0 arguments provided; 1 expected
+(exact-integer-sqrt)
+^]
+         actual error:    [SchemeArityError: exact-integer-sqrt: 0 arguments provided; 1 expected]
+  236. PASS  (floor 3.7)
+  237. PASS  (floor 3.0)
+  238. PASS  (floor -3.2)
+  239. PASS  (floor 3.5)
+  240. PASS  (floor 5)
+  241. PASS  (floor -3)
+  242. PASS  (floor -7/2)
+  243. PASS  (ceiling 3.2)
+  244. PASS  (ceiling 3.0)
+  245. PASS  (ceiling -3.7)
+  246. PASS  (ceiling 3.5)
+  247. PASS  (ceiling 3)
+  248. PASS  (ceiling -3)
+  249. PASS  (ceiling -7/2)
+  250. PASS  (round 0.5)
+  251. PASS  (round 1.5)
+  252. PASS  (round 2.5)
+  253. PASS  (round 3.5)
+  254. PASS  (round 4.5)
+  255. PASS  (round -0.5)
+  256. PASS  (round -1.5)
+  257. PASS  (round -2.5)
+  258. PASS  (round 3.2)
+  259. PASS  (round 3.7)
+  260. PASS  (round 1.4)
+  261. PASS  (round 1.6)
+  262. PASS  (round -1.4)
+  263. PASS  (round -1.6)
+  264. PASS  (round 3)
+  265. PASS  (round 4)
+  266. PASS  (round 7/2)
+  267. PASS  (round -7/2)
+  268. PASS  (round 5/2)
+  269. PASS  (truncate 3.7)
+  270. PASS  (truncate -3.7)
+  271. PASS  (truncate 0.9)
+  272. PASS  (truncate 7)
+  273. PASS  (truncate -7/2)
+  274. PASS  (- 3/4 1/4)
+  275. PASS  (* 2/3 3/4)
+  276. PASS  (/ 1/2 1/3)
+  277. PASS  (/ 5 3)
+  278. PASS  (+ 1/2 1)
+  279. PASS  (* 2 3/4)
+  280. PASS  (+ 1/3 1/3 1/3)
+  281. PASS  (* 1/2 2)
+  282. PASS  (min 3)
+  283. PASS  (min 3 1 4 1 5 9)
+  284. PASS  (min -5 0 5)
+  285. PASS  (max 3)
+  286. PASS  (max 3 1 4 1 5 9)
+  287. PASS  (max -5 0 5)
+  288. FAIL  (min)
+         expected error:  [SchemeArityError: line 1, col 1: min: 0 arguments provided; at least 1 expected
+(min)
+^]
+         actual error:    [SchemeArityError: min: 0 arguments provided; at least 1 expected]
+  289. FAIL  (max)
+         expected error:  [SchemeArityError: line 1, col 1: max: 0 arguments provided; at least 1 expected
+(max)
+^]
+         actual error:    [SchemeArityError: max: 0 arguments provided; at least 1 expected]
+  290. PASS  (min 3 4.0)
+  291. PASS  (min 4.0 3)
+  292. PASS  (max 3.0 4)
+  293. PASS  (max 4 3.0)
+  294. PASS  (max 1/3 1/2)
+  295. PASS  (min 1/3 0.5)
+  296. PASS  (min 1 +inf.0)
+  297. PASS  (max 1 +inf.0)
+  298. PASS  (min 1 -inf.0)
+  299. PASS  (max 1 -inf.0)
+  300. PASS  (gcd)
+  301. PASS  (gcd 5)
+  302. PASS  (gcd 12 8)
+  303. PASS  (gcd 12 8 6)
+  304. PASS  (gcd 0 5)
+  305. PASS  (gcd 0 0)
+  306. PASS  (lcm)
+  307. PASS  (lcm 5)
+  308. PASS  (lcm 4 6)
+  309. PASS  (lcm 4 6 10)
+  310. PASS  (number->string 0)
+  311. PASS  (number->string 42)
+  312. PASS  (number->string -17)
+  313. FAIL  (number->string)
+         expected error:  [SchemeArityError: line 1, col 1: number->string: 0 arguments provided; 1 or 2 expected
+(number->string)
+^]
+         actual error:    [SchemeArityError: number->string: 0 arguments provided; 1 or 2 expected]
+  314. PASS  (number->string #xFF 16)
+  315. PASS  (number->string #b1010 2)
+  316. PASS  (number->string #o17 8)
+  317. PASS  (string->number "42")
+  318. PASS  (string->number "0")
+  319. PASS  (string->number "-17")
+  320. PASS  (string->number "3.14")
+  321. PASS  (string->number "abc")
+  322. PASS  (string->number "")
+  323. PASS  (string->number "12abc")
+  324. FAIL  (string->number)
+         expected error:  [SchemeArityError: line 1, col 1: string->number: 0 arguments provided; 1 or 2 expected
+(string->number)
+^]
+         actual error:    [SchemeArityError: string->number: 0 arguments provided; 1 or 2 expected]
+  325. PASS  (string->number "ff" 16)
+  326. PASS  (string->number "FF" 16)
+  327. PASS  (string->number "-a" 16)
+  328. PASS  (string->number "1010" 2)
+  329. PASS  (string->number "17" 8)
+  330. PASS  (string->number "255" 10)
+  331. PASS  (string->number "ff")
+  332. PASS  (string->number "0" 16)
+  333. PASS  (string->number "z" 16)
+  334. PASS  (string->number "#i3")
+  335. PASS  (string->number "#i1")
+  336. PASS  (string->number "#e1.0")
+  337. PASS  (string->number "#e3.0")
+  338. PASS  (string->number "#e5")
+  339. PASS  (string->number "#b101")
+  340. PASS  (string->number "#b1111")
+  341. PASS  (string->number "#o10")
+  342. PASS  (string->number "#xff")
+  343. PASS  (string->number "#x1A")
+  344. PASS  (string->number "#d42")
+  345. PASS  (string->number "#e#b101")
+  346. PASS  (string->number "#inot")
+  347. PASS  (string->number "+inf")
+  348. PASS  (string->number "inf.0")
+  349. PASS  (string->number (number->string 255 16) 16)
+  350. PASS  (string->number (number->string 10 2) 2)
+  351. FAIL  (+ "a" 1)
+         expected error:  [SchemeTypeError: line 1, col 1: +: argument 1 is not a number
+(+ "a" 1)
+^]
+         actual error:    [SchemeTypeError: type error: expected number, got string]
+  352. FAIL  (- #t 1)
+         expected error:  [SchemeTypeError: line 1, col 1: -: argument 1 is not a number
+(- #t 1)
+^]
+         actual error:    [SchemeTypeError: type error: expected number, got boolean]
+  353. FAIL  (* '() 2)
+         expected error:  [SchemeTypeError: line 1, col 1: *: argument 1 is not a number
+(* '() 2)
+^]
+         actual error:    [SchemeTypeError: type error: expected number, got nil]
+  354. FAIL  (- 1+2i 3+4i)
+         expected return: [-2-2i]
+         actual return:   [-2.0-2.0i]
+  355. FAIL  (* 1+2i 3+4i)
+         expected return: [-5+10i]
+         actual return:   [-5.0+10.0i]
+  356. FAIL  (/ 2+4i 2+0i)
+         expected return: [1+2i]
+         actual return:   [1.0+2.0i]
+  357. FAIL  (+ 1+2i 3)
+         expected return: [4+2i]
+         actual return:   [4.0+2.0i]
+  358. FAIL  (* 2 1+3i)
+         expected return: [2+6i]
+         actual return:   [2.0+6.0i]
+  359. FAIL  (- 3+4i)
+         expected return: [-3-4i]
+         actual return:   [-3.0-4.0i]
+  360. PASS  (sqrt -4)
+  361. PASS  (sqrt 4.0)
+  362. PASS  (sqrt 0+4i)
+  363. FAIL  (expt 2+0i 2)
+         expected return: [4]
+         actual return:   [4.0]
+  364. PASS  (string->number "-3.5+2.0i")
+  365. FAIL  (number->string 3+4i)
+         expected return: ["3+4i"]
+         actual return:   ["3.0+4.0i"]
+
+61 of 365 FAILED
+
+Test file: D:\SWDEV\Python3\Scheme\testing\test021-arithmetic2.log
+------------------------------------------------------------------
+    1. PASS  +inf.0
+    2. PASS  -inf.0
+    3. PASS  +nan.0
+    4. PASS  (exp 0)
+    5. PASS  (exp 1)
+    6. PASS  (exp -1)
+    7. PASS  (log 1)
+    8. PASS  (log 0)
+    9. PASS  (log -1)
+   10. PASS  (log 100 10)
+   11. PASS  (sin 0)
+   12. PASS  (cos 0)
+   13. PASS  (tan 0)
+   14. PASS  (sin (/ (* 4 (atan 1)) 2))
+   15. PASS  (asin 0)
+   16. PASS  (acos 1)
+   17. PASS  (atan 0)
+   18. PASS  (atan 1 1)
+   19. PASS  (asin 2)
+   20. PASS  (acos 2)
+   21. PASS  #b1010
+   22. PASS  #o17
+   23. PASS  #d42
+   24. PASS  #xff
+   25. PASS  #xDEAD
+   26. PASS  #b-1010
+   27. PASS  #o-17
+   28. PASS  #XFF
+   29. PASS  #e42
+   30. PASS  #e3.0
+   31. PASS  #i42
+   32. PASS  #i3
+   33. FAIL  #e#b1010
+         expected return: [10]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: malformed number after #e: #b1010]
+   34. FAIL  #b#e1010
+         expected return: [10]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: malformed number after #b: #e1010]
+   35. FAIL  #i#b1010
+         expected return: [10.0]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: malformed number after #i: #b1010]
+   36. FAIL  #i#xff
+         expected return: [255.0]
+         actual return:   []
+         expected error:  []
+         actual error:    [parse error: malformed number after #i: #xff]
+   37. FAIL  #b#o1010
+         expected error:  [line 1, col 1: duplicate radix prefix: '#b#o1010'
+#b#o1010
+^]
+         actual error:    [parse error: malformed number after #b: #o1010]
+   38. FAIL  #e#e42
+         expected error:  [line 1, col 1: duplicate exactness prefix: '#e#e42'
+#e#e42
+^]
+         actual error:    [parse error: malformed number after #e: #e42]
+   39. FAIL  #e1.5
+         expected return: [3/2]
+         actual return:   [1]
+   40. FAIL  #e+inf.0
+         expected error:  [line 1, col 1: #e cannot be applied to +inf.0
+#e+inf.0
+^]
+         actual error:    [parse error: malformed number after #e: +inf.0]
+   41. FAIL  3+4i
+         expected return: [3+4i]
+         actual return:   [3.0+4.0i]
+   42. FAIL  3-4i
+         expected return: [3-4i]
+         actual return:   [3.0-4.0i]
+   43. FAIL  +2i
+         expected return: [0+2i]
+         actual return:   [0.0+2.0i]
+   44. FAIL  -2i
+         expected return: [0-2i]
+         actual return:   [0.0-2.0i]
+   45. FAIL  +i
+         expected return: [0+1i]
+         actual return:   [0.0+i]
+   46. FAIL  -i
+         expected return: [0-1i]
+         actual return:   [0.0-i]
+   47. PASS  1.5+2.5i
+   48. PASS  0.0-3.0i
+   49. PASS  1.0+2.5e1i
+   50. FAIL  +inf.0+0.0i
+         expected return: [+inf.0+0.0i]
+         actual return:   [+inf.0]
+   51. PASS  0.0+inf.0i
+   52. FAIL  +nan.0+0.0i
+         expected return: [+nan.0+0.0i]
+         actual return:   [+nan.0]
+   53. PASS  3/4
+   54. PASS  -3/4
+   55. PASS  6/4
+   56. PASS  4/2
+   57. FAIL  #e1.5
+         expected return: [3/2]
+         actual return:   [1]
+   58. FAIL  #e0.1
+         expected return: [3602879701896397/36028797018963968]
+         actual return:   [0]
+   59. FAIL  #e-0.5
+         expected return: [-1/2]
+         actual return:   [0]
+   60. PASS  (exact 1.5)
+   61. PASS  (exact 0.75)
+   62. PASS  (inexact 3/4)
+   63. PASS  (inexact 1/3)
+   64. PASS  (exact 3/4)
+   65. PASS  (exact? 3/4)
+   66. PASS  (inexact? 3/4)
+   67. PASS  (numerator 3/4)
+   68. PASS  (denominator 3/4)
+   69. PASS  (numerator 2)
+   70. PASS  (denominator 2)
+   71. PASS  (inexact? (sqrt 1/2))
+   72. PASS  (square 3/4)
+   73. PASS  (make-rectangular 3 4)
+   74. PASS  (make-rectangular 0 1)
+   75. PASS  (make-rectangular 1/2 1/3)
+   76. PASS  (real-part (make-polar 1 0))
+   77. PASS  (imag-part (make-polar 1 0))
+   78. FAIL  (real-part 3+4i)
+         expected return: [3]
+         actual return:   [3.0]
+   79. FAIL  (imag-part 3+4i)
+         expected return: [4]
+         actual return:   [4.0]
+   80. PASS  (re

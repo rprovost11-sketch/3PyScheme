@@ -167,6 +167,7 @@ def paren_state(text):
    list of unclosed delimiter characters ('(' or '[') in open order."""
    stack     = []
    in_string = False
+   in_pipe   = False
    escape    = False
    i = 0
    n = len(text)
@@ -179,9 +180,16 @@ def paren_state(text):
             escape = True
          elif ch == '"':
             in_string = False
+      elif in_pipe:
+         if ch == '\\':
+            escape = True
+         elif ch == '|':
+            in_pipe = False
       else:
          if ch == '"':
             in_string = True
+         elif ch == '|':
+            in_pipe = True
          elif ch == ';':
             while i < n and text[i] != '\n':
                i = i + 1

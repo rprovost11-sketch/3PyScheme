@@ -34,6 +34,7 @@ import datetime
 import io
 import os
 import sys
+import time
 
 from pyscheme.Environment import (
    SchemeUnboundError, SchemeRuntimeError,
@@ -257,6 +258,19 @@ class Listener:
       return entries
 
    @staticmethod
+   def _match_retval(actual, expected):
+      """True if actual matches expected, honouring 'X or ==> Y' alternatives."""
+      if ' or ==> ' in expected:
+         parts = expected.split(' or ==> ')
+         i = 0
+         while i < len(parts):
+            if actual == parts[i].strip():
+               return True
+            i = i + 1
+         return False
+      return actual == expected
+
+   @staticmethod
    def _print_welcome_banner():
       """Short welcome banner printed by _banner and ]reboot."""
       useColor = sys.stdout.isatty()
@@ -276,15 +290,17 @@ class Listener:
    def __init__(self, anInterpreter, testdir=_DEFAULT_TEST_DIR,
                 language='pyscheme', version='0.1',
                 author='pyscheme authors',
-                project='https://example/pyscheme'):
-      self._interp   = anInterpreter
-      # Absolutify so ]cd doesn't break ]test.
-      self._testdir  = os.path.abspath(testdir)
-      self._logFile  = None
-      self._language = language
-      self._version  = version
-      self._author   = author
-      self._project  = project
+                project='https://example/pyscheme',
+                compliancedir=''):
+      self._interp        = anInterpreter
+      # Absolutify so ]cd doesn't break ]test / ]compliance.
+      self._testdir       = os.path.abspath(testdir)
+      self._compliancedir = os.path.abspath(compliancedir) if compliancedir else ''
+      self._logFile       = None
+      self._language      = language
+      self._version       = version
+      self._author        = author
+      self._project       = project
       self._init_readline()
       # Wire the Listener's prompt function into the interpreter's debugger
       # so debug> prompts use the same readline session as the REPL.
@@ -301,8 +317,9 @@ class Listener:
          'log':      self._cmd_log,
          'close':    self._cmd_close,
          'resume':   self._cmd_resume,
-         'test':     self._cmd_test,
-         'cd':       self._cmd_cd,
+         'test':       self._cmd_test,
+         'compliance': self._cmd_compliance,
+         'cd':         self._cmd_cd,
          'pwd':      self._cmd_pwd,
          'lhistory': self._cmd_lhistory,
          'debug':    self._cmd_debug,
@@ -609,6 +626,8 @@ class Listener:
          actual_retval = ''
          actual_error  = ''
          out_capture   = io.StringIO()
+         ctx = self._interp.get_ctx()
+         ctx.timeout_at = time.monotonic() + 30.0
          try:
             actual_retval = self._interp.eval(expr_src.strip(),
                                               outStrm=out_capture)
@@ -616,12 +635,19 @@ class Listener:
             actual_error = 'Interrupted.'
          except Exception as e:
             actual_error = Listener._format_error(e)
+         finally:
+            ctx.timeout_at = 0.0
 
          actual_output   = out_capture.getvalue().rstrip()
          expected_output = expected_output.rstrip()
 
-         retval_ok = actual_retval == expected_retval
-         error_ok  = actual_error  == expected_error
+         # '%%% *' means any error is acceptable (used in compliance tests).
+         if expected_error == '*':
+            error_ok = bool(actual_error)
+         else:
+            error_ok = actual_error == expected_error
+
+         retval_ok = Listener._match_retval(actual_retval, expected_retval)
          output_ok = actual_output == expected_output
 
          stripped = expr_src.strip()
@@ -646,8 +672,11 @@ class Listener:
                print('         expected output: [' + expected_output + ']')
                print('         actual output:   [' + actual_output + ']')
             if not error_ok:
-               print('         expected error:  [' + expected_error + ']')
-               print('         actual error:    [' + actual_error + ']')
+               if expected_error == '*':
+                  print('         expected an error, but none was raised')
+               else:
+                  print('         expected error:  [' + expected_error + ']')
+                  print('         actual error:    [' + actual_error + ']')
          k = k + 1
 
       _expander_mod._include_fallback_dir = saved_fallback
@@ -883,7 +912,13 @@ class Listener:
             'Please close the log before running tests (]close).')
 
       if len(args) == 1:
-         filenames = [args[0]]
+         arg = args[0]
+         if os.path.isdir(arg):
+            filenames = retrieveFileList(arg)
+            if not filenames:
+               raise ListenerCommandError('No .log files in ' + repr(arg))
+         else:
+            filenames = [arg]
       else:
          if not os.path.isdir(self._testdir):
             raise ListenerCommandError(
@@ -930,9 +965,7 @@ class Listener:
 
       savedStdout = sys.stdout
       try:
-         k = 0
-         while k < len(filenames):
-            filename = filenames[k]
+         for filename in filenames:
             self._interp.reboot(load_rc=False)
             base   = os.path.basename(filename)
             padded = base.ljust(40)
@@ -954,7 +987,6 @@ class Listener:
                total  = r.n_pass + r.n_fail
                status = RED + str(r.n_fail) + ' of ' + str(total) + ' failed' + RESET
             print(status, file=savedStdout, flush=True)
-            k = k + 1
       finally:
          sys.stdout = savedStdout
 
@@ -978,9 +1010,7 @@ class Listener:
             report.append('')
             report.append('Test Report')
             report.append('===========')
-            k = 0
-            while k < len(per_file):
-               entry = per_file[k]
+            for entry in per_file:
                name  = entry[0]
                p     = entry[1]
                f     = entry[2]
@@ -991,7 +1021,6 @@ class Listener:
                   total = p + f
                   msg   = '(' + str(f) + '/' + str(total) + ') Failed.'
                report.append(short.ljust(40) + ' ' + msg)
-               k = k + 1
             report.append('')
             report.append('Total test files: ' + str(len(filenames)) + '.')
             report.append('Total test cases: '
@@ -1003,6 +1032,173 @@ class Listener:
             runFile.close()
             print()
             print('Test output: ' + runFilename)
+
+   def _cmd_compliance(self, args):
+      """Usage: ]compliance [<file.log> | <start> [<end>]]
+
+      Run the R7RS compliance test suite against the configured directory.
+        ]compliance                    -- run all tests
+        ]compliance 3                  -- run tests with filename >= "3"
+        ]compliance 3 4                -- run tests with "3" <= filename < "4"
+        ]compliance 3.1 - Booleans.log -- run that one file
+
+      Filename comparison is case-insensitive on the bare filename only.
+      The interpreter is rebooted before each file and after the suite.
+      A timestamped run report is written to <compliancedir>/runs/.
+
+      Compliance log extras vs plain test logs:
+        ==> X or ==> Y   — either alternative is accepted
+        %%% error         — any non-empty error string is accepted
+      """
+      if self._logFile:
+         raise ListenerCommandError(
+            'Please close the log before running compliance (]close).')
+
+      compdir = self._compliancedir
+      if not compdir:
+         raise ListenerCommandError(
+            'No compliance directory configured.  Set compliancedir= at startup.')
+      if not os.path.isdir(compdir):
+         raise ListenerCommandError('Compliance directory not found: ' + compdir)
+
+      # Detect single-file mode: last token ends with ".log".
+      # Tokens are rejoined since filenames may contain spaces.
+      if args and args[-1].endswith('.log'):
+         fname = ' '.join(args)
+         fpath = os.path.join(compdir, fname)
+         if not os.path.isfile(fpath):
+            raise ListenerCommandError('File not found: ' + fname)
+         self._runComplianceFiles([fpath], compdir)
+         return
+
+      # Range mode: 0 args = all, 1 arg = [start, ∞), 2 args = [start, end).
+      if len(args) > 2:
+         raise ListenerCommandError(
+            'Usage: ]compliance [<file.log> | <start> [<end>]]')
+
+      all_files = retrieveFileList(compdir)
+      if not all_files:
+         raise ListenerCommandError('No .log files in ' + compdir)
+
+      if not args:
+         self._runComplianceFiles(all_files, compdir)
+         return
+
+      start_lc = args[0].lower()
+      end_lc   = args[1].lower() if len(args) == 2 else None
+
+      filtered = [
+         f for f in all_files
+         if os.path.basename(f).lower() >= start_lc
+         and (end_lc is None or os.path.basename(f).lower() < end_lc)
+      ]
+
+      if not filtered:
+         if end_lc is not None:
+            raise ListenerCommandError(
+               'No .log files in range [' + args[0] + ', ' + args[1] + ')')
+         else:
+            raise ListenerCommandError(
+               'No .log files at or after "' + args[0] + '"')
+
+      self._runComplianceFiles(filtered, compdir)
+
+   def _runComplianceFiles(self, filenames, compliancedir):
+      """Run each file through sessionLog_test, reboot between files,
+      write a run report to <compliancedir>/runs/, print totals."""
+      color = self._use_color()
+      if color:
+         BOLD  = '\033[1;97m'
+         GREEN = '\033[92m'
+         RED   = '\033[91m'
+         RESET = '\033[0m'
+      else:
+         BOLD  = ''
+         GREEN = ''
+         RED   = ''
+         RESET = ''
+
+      runsDir = os.path.join(os.path.abspath(compliancedir), 'runs')
+      runFile     = None
+      runFilename = ''
+      try:
+         os.makedirs(runsDir, exist_ok=True)
+         timestamp   = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
+         runFilename = os.path.join(runsDir,
+                                    timestamp + '-' + self._language + '.run')
+         runFile     = open(runFilename, 'w', encoding='utf-8')
+      except OSError:
+         runFile     = None
+         runFilename = ''
+
+      grand_pass = 0
+      grand_fail = 0
+      per_file   = []
+
+      savedStdout = sys.stdout
+      savedCwd    = os.getcwd()
+      try:
+         os.chdir(os.path.abspath(compliancedir))
+         for filename in filenames:
+            self._interp.reboot(load_rc=False)
+            base   = os.path.basename(filename)
+            padded = base.ljust(56)
+            print(padded + ' ', end='', flush=True, file=savedStdout)
+            if runFile is not None:
+               sys.stdout = runFile
+            r = self.sessionLog_test(filename, verbosity=3)
+            if runFile is not None:
+               sys.stdout = savedStdout
+            grand_pass = grand_pass + r.n_pass
+            grand_fail = grand_fail + r.n_fail
+            per_file.append((filename, r.n_pass, r.n_fail))
+            if r.n_fail == 0:
+               status = GREEN + str(r.n_pass) + ' passed' + RESET
+            else:
+               total  = r.n_pass + r.n_fail
+               status = RED + str(r.n_fail) + ' of ' + str(total) + ' failed' + RESET
+            print(status, file=savedStdout, flush=True)
+      finally:
+         sys.stdout = savedStdout
+         os.chdir(savedCwd)
+
+      self._interp.reboot(load_rc=False)
+
+      # Grand-total screen summary.
+      print()
+      total = grand_pass + grand_fail
+      if grand_fail == 0:
+         print(GREEN + 'all ' + str(total) + ' test cases passed' + RESET)
+      else:
+         print(RED + str(grand_fail) + ' of ' + str(total) + ' tests failed' + RESET)
+
+      # Write the tail of the report file.
+      if runFile is not None:
+         report = []
+         report.append('')
+         report.append('')
+         report.append('Test Report')
+         report.append('===========')
+         for entry in per_file:
+            name  = entry[0]
+            p     = entry[1]
+            f     = entry[2]
+            short = os.path.basename(name)
+            if f == 0:
+               msg = str(p) + ' TESTS PASSED!'
+            else:
+               tot = p + f
+               msg = '(' + str(f) + '/' + str(tot) + ') Failed.'
+            report.append(short.ljust(56) + ' ' + msg)
+         report.append('')
+         report.append('Total test files: ' + str(len(filenames)) + '.')
+         report.append('Total test cases: ' + str(grand_pass + grand_fail) + '.')
+         k = 0
+         for reportLine in report:
+            print(report[reportLine], file=runFile)
+         runFile.close()
+         print()
+         print('Compliance run report: ' + runFilename)
 
    def _cmd_cd(self, args):
       """Usage: ]cd <directory>

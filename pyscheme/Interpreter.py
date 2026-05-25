@@ -56,6 +56,9 @@ class Interpreter(InterpreterBase):
          return cek_eval(expr, env, ctx)
       ctx.lEval = _leval
 
+   def get_ctx(self):
+      return self._ctx
+
    def set_debug_input_fn(self, fn, rl=None):
       """Register the Listener's prompt function for debug REPLs.
       Called by Listener after construction so debugger prompts use readline."""

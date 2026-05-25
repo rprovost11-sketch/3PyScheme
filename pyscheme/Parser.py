@@ -70,7 +70,7 @@ from pyscheme.AST import (
    as_rational_num, as_rational_den,
    make_integer, make_real, make_rational, make_complex, make_exact_complex,
    make_string, make_character,
-   make_boolean, make_symbol, make_vector, make_bytevector,
+   make_boolean, make_symbol, make_vector, make_bytevector, as_vector_items,
    src_of,
    REAL, RATIONAL, INTEGER, CHARACTER, BOOLEAN, STRING, SYMBOL, NIL,
 )
@@ -145,12 +145,12 @@ _TOKEN_RE = re.compile(r'''
     | (?P<CHAR>\#\\(?:x[0-9a-fA-F]+|[a-zA-Z]+|[\s\S]))
     | (?P<TRUE>\#t(?:rue)?(?=[\s()\[\]'"`,;|]|$))
     | (?P<FALSE>\#f(?:alse)?(?=[\s()\[\]'"`,;|]|$))
-    | (?P<RATIONAL>[+-]?\d+/\d+(?=[\s()\[\]'"`,;|]|$))
+    | (?P<RATIONAL>[+-]?\d+/\d+(?=[\s()\[\]'"`,;|#]|$))
     | (?P<REAL>
-          [+-]?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?(?=[\s()\[\]'"`,;|]|$)
-        | [+-]?\d+[eE][+-]?\d+(?=[\s()\[\]'"`,;|]|$)
+          [+-]?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?(?=[\s()\[\]'"`,;|#]|$)
+        | [+-]?\d+[eE][+-]?\d+(?=[\s()\[\]'"`,;|#]|$)
       )
-    | (?P<INT>[+-]?\d+(?=[\s()\[\]'"`,;|]|$))
+    | (?P<INT>[+-]?\d+(?=[\s()\[\]'"`,;|#]|$))
     | (?P<HASH_IDENT>\#[^\s()\[\]'"`,;|\\]*)
     | (?P<IDENT>[^\s()\[\]'"`,;|#\\]+)
 ''', re.VERBOSE)
@@ -807,8 +807,9 @@ class Parser:
          self._advance()
          label_n = tok.value
          nxt = self._peek()
-         # Pre-allocate a ConsCell stub for lists so forward #n# refs work.
-         if nxt.kind == TOK_LPAREN or nxt.kind == TOK_LBRACKET or nxt.kind == TOK_VECTOR_LPAREN:
+         # Pre-allocate a stub so forward #n# refs inside the datum work.
+         if nxt.kind == TOK_LPAREN or nxt.kind == TOK_LBRACKET:
+            # Lists: stub is a ConsCell mutated in-place after parsing.
             stub = alloc_cons(NIL_VALUE, NIL_VALUE, nxt.src)
             self.labels[label_n] = stub
             datum = self.parse_expr()
@@ -818,6 +819,19 @@ class Parser:
                return stub
             self.labels[label_n] = datum
             return datum
+         if nxt.kind == TOK_VECTOR_LPAREN:
+            # Vectors: pre-create the vector with a mutable items list so
+            # any #n# references inside the vector resolve to the final object.
+            pre_items = []
+            pre_vector = make_vector(pre_items)
+            self.labels[label_n] = pre_vector
+            datum = self.parse_expr()
+            parsed_items = as_vector_items(datum)
+            i = 0
+            while i < len(parsed_items):
+               pre_items.append(parsed_items[i])
+               i = i + 1
+            return pre_vector
          datum = self.parse_expr()
          self.labels[label_n] = datum
          return datum

@@ -48,11 +48,13 @@ def main():
 
    listener = Listener(
       interp,
-      testdir='testing',
+      testdir='feature-tests',
       language='pyscheme',
       version=__version__,
       author='Ron Provost/Longo',
       project='https://github.com/rprovost11/pyscheme',
+      compliancedir=os.path.join(os.path.dirname(os.path.dirname(
+         os.path.abspath(__file__))), '..', 'R7RS-Compliance-Tests'),
    )
    try:
       listener.readEvalPrintLoop()

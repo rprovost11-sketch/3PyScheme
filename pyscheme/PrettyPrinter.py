@@ -68,10 +68,41 @@ _CHAR_NAMES_REVERSE = {
 }
 
 
+def _has_cycle(val):
+   """Return True if val contains any reference cycle (cons or vector)."""
+   seen = set()
+   stack = [val]
+   while stack:
+      v = stack.pop()
+      if is_cons(v):
+         k = id(v)
+         if k in seen:
+            return True
+         seen.add(k)
+         stack.append(v.car)
+         stack.append(v.cdr)
+      elif is_vector(v):
+         k = id(v)
+         if k in seen:
+            return True
+         seen.add(k)
+         items = as_vector_items(v)
+         i = 0
+         while i < len(items):
+            stack.append(items[i])
+            i = i + 1
+   return False
+
+
 def pretty_print(val):
    """Render a CEK value or quoted datum as Scheme surface syntax."""
    if is_cons(val):
+      if _has_cycle(val):
+         return pretty_print_shared(val)
       return _print_list(val)
+   if is_vector(val):
+      if _has_cycle(val):
+         return pretty_print_shared(val)
    if is_nil(val):
       return '()'
    if is_void(val):

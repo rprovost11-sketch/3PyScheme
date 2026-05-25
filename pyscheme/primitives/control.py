@@ -67,6 +67,12 @@ def _prim_with_exception_handler_unreached(ctx, env, args, app_node):
       'path in this implementation', app_node)
 
 
+def _prim_guard_eval_unreached(ctx, env, args, app_node):
+   raise SchemeTypeError(
+      '%guard-eval: cannot be called through a re-entering '
+      'path in this implementation', app_node)
+
+
 def _prim_values(ctx, env, args, app_node):
    if len(args) == 1:
       return args[0]
@@ -200,6 +206,10 @@ def register():
          "with the raised value.  <handler> is a 1-arg procedure; <thunk>\n"
          "is a 0-arg procedure.  R7RS 6.11."),
       category=CATEGORY)
+
+   register_primitive('%guard-eval', (2, 2),
+      _prim_guard_eval_unreached,
+      doc='Internal: guard body evaluator (FRAME_GUARD, no call/cc chain).')
 
    # Parameters
    register_primitive('parameterize', (2, None), _form_parameterize,

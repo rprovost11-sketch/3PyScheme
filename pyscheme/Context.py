@@ -28,6 +28,8 @@ class Context:
       self.wind_stack    = []      # active dynamic-wind frames; (before, after) tuples
       self.handler_stack = []      # active with-exception-handler handlers
       self.shadow_stack  = []      # call-stack entries for error backtraces
+      self.timeout_at    = 0.0    # monotonic deadline; 0 = disabled
+      self._timeout_step = 0      # iteration counter for throttled timeout checks
 
    def _update_instrumented(self):
       """Recompute the single instrumentation gate after any flag change."""
