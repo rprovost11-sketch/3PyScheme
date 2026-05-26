@@ -90,7 +90,7 @@
 ...                           (null? h)))
 ...                     (null? h)))])
 ...       (race x x))))
-==> #<void>
+==>
 
 ;;; same definition using named let
 
@@ -104,7 +104,7 @@
 ...                      (race (cdr h) (cdr t)))
 ...                 (null? h)))
 ...           (null? h)))))
-==> #<void>
+==>
 
 ;;; named let: recursive factorial
 
@@ -114,7 +114,7 @@
 ...       (if (= i 0)
 ...           1
 ...           (* i (fact (- i 1)))))))
-==> #<void>
+==>
 
 >>> (factorial 0)
 ==> 1
@@ -139,7 +139,7 @@
 ...       (if (= i 0)
 ...           a
 ...           (fact (- i 1) (* a i))))))
-==> #<void>
+==>
 
 >>> (factorial 0)
 ==> 1
@@ -165,7 +165,7 @@
 ...         [(= i 0) 0]
 ...         [(= i 1) 1]
 ...         [else (+ (fib (- i 1)) (fib (- i 2)))]))))
-==> #<void>
+==>
 
 >>> (fibonacci 0)
 ==> 0
@@ -204,7 +204,7 @@
 ...           (if (= i 1)
 ...               a1
 ...               (fib (- i 1) (+ a1 a2) a1))))))
-==> #<void>
+==>
 
 >>> (fibonacci 0)
 ==> 0
@@ -243,7 +243,7 @@
 ...         [(integer? (/ n i))
 ...          (cons i (f (/ n i) i))]
 ...         [else (f n (+ i 1))]))))
-==> #<void>
+==>
 
 >>> (factor 0)
 ==> (0)
@@ -291,7 +291,7 @@
 ...             [(null? ls) 1]
 ...             [(= (car ls) 0) (break 0)]
 ...             [else (* (car ls) (f (cdr ls)))]))))))
-==> #<void>
+==>
 
 >>> (product '(1 2 3 4 5))
 ==> 120
@@ -311,14 +311,14 @@
 ;;; saving a continuation for later use via retry
 
 >>> (define retry #f)
-==> #<void>
+==>
 
 >>> (define factorial
 ...   (lambda (x)
 ...     (if (= x 0)
 ...         (call/cc (lambda (k) (set! retry k) 1))
 ...         (* x (factorial (- x 1))))))
-==> #<void>
+==>
 
 >>> (factorial 4)
 ==> 24
@@ -349,7 +349,7 @@
 >>> (define car&cdr
 ...   (lambda (p k)
 ...     (k (car p) (cdr p))))
-==> #<void>
+==>
 
 >>> (car&cdr '(a b c)
 ...   (lambda (x y)
@@ -370,7 +370,7 @@
 ...         (failure "divide by zero")
 ...         (let ([q (quotient x y)])
 ...           (success q (- x (* q y)))))))
-==> #<void>
+==>
 
 >>> (integer-divide 10 3 list (lambda (x) x))
 ==> (3 1)
@@ -390,7 +390,7 @@
 ...           [else (f (cdr ls)
 ...                    (lambda (x)
 ...                      (k (* (car ls) x))))])))))
-==> #<void>
+==>
 
 >>> (product '(1 2 3 4 5) (lambda (x) x))
 ==> 120
@@ -405,7 +405,7 @@
 ;;; internal define creates a local binding, outer f is unaffected
 
 >>> (define f (lambda (x) (* x x)))
-==> #<void>
+==>
 
 >>> (let ([x 3])
 ...   (define f (lambda (y) (+ y x)))
@@ -453,12 +453,12 @@
 ...                   (null? h)))
 ...             (null? h))))
 ...     (race x x)))
-==> #<void>
+==>
 
 ;;; calculator using call/cc for structured error returns
 
 >>> (define calc #f)
-==> #<void>
+==>
 
 >>> (let ()
 ...   (define do-calc
@@ -485,7 +485,7 @@
 ...       (call/cc
 ...         (lambda (ek)
 ...           (do-calc ek expr))))))
-==> #<void>
+==>
 
 >>> (calc '(add (mul 3 2) -4))
 ==> 2
@@ -507,7 +507,7 @@
 >>> (define in-range?
 ...   (lambda (x n y)
 ...     (and (>= n x) (< n y))))
-==> #<void>
+==>
 
 >>> (define-syntax range-case
 ...   (syntax-rules (- else)
@@ -522,7 +522,7 @@
 ...        (cond
 ...          [(in-range? x tmp y) e1 e2 ...]
 ...          ...))]))
-==> #<void>
+==>
 
 >>> (define letter->number
 ...   (lambda (x)
@@ -533,7 +533,7 @@
 ...       [(d) 1.0]
 ...       [(f) 0.0]
 ...       [else (error "invalid letter grade" x)])))
-==> #<void>
+==>
 
 >>> (define gpa->grade
 ...   (lambda (x)
@@ -543,14 +543,14 @@
 ...       [(1.5 - 2.5) 'c]
 ...       [(2.5 - 3.5) 'b]
 ...       [else 'a])))
-==> #<void>
+==>
 
 >>> (define-syntax gpa
 ...   (syntax-rules ()
 ...     [(_ g1 g2 ...)
 ...      (let ([ls (map letter->number '(g1 g2 ...))])
 ...        (/ (apply + ls) (length ls)))]))
-==> #<void>
+==>
 
 >>> (gpa c a c b b)
 ==> 2.8

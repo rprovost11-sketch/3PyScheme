@@ -14,7 +14,7 @@
 >>> (define-syntax h11-when
 ...   (syntax-rules ()
 ...     ((_ test stmt1 stmt2 ...) (if test (begin stmt1 stmt2 ...)))))
-==> #<void>
+==>
 
 >>> (let ((if 'redefined))
 ...   (h11-when #t 'ran))
@@ -40,7 +40,7 @@
 ...     ((_) #f)
 ...     ((_ e) e)
 ...     ((_ e1 e2 ...) (let ((t e1)) (if t t (h11-or e2 ...))))))
-==> #<void>
+==>
 
 >>> (let ((t 'user)) (h11-or #f t))
 ==> user
@@ -55,10 +55,10 @@
 >>> (define-syntax h11-make-x
 ...   (syntax-rules ()
 ...     ((_ body) (let ((x 'inner)) body))))
-==> #<void>
+==>
 
 >>> (define h11-x 'outer)
-==> #<void>
+==>
 
 >>> (h11-make-x h11-x)
 ==> outer
@@ -158,7 +158,7 @@
 ...   (syntax-rules ()
 ...     ((_ 0) 'ok)
 ...     ((_ x) (syntax-error "argument must be 0" x))))
-==> #<void>
+==>
 
 >>> (h11-must-be-zero 0)
 ==> ok
@@ -171,7 +171,7 @@
 >>> (define-syntax h11-no-args
 ...   (syntax-rules ()
 ...     ((_) (syntax-error "no args allowed"))))
-==> #<void>
+==>
 
 >>> (h11-no-args)
 %%% line 1, col 1: no args allowed
@@ -191,7 +191,7 @@
 >>> (define-syntax h11-bind-hidden
 ...   (syntax-rules ()
 ...     ((_ v) (define h11-hidden v))))
-==> #<void>
+==>
 
 >>> (let ()
 ...   (h11-bind-hidden 1)
@@ -211,7 +211,7 @@
 >>> (define-syntax h11-bind-visible
 ...   (syntax-rules ()
 ...     ((_ name v) (define name v))))
-==> #<void>
+==>
 
 >>> (let ()
 ...   (h11-bind-visible h11-vis 7)

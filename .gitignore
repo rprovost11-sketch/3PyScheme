@@ -6,6 +6,7 @@ __pycache__/
 
 # Generated test reports (re-created by ]test)
 testing/runs/
+feature-tests/runs/
 
 # Editor / OS cruft
 *.swp

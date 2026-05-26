@@ -33,10 +33,10 @@
 ==> #(a b c d e)
 
 >>> (define first car)
-==> #<void>
+==>
 
 >>> (define rest cdr)
-==> #<void>
+==>
 
 >>> (first '(a b c d))
 ==> a
@@ -52,7 +52,7 @@
 ;;; ============================================================
 
 >>> (define x 3)
-==> #<void>
+==>
 
 >>> (begin (set! x (+ x 1)) (+ x x))
 ==> 8
@@ -68,7 +68,7 @@
 ...       (set-car! x (cdr x))
 ...       (set-cdr! x temp)
 ...       x)))
-==> #<void>
+==>
 
 >>> (swap-pair! (cons 'a 'b))
 ==> (b . a)
@@ -141,7 +141,7 @@
 ...       [(not (symbol? x))]
 ...       [(assq x '((a . 1) (b . 2) (c . 3))) => cdr]
 ...       [else 0])))
-==> #<void>
+==>
 
 >>> (select 3)
 ==> #t
@@ -164,7 +164,7 @@
 ...     (unless (pair? x)
 ...       (syntax-violation 'check-pair "invalid argument" x))
 ...     x))
-==> #<void>
+==>
 
 >>> (check-pair '(a b c))
 ==> (a b c)
@@ -187,13 +187,13 @@
 ...         [(>= i n) '()]
 ...         [(integer? (/ n i)) (cons i (f (+ i 1)))]
 ...         [else (f (+ i 1))]))))
-==> #<void>
+==>
 
 >>> (define factorial
 ...   (lambda (n)
 ...     (do ([i n (- i 1)] [a 1 (* a i)])
 ...         ((zero? i) a))))
-==> #<void>
+==>
 
 >>> (define fibonacci
 ...   (lambda (n)
@@ -203,7 +203,7 @@
 ...              [a1 1 (+ a1 a2)]
 ...              [a2 0 a1])
 ...             ((= i 1) a1)))))
-==> #<void>
+==>
 
 >>> (define scale-vector!
 ...   (lambda (v k)
@@ -211,7 +211,7 @@
 ...       (do ([i 0 (+ i 1)])
 ...           ((= i n))
 ...         (vector-set! v i (* (vector-ref v i) k))))))
-==> #<void>
+==>
 
 >>> (divisors 5)
 ==> ()
@@ -282,7 +282,7 @@
 ...        (lambda () #f)
 ...        (lambda () body)
 ...        (lambda () cleanup ...))]))
-==> #<void>
+==>
 
 ;;; call/cc escapes through dynamic-wind; cleanup runs setting x to b
 
@@ -300,7 +300,7 @@
 ...      (let ([y e])
 ...        (let ([swap (lambda () (let ([t x]) (set! x y) (set! y t)))])
 ...          (dynamic-wind swap (lambda () b1 b2 ...) swap)))]))
-==> #<void>
+==>
 
 >>> (let ([x 3]) (+ (fluid-let ([x 5]) x) x))
 ==> 8
@@ -316,25 +316,25 @@
 ;;; ============================================================
 
 >>> (define stream-car (lambda (s) (car (force s))))
-==> #<void>
+==>
 
 >>> (define stream-cdr (lambda (s) (cdr (force s))))
-==> #<void>
+==>
 
 >>> (define counters
 ...   (let next ([n 1])
 ...     (delay (cons n (next (+ n 1))))))
-==> #<void>
+==>
 
 >>> (define stream-add
 ...   (lambda (s1 s2)
 ...     (delay (cons
 ...              (+ (stream-car s1) (stream-car s2))
 ...              (stream-add (stream-cdr s1) (stream-cdr s2))))))
-==> #<void>
+==>
 
 >>> (define even-counters (stream-add counters counters))
-==> #<void>
+==>
 
 >>> (stream-car counters)
 ==> 1
@@ -365,7 +365,7 @@
 >>> (define head&tail
 ...   (lambda (ls)
 ...     (values (car ls) (cdr ls))))
-==> #<void>
+==>
 
 >>> (head&tail '(a b c))
 ==> #<values a (b c)>
@@ -382,21 +382,21 @@
 ...   (lambda (p1 p2)
 ...     (values (- (car p2) (car p1))
 ...             (- (cdr p2) (cdr p1)))))
-==> #<void>
+==>
 
 >>> (define segment-length
 ...   (lambda (p1 p2)
 ...     (call-with-values
 ...       (lambda () (dxdy p1 p2))
 ...       (lambda (dx dy) (sqrt (+ (* dx dx) (* dy dy)))))))
-==> #<void>
+==>
 
 >>> (define segment-slope
 ...   (lambda (p1 p2)
 ...     (call-with-values
 ...       (lambda () (dxdy p1 p2))
 ...       (lambda (dx dy) (/ dy dx)))))
-==> #<void>
+==>
 
 >>> (define describe-segment
 ...   (lambda (p1 p2)
@@ -405,7 +405,7 @@
 ...       (lambda (dx dy)
 ...         (values (sqrt (+ (* dx dx) (* dy dy)))
 ...                 (/ dy dx))))))
-==> #<void>
+==>
 
 >>> (define split
 ...   (lambda (ls)
@@ -416,7 +416,7 @@
 ...           (lambda (odds evens)
 ...             (values (cons (car ls) odds)
 ...                     (cons (cadr ls) evens)))))))
-==> #<void>
+==>
 
 >>> (dxdy '(0 . 0) '(0 . 5))
 ==> #<values 0 5>
@@ -456,7 +456,7 @@
 ...      (call-with-values
 ...        (lambda () expr)
 ...        (lambda (x . y) x))]))
-==> #<void>
+==>
 
 >>> (if (first (values #t #f)) 'a 'b)
 ==> a
@@ -465,7 +465,7 @@
 ...   (syntax-rules ()
 ...     [(_ expr consumer)
 ...      (call-with-values (lambda () expr) consumer)]))
-==> #<void>
+==>
 
 >>> (with-values (values 1 2) list)
 ==> (1 2)

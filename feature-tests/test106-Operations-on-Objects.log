@@ -1009,7 +1009,7 @@
 ...        (lambda (ls)
 ...          (+ (count-occurrences x (cdr ls)) 1))]
 ...       [else 0])))
-==> #<void>
+==>
 
 >>> (count-occurrences 'a '(a b c d a))
 ==> 2
@@ -1559,13 +1559,13 @@
 ==> 0.0
 
 >>> (define pi (* (asin 1) 2))
-==> #<void>
+==>
 
 >>> (= (* (acos 0) 2) pi)
 ==> #t
 
 >>> (define pi (* (atan 1) 4))
-==> #<void>
+==>
 
 >>> (= (* (atan 1.0 0.0) 2) pi)
 ==> #t
@@ -1905,7 +1905,7 @@
 >>> (string-for-each
 ...   (lambda (c) c)
 ...   "hello")
-==> #<void>
+==>
 
 >>> (string-map char-upcase "hello")
 ==> "HELLO"
@@ -1992,7 +1992,7 @@
 >>> (vector-for-each
 ...   (lambda (x) x)
 ...   '#(1 2 3))
-==> #<void>
+==>
 
 ;;; vector-sort is Chez-specific (unbound in pyscheme; test removed)
 

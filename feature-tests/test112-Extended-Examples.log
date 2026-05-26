@@ -27,26 +27,26 @@
 ...     (do ([m (make-vector rows)] [i 0 (+ i 1)])
 ...         ((= i rows) m)
 ...       (vector-set! m i (make-vector columns)))))
-==> #<void>
+==>
 
 >>> (define matrix?
 ...   (lambda (x)
 ...     (and (vector? x)
 ...          (> (vector-length x) 0)
 ...          (vector? (vector-ref x 0)))))
-==> #<void>
+==>
 
 >>> (define matrix-rows (lambda (x) (vector-length x)))
-==> #<void>
+==>
 
 >>> (define matrix-columns (lambda (x) (vector-length (vector-ref x 0))))
-==> #<void>
+==>
 
 >>> (define matrix-ref (lambda (m i j) (vector-ref (vector-ref m i) j)))
-==> #<void>
+==>
 
 >>> (define matrix-set! (lambda (m i j x) (vector-set! (vector-ref m i) j x)))
-==> #<void>
+==>
 
 >>> (define mat-sca-mul
 ...   (lambda (m x)
@@ -54,7 +54,7 @@
 ...       (do ([i 0 (+ i 1)]) ((= i nr) r)
 ...         (do ([j 0 (+ j 1)]) ((= j nc))
 ...           (matrix-set! r i j (* x (matrix-ref m i j))))))))
-==> #<void>
+==>
 
 >>> (define mat-mat-mul
 ...   (lambda (m1 m2)
@@ -64,7 +64,7 @@
 ...         (do ([j 0 (+ j 1)]) ((= j nc2))
 ...           (do ([k 0 (+ k 1)] [a 0 (+ a (* (matrix-ref m1 i k) (matrix-ref m2 k j)))])
 ...               ((= k nr2) (matrix-set! r i j a))))))))
-==> #<void>
+==>
 
 >>> (define mul
 ...   (lambda (x y)
@@ -78,7 +78,7 @@
 ...              [(matrix? y) (mat-mat-mul x y)]
 ...              [else (error "mul: not a number or matrix" y)])]
 ...       [else (error "mul: not a number or matrix" x)])))
-==> #<void>
+==>
 
 >>> (mul 3 4)
 ==> 12
@@ -112,7 +112,7 @@
 ...       [(pred? (car l2) (car l1))
 ...        (cons (car l2) (domerge pred? l1 (cdr l2)))]
 ...       [else (cons (car l1) (domerge pred? (cdr l1) l2))])))
-==> #<void>
+==>
 
 >>> (define dosort
 ...   (lambda (pred? ls n)
@@ -122,17 +122,17 @@
 ...           (domerge pred?
 ...             (dosort pred? ls i)
 ...             (dosort pred? (list-tail ls i) (- n i)))))))
-==> #<void>
+==>
 
 >>> (define sort
 ...   (lambda (pred? l)
 ...     (if (null? l) l (dosort pred? l (length l)))))
-==> #<void>
+==>
 
 >>> (define merge
 ...   (lambda (pred? l1 l2)
 ...     (domerge pred? l1 l2)))
-==> #<void>
+==>
 
 >>> (sort < '(3 4 2 1 2 5))
 ==> (1 2 2 3 4 5)
@@ -178,7 +178,7 @@
 ...      (let ([x v]) (set-of e rest ...))]
 ...     [(_ e pred rest ...)
 ...      (if pred (set-of e rest ...) '())]))
-==> #<void>
+==>
 
 >>> (set-of x (x in '(a b c)))
 ==> (a b c)
@@ -259,23 +259,23 @@
 ...                         [else (error "printf: bad format character"
 ...                                      (string-ref control (+ i 1)))]))
 ...                   (begin (write-char c port) (loop (+ i 1) args)))))))))
-==> #<void>
+==>
 
 >>> (define printf
 ...   (lambda (control . args)
 ...     (dofmt control args (current-output-port))))
-==> #<void>
+==>
 
 >>> (define fprintf
 ...   (lambda (port control . args)
 ...     (dofmt control args port)))
-==> #<void>
+==>
 
 ;;; ~s uses write (with quotes), ~~ becomes literal ~, ~% is newline
 
 >>> (printf "The string ~s displays as ~~.~%" "~")
 The string "~" displays as ~.
-==> #<void>
+==>
 
 ;;; fprintf to string port; ~s writes integer, ~a displays string
 
@@ -296,7 +296,7 @@ The string "~" displays as ~.
 ...   (list (cons 'cons cons) (cons 'car car) (cons 'cdr cdr)
 ...         (cons 'list list) (cons 'null? null?) (cons 'eq? eq?)
 ...         (cons 'call/cc call-with-current-continuation)))
-==> #<void>
+==>
 
 >>> (define new-env
 ...   (lambda (formals actuals env)
@@ -305,13 +305,13 @@ The string "~" displays as ~.
 ...       [(symbol? formals) (cons (cons formals actuals) env)]
 ...       [else (cons (cons (car formals) (car actuals))
 ...                   (new-env (cdr formals) (cdr actuals) env))])))
-==> #<void>
+==>
 
 >>> (define lookup (lambda (var env) (cdr (assq var env))))
-==> #<void>
+==>
 
 >>> (define assign (lambda (var val env) (set-cdr! (assq var env) val)))
-==> #<void>
+==>
 
 >>> (define exec
 ...   (lambda (expr env)
@@ -336,10 +336,10 @@ The string "~" displays as ~.
 ...           (apply (exec (car expr) env)
 ...                  (map (lambda (x) (exec x env)) (cdr expr)))])]
 ...      [else expr])))
-==> #<void>
+==>
 
 >>> (define interpret (lambda (expr) (exec expr primitive-environment)))
-==> #<void>
+==>
 
 >>> (interpret 3)
 ==> 3
@@ -402,13 +402,13 @@ The string "~" displays as ~.
 ...                (case msg
 ...                  [(mname) (apply mname args)] ...
 ...                  [else (error "undefined message" msg)]))))))]))
-==> #<void>
+==>
 
 >>> (define-syntax send-message
 ...   (syntax-rules ()
 ...     [(_ obj msg arg ...)
 ...      (obj 'msg arg ...)]))
-==> #<void>
+==>
 
 ;;; kons: pair-like object with mutable car/cdr slots
 
@@ -417,10 +417,10 @@ The string "~" displays as ~.
 ...    (get-cdr (lambda () kdr))
 ...    (set-car! (lambda (x) (set! kar x)))
 ...    (set-cdr! (lambda (x) (set! kdr x)))))
-==> #<void>
+==>
 
 >>> (define p (kons 'a 'b))
-==> #<void>
+==>
 
 >>> (send-message p get-car)
 ==> a
@@ -429,7 +429,7 @@ The string "~" displays as ~.
 ==> b
 
 >>> (send-message p set-cdr! 'c)
-==> #<void>
+==>
 
 >>> (send-message p get-cdr)
 ==> c
@@ -441,10 +441,10 @@ The string "~" displays as ~.
 ...   ((get-car (lambda () (set! count (+ count 1)) kar))
 ...    (get-cdr (lambda () (set! count (+ count 1)) kdr))
 ...    (accesses (lambda () count))))
-==> #<void>
+==>
 
 >>> (define p (kons 'a 'b))
-==> #<void>
+==>
 
 >>> (send-message p get-car)
 ==> a
@@ -493,7 +493,7 @@ The string "~" displays as ~.
 ...                   (lambda (s) (f (cdr u) (cdr v) s))
 ...                   kf)))]
 ...       [else (kf "clash")])))
-==> #<void>
+==>
 
 >>> (define try-subst
 ...   (lambda (u v s ks kf)
@@ -505,7 +505,7 @@ The string "~" displays as ~.
 ...               [(eq? u v) (ks s)]
 ...               [(occurs? u v) (kf "cycle")]
 ...               [else (ks (sigma u v s))]))))))
-==> #<void>
+==>
 
 >>> (define occurs?
 ...   (lambda (u v)
@@ -515,7 +515,7 @@ The string "~" displays as ~.
 ...                 (or (eq? u (car l))
 ...                     (occurs? u (car l))
 ...                     (f (cdr l))))))))
-==> #<void>
+==>
 
 >>> (define sigma
 ...   (lambda (u v s)
@@ -524,7 +524,7 @@ The string "~" displays as ~.
 ...         (if (symbol? x)
 ...             (if (eq? x u) v x)
 ...             (cons (car x) (map f (cdr x))))))))
-==> #<void>
+==>
 
 >>> (define unify
 ...   (lambda (u v)
@@ -532,7 +532,7 @@ The string "~" displays as ~.
 ...          (lambda (x) x)
 ...          (lambda (s) (s u))
 ...          (lambda (msg) msg))))
-==> #<void>
+==>
 
 >>> (unify 'x 'y)
 ==> y

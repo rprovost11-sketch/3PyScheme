@@ -230,7 +230,7 @@ Special Form  |  args: unevaluated
    <expr> is not evaluated until the promise is forced; its value is
    then cached so subsequent forces are O(1).  R7RS 4.2.5.  Use force
    to retrieve the value.
-==> #<void>
+==>
 
 >>> (help force)
 ... ;;; -------- values / call-with-values / let-values / let*-values / define-values (R7RS 4.2.2, 5.3.3, 6.10) --------
@@ -245,7 +245,7 @@ Primitive  |  args: pre-evaluated
    so (delay-force ...) promise chains run in constant stack.  A
    non-promise argument is returned unchanged (R7RS-small 6.10 leaves
    this implementation-defined; we follow SRFI 155).
-==> #<void>
+==>
 
 >>> (values)
 ... ;;; Single-value (values x) unwraps to x.
@@ -606,7 +606,7 @@ Primitive  |  args: pre-evaluated
 >>> (define cc #f) (call/cc (lambda (k) (set! cc k) 'first)) (cc)
 ... ;;; Continuation invoked with multiple args at a position with no remaining
 ... ;;; frames delivers a multi-values container (printed verbatim at top level).
-==> #<void>
+==>
 
 >>> (define cc #f) (call/cc (lambda (k) (set! cc k) 'first)) (cc 1 2 3)
 ... ;;; Multi-values flowing into a single-value position (here the + call that

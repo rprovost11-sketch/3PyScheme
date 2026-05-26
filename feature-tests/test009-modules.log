@@ -130,20 +130,20 @@
 ==> (+ 1 2)
 
 >>> (with-output-to-file "testing/test19-tmp2.txt" (lambda () (display "ok")))
-==> #<void>
+==>
 
 >>> (file-exists? "testing/test19-tmp2.txt")
 ... ;;; -------- delete-file and rename-file --------
 ==> #t
 
 >>> (delete-file "testing/test19-tmp2.txt")
-==> #<void>
+==>
 
 >>> (file-exists? "testing/test19-tmp2.txt")
 ==> #f
 
 >>> (rename-file "testing/test19-tmp.scm" "testing/test19-tmp-renamed.scm")
-==> #<void>
+==>
 
 >>> (file-exists? "testing/test19-tmp.scm")
 ==> #f
@@ -153,20 +153,20 @@
 
 >>> (delete-file "testing/test19-tmp-renamed.scm")
 ... ;;; -------- load --------
-==> #<void>
+==>
 
 >>> (call-with-output-file "testing/test19-load.scm" (lambda (p) (write (quote (define load-test-result 42)) p) #t))
 ==> #t
 
 >>> (load "testing/test19-load.scm")
-==> #<void>
+==>
 
 >>> load-test-result
 ==> 42
 
 >>> (delete-file "testing/test19-load.scm")
 ... ;;; -------- get-environment-variable --------
-==> #<void>
+==>
 
 >>> (string? (get-environment-variable "PATH"))
 ==> #t
@@ -209,25 +209,25 @@
 %%% (eval (quote (+ 1 2)) (null-environment 5))
 %%%               ^
 >>> (import (scheme inexact))
-==> #<void>
+==>
 
 >>> (import (scheme base))
 ... ; verify a few are accessible
-==> #<void>
+==>
 
 >>> (map (lambda (x) (* x x)) '(1 2 3 4 5))
 ... ; --- (scheme write) ---
 ==> (1 4 9 16 25)
 
 >>> (import (scheme write))
-==> #<void>
+==>
 
 >>> (procedure? write)
 ... ; --- (scheme char) ---
 ==> #t
 
 >>> (import (scheme char))
-==> #<void>
+==>
 
 >>> (char-upcase #\a)
 ==> #\A
@@ -241,7 +241,7 @@
 ==> 1.4142135623730951
 
 >>> (import (scheme complex))
-==> #<void>
+==>
 
 >>> (real-part 3.0)
 ==> 3.0
@@ -251,17 +251,17 @@
 ==> 0.0
 
 >>> (import (scheme cxr))
-==> #<void>
+==>
 
 >>> (caddr '(1 2 3 4))
 ... ; --- (scheme lazy) ---
 ==> 3
 
 >>> (import (scheme lazy))
-==> #<void>
+==>
 
 >>> (define p (delay (+ 1 2)))
-==> #<void>
+==>
 
 >>> (force p)
 ==> 3
@@ -271,14 +271,14 @@
 ==> #t
 
 >>> (import (scheme process-context))
-==> #<void>
+==>
 
 >>> (procedure? exit)
 ... ; --- (scheme time) ---
 ==> #t
 
 >>> (import (scheme time))
-==> #<void>
+==>
 
 >>> (number? (current-second))
 ==> #t
@@ -288,14 +288,14 @@
 ==> #t
 
 >>> (import (scheme case-lambda))
-==> #<void>
+==>
 
 >>> (define dispatch
 ...   (case-lambda
 ...     ((x)   (* x x))
 ...     ((x y) (+ x y))
 ...     (args  (length args))))
-==> #<void>
+==>
 
 >>> (dispatch 5)
 ==> 25
@@ -317,10 +317,10 @@
 ...   (begin
 ...     (define (square x) (* x x))
 ...     (define (cube x) (* x x x))))
-==> #<void>
+==>
 
 >>> (import (my math))
-==> #<void>
+==>
 
 >>> (cube 3)
 ... ; ============================================================
@@ -335,10 +335,10 @@
 ...   (begin
 ...     (define (private-helper x) (* x 2))
 ...     (define (public-fn x) (private-helper (+ x 1)))))
-==> #<void>
+==>
 
 >>> (import (my priv))
-==> #<void>
+==>
 
 >>> (public-fn 5)
 ==> 12
@@ -349,10 +349,10 @@
 ...   (begin
 ...     (define x 42)
 ...     (define (get-x) x)))
-==> #<void>
+==>
 
 >>> (import (my isolated))
-==> #<void>
+==>
 
 >>> (get-x)
 ... ; x is not in scope outside (my isolated) -- only get-x was exported
@@ -363,31 +363,31 @@
 ...   (export (rename internal-add plus))
 ...   (begin
 ...     (define (internal-add a b) (+ a b))))
-==> #<void>
+==>
 
 >>> (import (my renamed))
-==> #<void>
+==>
 
 >>> (plus 3 4)
 ... ; internal-add is not exported
 ==> 7
 
 >>> (import (only (scheme base) + - *))
-==> #<void>
+==>
 
 >>> (+ 10 5)
 ... ; --- except: import all except listed names ---
 ==> 15
 
 >>> (import (except (scheme base) write display))
-==> #<void>
+==>
 
 >>> (- 10 3)
 ... ; --- rename: import with renaming ---
 ==> 7
 
 >>> (import (rename (scheme base) (+ add) (- sub)))
-==> #<void>
+==>
 
 >>> (add 3 5)
 ==> 8
@@ -397,7 +397,7 @@
 ==> 6
 
 >>> (import (prefix (scheme base) s:))
-==> #<void>
+==>
 
 >>> (s:+ 2 3)
 ==> 5
@@ -414,17 +414,17 @@
 ...   (begin
 ...     (define (double x) (* x 2))
 ...     (define (triple x) (* x 3))))
-==> #<void>
+==>
 
 >>> (define-library (my derived)
 ...   (import (scheme base) (my base-utils))
 ...   (export sextupled)
 ...   (begin
 ...     (define (sextupled x) (triple (double x)))))
-==> #<void>
+==>
 
 >>> (import (my derived))
-==> #<void>
+==>
 
 >>> (sextupled 5)
 ... ; ============================================================
@@ -439,10 +439,10 @@
 ...   (begin
 ...     (define (add1 x) (+ x 1))
 ...     (define (add2 x) (+ x 2))))
-==> #<void>
+==>
 
 >>> (import (my multi))
-==> #<void>
+==>
 
 >>> (add1 10)
 ==> 11
@@ -563,10 +563,10 @@
 ...     (r7rs
 ...       (export ce-val)
 ...       (begin (define ce-val 99)))))
-==> #<void>
+==>
 
 >>> (import (test cond-expand-lib))
-==> #<void>
+==>
 
 >>> ce-val
 ... ; cond-expand with else clause inside define-library
@@ -581,10 +581,10 @@
 ...     (else
 ...       (export right-val)
 ...       (begin (define right-val 77)))))
-==> #<void>
+==>
 
 >>> (import (test ce-else))
-==> #<void>
+==>
 
 >>> right-val
 ... ; ============================================================
@@ -595,17 +595,17 @@
 
 >>> (call-with-output-file "/tmp/scheme_include_ci_test.scm"
 ...   (lambda (p) (display "(define INCluDe-CI-VAL 42)" p)))
-==> #<void>
+==>
 
 >>> (include-ci "/tmp/scheme_include_ci_test.scm")
-==> #<void>
+==>
 
 >>> include-ci-val
 ==> 42
 
 >>> (import (scheme base))
 ... ;;; Library body is isolated: imported names must be explicit.
-==> #<void>
+==>
 
 >>> (define-library (t1) (import (scheme base)) (export add) (begin (define (add a b) (+ a b)))) (import (t1)) (add 3 4)
 ... ;;; Without (import (scheme base)) inside, the library body can't see +.
@@ -616,7 +616,7 @@
 ... ;;; in our impl, because + is looked up at call time via env chain).
 ... ;;; The error position refers to the + reference inside the library source
 ... ;;; where the closure body was captured.
-==> #<void>
+==>
 
 >>> (import (t2)) (bad 5)
 %%% line 1, col 59: unbound variable: +

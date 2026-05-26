@@ -186,7 +186,7 @@
 ==> 2
 
 >>> (define (sq x) (* x x))
-==> #<void>
+==>
 
 >>> (sq)
 %%% SchemeArityError: line 1, col 1: sq: 0 arguments provided; 1 expected
@@ -201,7 +201,7 @@
 ==> 25
 
 >>> (define (variadic x . rest) (cons x rest))
-==> #<void>
+==>
 
 >>> (variadic 1)
 ==> (1)

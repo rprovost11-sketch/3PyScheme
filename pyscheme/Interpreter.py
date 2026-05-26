@@ -34,6 +34,7 @@ from pyscheme.Listener      import InterpreterBase
 from pyscheme.Debugger      import Debugger
 from pyscheme.Tracer        import Tracer
 from pyscheme.PrettyPrinter import pretty_print
+from pyscheme.AST           import is_void
 from pyscheme.library     import register_standard_libraries
 from pyscheme.Expander    import set_runtime_env
 
@@ -127,7 +128,7 @@ class Interpreter(InterpreterBase):
 
    def eval(self, source, outStrm=None):
       raw = self.rawEval(source, outStrm=outStrm)
-      if raw is None:
+      if raw is None or is_void(raw):
          return ''
       return pretty_print(raw)
 

@@ -214,7 +214,7 @@
 ==> ()
 
 >>> (define (double x) (* x 2))
-==> #<void>
+==>
 
 ;;; (trace f) registers f and returns the updated set
 >>> (trace double)
@@ -236,7 +236,7 @@
 
 ;;; recursive function: trace shows nested calls
 >>> (define (fact n) (if (= n 0) 1 (* n (fact (- n 1)))))
-==> #<void>
+==>
 
 >>> (trace fact)
 ==> (fact)

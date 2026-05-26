@@ -196,13 +196,13 @@
 ==> #\h
 
 >>> (close-port (open-input-string "test"))
-==> #<void>
+==>
 
 >>> (close-input-port (open-input-string "test"))
-==> #<void>
+==>
 
 >>> (close-output-port (open-output-string))
-==> #<void>
+==>
 
 ;;; port-eof?, port-position: R6RS -- unbound in pyscheme
 
@@ -301,27 +301,27 @@
 ;;; R7RS output operations
 
 >>> (write-char #\a (open-output-string))
-==> #<void>
+==>
 
 >>> (write-u8 65 (open-output-bytevector))
-==> #<void>
+==>
 
 >>> (write-string "hello" (open-output-string))
-==> #<void>
+==>
 
 ;;; write-string accepts optional start/end arguments
 
 >>> (write-string "hello world" (open-output-string) 6 11)
-==> #<void>
+==>
 
 >>> (write-bytevector #u8(1 2 3) (open-output-bytevector))
-==> #<void>
+==>
 
 >>> (newline (open-output-string))
-==> #<void>
+==>
 
 >>> (flush-output-port (open-output-string))
-==> #<void>
+==>
 
 ;;; put-u8, put-char, put-string, put-datum: R6RS -- unbound in pyscheme
 

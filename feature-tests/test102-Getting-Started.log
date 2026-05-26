@@ -50,7 +50,7 @@
 >>> (define square
 ...   (lambda (n)
 ...     (* n n)))
-==> #<void>
+==>
 
 >>> (square 5)
 ==> 25
@@ -69,7 +69,7 @@
 ...     (if (= n 0)
 ...         "oops!"
 ...         (/ 1 n))))
-==> #<void>
+==>
 
 >>> (reciprocal 10)
 ==> 1/10
@@ -332,7 +332,7 @@
 >>> (define double-any
 ...   (lambda (f x)
 ...     (f x x)))
-==> #<void>
+==>
 
 >>> (double-any + 10)
 ==> 20
@@ -341,29 +341,29 @@
 ==> (a . a)
 
 >>> (define sandwich "peanut-butter-and-jelly")
-==> #<void>
+==>
 
 >>> sandwich
 ==> "peanut-butter-and-jelly"
 
 >>> (define xyz '(x y z))
-==> #<void>
+==>
 
 >>> (let ([xyz '(z y x)]) xyz)
 ==> (z y x)
 
 >>> (define list (lambda x x))
-==> #<void>
+==>
 
 >>> (define cadr
 ...   (lambda (x)
 ...     (car (cdr x))))
-==> #<void>
+==>
 
 >>> (define cddr
 ...   (lambda (x)
 ...     (cdr (cdr x))))
-==> #<void>
+==>
 
 >>> (cadr '(a b c))
 ==> b
@@ -374,16 +374,16 @@
 >>> (define doubler
 ...   (lambda (f)
 ...     (lambda (x) (f x x))))
-==> #<void>
+==>
 
 >>> (define double (doubler +))
-==> #<void>
+==>
 
 >>> (double 13/2)
 ==> 13
 
 >>> (define double-cons (doubler cons))
-==> #<void>
+==>
 
 >>> (double-cons 'a)
 ==> (a . a)
@@ -391,15 +391,15 @@
 >>> (define double-any
 ...   (lambda (f x)
 ...     ((doubler f) x)))
-==> #<void>
+==>
 
 >>> (define proc1
 ...   (lambda (x y)
 ...     (proc2 y x)))
-==> #<void>
+==>
 
 >>> (define proc2 cons)
-==> #<void>
+==>
 
 >>> (proc1 'a 'b)
 ==> (b . a)
@@ -413,7 +413,7 @@
 ...     (if (< n 0)
 ...         (- 0 n)
 ...         n)))
-==> #<void>
+==>
 
 >>> (abs 77)
 ==> 77
@@ -467,7 +467,7 @@
 ...   (lambda (n)
 ...     (and (not (= n 0))
 ...          (/ 1 n))))
-==> #<void>
+==>
 
 >>> (reciprocal 3)
 ==> 1/3
@@ -495,7 +495,7 @@
 ...     (if (null? x)
 ...         '()
 ...         (cdr x))))
-==> #<void>
+==>
 
 >>> (lisp-cdr '(a b c))
 ==> (b c)
@@ -559,7 +559,7 @@
 ...     (if (and (number? n) (not (= n 0)))
 ...         (/ 1 n)
 ...         "oops!")))
-==> #<void>
+==>
 
 >>> (reciprocal 2/3)
 ==> 3/2
@@ -572,7 +572,7 @@
 ...     (if (and (number? n) (not (= n 0)))
 ...         (/ 1 n)
 ...         (assertion-violation 'reciprocal "improper argument" n))))
-==> #<void>
+==>
 
 >>> (reciprocal .25)
 ==> 4.0
@@ -584,7 +584,7 @@
 ...         (if (> n 0)
 ...             +1
 ...             0))))
-==> #<void>
+==>
 
 >>> (sign -88.3)
 ==> -1
@@ -604,7 +604,7 @@
 ...       [(< n 0) -1]
 ...       [(> n 0) +1]
 ...       [else 0])))
-==> #<void>
+==>
 
 >>> (define sign
 ...   (lambda (n)
@@ -612,7 +612,7 @@
 ...       [(< n 0) -1]
 ...       [(> n 0) +1]
 ...       [(= n 0) 0])))
-==> #<void>
+==>
 
 >>> (define income-tax
 ...   (lambda (income)
@@ -621,7 +621,7 @@
 ...       [(<= income 20000) (+ (* (- income 10000) .08) 500.00)]
 ...       [(<= income 30000) (+ (* (- income 20000) .13) 1300.00)]
 ...       [else (+ (* (- income 30000) .21) 2600.00)])))
-==> #<void>
+==>
 
 >>> (income-tax 5000)
 ==> 250.0
@@ -638,7 +638,7 @@
 >>> (define goodbye
 ...   (lambda ()
 ...     (goodbye)))
-==> #<void>
+==>
 
 ;;; ============================================================
 ;;; 2.8  Simple Recursion
@@ -649,7 +649,7 @@
 ...     (if (null? ls)
 ...         0
 ...         (+ (length (cdr ls)) 1))))
-==> #<void>
+==>
 
 >>> (length '())
 ==> 0
@@ -666,7 +666,7 @@
 ...         '()
 ...         (cons (car ls)
 ...               (list-copy (cdr ls))))))
-==> #<void>
+==>
 
 >>> (list-copy '())
 ==> ()
@@ -680,7 +680,7 @@
 ...       [(null? ls) #f]
 ...       [(eqv? (car ls) x) ls]
 ...       [else (memv x (cdr ls))])))
-==> #<void>
+==>
 
 >>> (memv 'a '(a b b d))
 ==> (a b b d)
@@ -703,7 +703,7 @@
 ...       [(null? ls) '()]
 ...       [(eqv? (car ls) x) (remv x (cdr ls))]
 ...       [else (cons (car ls) (remv x (cdr ls)))])))
-==> #<void>
+==>
 
 >>> (remv 'a '(a b b d))
 ==> (b b d)
@@ -723,7 +723,7 @@
 ...         tr
 ...         (cons (tree-copy (car tr))
 ...               (tree-copy (cdr tr))))))
-==> #<void>
+==>
 
 >>> (tree-copy '((a . b) . c))
 ==> ((a . b) . c)
@@ -734,7 +734,7 @@
 ...         '()
 ...         (cons (abs (car ls))
 ...               (abs-all (cdr ls))))))
-==> #<void>
+==>
 
 >>> (abs-all '(1 -2 3 -4 5 -6))
 ==> (1 2 3 4 5 6)
@@ -742,7 +742,7 @@
 >>> (define abs-all
 ...   (lambda (ls)
 ...     (map abs ls)))
-==> #<void>
+==>
 
 >>> (map abs '(1 -2 3 -4 5 -6))
 ==> (1 2 3 4 5 6)
@@ -759,7 +759,7 @@
 ...         '()
 ...         (cons (p (car ls))
 ...               (map1 p (cdr ls))))))
-==> #<void>
+==>
 
 >>> (map1 abs '(1 -2 3 -4 5 -6))
 ==> (1 2 3 4 5 6)
@@ -769,13 +769,13 @@
 ;;; ============================================================
 
 >>> (define abcde '(a b c d e))
-==> #<void>
+==>
 
 >>> abcde
 ==> (a b c d e)
 
 >>> (set! abcde (cdr abcde))
-==> #<void>
+==>
 
 >>> abcde
 ==> (b c d e)
@@ -794,7 +794,7 @@
 ...       (set! root1 (/ (+ minusb radical) divisor))
 ...       (set! root2 (/ (- minusb radical) divisor))
 ...       (cons root1 root2))))
-==> #<void>
+==>
 
 >>> (quadratic-formula 2 -4 -6)
 ==> (3 . -1)
@@ -807,16 +807,16 @@
 ...       (let ([root1 (/ (+ minusb radical) divisor)]
 ...             [root2 (/ (- minusb radical) divisor)])
 ...         (cons root1 root2)))))
-==> #<void>
+==>
 
 >>> (define kons-count 0)
-==> #<void>
+==>
 
 >>> (define kons
 ...   (lambda (x y)
 ...     (set! kons-count (+ kons-count 1))
 ...     (cons x y)))
-==> #<void>
+==>
 
 >>> (kons 'a '(b c))
 ==> (a b c)
@@ -831,14 +831,14 @@
 ==> 4
 
 >>> (define next 0)
-==> #<void>
+==>
 
 >>> (define count
 ...   (lambda ()
 ...     (let ([v next])
 ...       (set! next (+ next 1))
 ...       v)))
-==> #<void>
+==>
 
 >>> (count)
 ==> 0
@@ -852,7 +852,7 @@
 ...       (let ([v next])
 ...         (set! next (+ next 1))
 ...         v))))
-==> #<void>
+==>
 
 >>> (define make-counter
 ...   (lambda ()
@@ -861,13 +861,13 @@
 ...         (let ([v next])
 ...           (set! next (+ next 1))
 ...           v)))))
-==> #<void>
+==>
 
 >>> (define count1 (make-counter))
-==> #<void>
+==>
 
 >>> (define count2 (make-counter))
-==> #<void>
+==>
 
 >>> (count1)
 ==> 0
@@ -885,18 +885,18 @@
 ==> 1
 
 >>> (define shhh #f)
-==> #<void>
+==>
 
 >>> (define tell #f)
-==> #<void>
+==>
 
 >>> (let ([secret 0])
 ...   (set! shhh (lambda (message) (set! secret message)))
 ...   (set! tell (lambda () secret)))
-==> #<void>
+==>
 
 >>> (shhh "sally likes harry")
-==> #<void>
+==>
 
 >>> (tell)
 ==> "sally likes harry"
@@ -913,10 +913,10 @@
 ...         (if (not flag)
 ...             (begin (set! val (t)) (set! flag #t)))
 ...         val))))
-==> #<void>
+==>
 
 >>> (define p (lazy (lambda () (display "Ouch!") (newline) "got me")))
-==> #<void>
+==>
 
 >>> (define make-stack
 ...   (lambda ()
@@ -928,28 +928,28 @@
 ...           [(eqv? msg 'top) (car ls)]
 ...           [(eqv? msg 'pop!) (set! ls (cdr ls))]
 ...           [else "oops"])))))
-==> #<void>
+==>
 
 >>> (define stack1 (make-stack))
-==> #<void>
+==>
 
 >>> (define stack2 (make-stack))
-==> #<void>
+==>
 
 >>> (list (stack1 'empty?) (stack2 'empty?))
 ==> (#t #t)
 
 >>> (stack1 'push! 'a)
-==> #<void>
+==>
 
 >>> (list (stack1 'empty?) (stack2 'empty?))
 ==> (#f #t)
 
 >>> (stack1 'push! 'b)
-==> #<void>
+==>
 
 >>> (stack2 'push! 'c)
-==> #<void>
+==>
 
 >>> (stack1 'top)
 ==> b
@@ -958,7 +958,7 @@
 ==> c
 
 >>> (stack1 'pop!)
-==> #<void>
+==>
 
 >>> (stack1 'top)
 ==> a
@@ -967,22 +967,22 @@
 ==> (#f #f)
 
 >>> (stack1 'pop!)
-==> #<void>
+==>
 
 >>> (list (stack1 'empty?) (stack2 'empty?))
 ==> (#t #f)
 
 >>> (define p (list 1 2 3))
-==> #<void>
+==>
 
 >>> (set-car! (cdr p) 'two)
-==> #<void>
+==>
 
 >>> p
 ==> (1 two 3)
 
 >>> (set-cdr! p '())
-==> #<void>
+==>
 
 >>> p
 ==> (1)
@@ -991,7 +991,7 @@
 ...   (lambda ()
 ...     (let ([end (cons 'ignored '())])
 ...       (cons end end))))
-==> #<void>
+==>
 
 >>> (define putq!
 ...   (lambda (q v)
@@ -999,50 +999,50 @@
 ...       (set-car! (cdr q) v)
 ...       (set-cdr! (cdr q) end)
 ...       (set-cdr! q end))))
-==> #<void>
+==>
 
 >>> (define getq
 ...   (lambda (q)
 ...     (car (car q))))
-==> #<void>
+==>
 
 >>> (define delq!
 ...   (lambda (q)
 ...     (set-car! q (cdr (car q)))))
-==> #<void>
+==>
 
 >>> (define myq (make-queue))
-==> #<void>
+==>
 
 >>> (putq! myq 'a)
-==> #<void>
+==>
 
 >>> (putq! myq 'b)
-==> #<void>
+==>
 
 >>> (getq myq)
 ==> a
 
 >>> (delq! myq)
-==> #<void>
+==>
 
 >>> (getq myq)
 ==> b
 
 >>> (delq! myq)
-==> #<void>
+==>
 
 >>> (putq! myq 'c)
-==> #<void>
+==>
 
 >>> (putq! myq 'd)
-==> #<void>
+==>
 
 >>> (getq myq)
 ==> c
 
 >>> (delq! myq)
-==> #<void>
+==>
 
 >>> (getq myq)
 ==> d

@@ -58,7 +58,7 @@
 ...   (syntax-rules ()
 ...     ((_ e1 e2)
 ...      (let ((t e1)) (if t t e2)))))
-==> #<void>
+==>
 
 >>> (syntax-expand '(h12-or a b))
 ==> (let ((t a)) (if t t b))
@@ -71,7 +71,7 @@
 ...   (syntax-rules ()
 ...     ((_ a b)
 ...      (let ((tmp a)) (set! a b) (set! b tmp)))))
-==> #<void>
+==>
 
 >>> (syntax-expand '(h12-swap! p q))
 ==> (let ((tmp p)) (set! p q) (set! q tmp))
@@ -85,7 +85,7 @@
 ...     ((_ (else e)) e)
 ...     ((_ (test e) clause ...)
 ...      (if test e (h12-my-cond clause ...)))))
-==> #<void>
+==>
 
 >>> (syntax-expand '(h12-my-cond (#f 1) (else 2)))
 ==> (if #f 1 2)
@@ -116,7 +116,7 @@
 ...   (syntax-rules (foo)
 ...     ((_ foo) 'matched)
 ...     ((_ x)   'not-matched)))
-==> #<void>
+==>
 
 >>> (h12-lit foo)
 ==> matched
@@ -137,10 +137,10 @@
 ;;; ------------------------------------------------------------
 
 >>> (define h12-x 'outer)
-==> #<void>
+==>
 
 >>> (define-syntax h12-get-x (syntax-rules () ((_ ) h12-x)))
-==> #<void>
+==>
 
 >>> (let ((h12-x 'inner)) (h12-get-x))
 ==> outer
@@ -166,7 +166,7 @@
 ...     ((_ e) e)
 ...     ((_ e1 e2 ...)
 ...      (let ((t e1)) (if t (h12-and e2 ...) #f)))))
-==> #<void>
+==>
 
 ;;; The critical hygiene test: the user's `t = #f' must NOT leak into
 ;;; the macro's internal `t' binding when `t' is not passed as an argument.

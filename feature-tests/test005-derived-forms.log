@@ -10,7 +10,7 @@
 ==> 42
 
 >>> (define counter 0)
-==> #<void>
+==>
 
 >>> (begin (set! counter 1) (set! counter 2) counter)
 ... ;;; -------- when / unless (R7RS 4.2.1) --------
@@ -20,7 +20,7 @@
 ==> 3
 
 >>> (when #f 99)
-==> #<void>
+==>
 
 >>> (when 0 'truthy)
 ==> truthy
@@ -32,7 +32,7 @@
 ==> 3
 
 >>> (unless #t 99)
-==> #<void>
+==>
 
 >>> (unless (null? (list 1)) 'runs)
 ... ;;; -------- and / or (R7RS 4.2.1) --------
@@ -79,7 +79,7 @@
 ==> fallback
 
 >>> (cond (#f 1))
-==> #<void>
+==>
 
 >>> (cond (42))
 ==> 42
@@ -113,7 +113,7 @@
 
 >>> (case 99 ((1) 'one))
 ... ;;; Multi-expression bodies (last value returned).
-==> #<void>
+==>
 
 >>> (case 2 ((1 2) 'a 'b 'c) (else 'd))
 ... ;;; Single-datum singleton clause.
@@ -159,7 +159,7 @@
 ==> (1 2 3)
 
 >>> (define outer 10)
-==> #<void>
+==>
 
 >>> (let ((outer 1)) outer)
 ==> 1
@@ -206,7 +206,7 @@
 
 >>> (do ((i 0 (+ i 1))) ((= i 3)))
 ... ;;; Accumulator using cons; steps see current binding of i.
-==> #<void>
+==>
 
 >>> (do ((i 0 (+ i 1)) (acc (list) (cons i acc))) ((= i 4) acc))
 ... ;;; Steps run in parallel (like let, not let*): both a and b see old values.

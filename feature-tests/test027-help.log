@@ -12,7 +12,7 @@ Primitive  |  args: pre-evaluated
    Return a newly allocated pair whose car is a and whose cdr is b.
    The pair is guaranteed to be different (in the sense of eq?) from every
    existing object.
-==> #<void>
+==>
 
 >>> (help if)
 ... ;;; -------- Per-entry: user-defined procedure with docstring --------
@@ -24,10 +24,10 @@ Special Form  |  args: unevaluated
    evaluate and return <else> if present, or an unspecified value if not.
    In Scheme only #f is false; every other value (including 0 and '()) is
    truthy.
-==> #<void>
+==>
 
 >>> (define (square n) "Return n squared." (* n n))
-==> #<void>
+==>
 
 >>> (help square)
 ... ;;; -------- Per-entry: user procedure with no docstring --------
@@ -36,10 +36,10 @@ Procedure  |  args: pre-evaluated
    Usage: (square n)
 
    Return n squared.
-==> #<void>
+==>
 
 >>> (define (triple n) (* n 3))
-==> #<void>
+==>
 
 >>> (help triple)
 ... ;;; -------- Per-entry: quoted symbol lookup --------
@@ -48,7 +48,7 @@ Procedure  |  args: pre-evaluated
    Usage: (triple n)
 
    (no documentation)
-==> #<void>
+==>
 
 >>> (help 'cons)
 ... ;;; -------- Apropos: substring search over global names --------
@@ -59,14 +59,14 @@ Primitive  |  args: pre-evaluated
    Return a newly allocated pair whose car is a and whose cdr is b.
    The pair is guaranteed to be different (in the sense of eq?) from every
    existing object.
-==> #<void>
+==>
 
 >>> (apropos "letr")
 ... ;;; -------- Help topic lookup (exact stem match) --------
 Names
 -----
 letrec  letrec*  letrec-syntax
-==> #<void>
+==>
 
 >>> (help "overview")
 ... ;;; -------- Help with unknown string falls back to apropos --------
@@ -89,12 +89,12 @@ Help sections:
   (help "basics")    a short tutorial
   (help "syntax")    the complete special-form reference
   (help)             list all primitives and special forms
-==> #<void>
+==>
 
 >>> (help "no-such-topic-or-name-123")
 ... ;;; -------- Help type error --------
 No matches for 'no-such-topic-or-name-123'.
-==> #<void>
+==>
 
 >>> (help 42)
 %%% SchemeTypeError: line 1, col 1: help: argument must be a procedure, primitive, symbol, string, or omitted

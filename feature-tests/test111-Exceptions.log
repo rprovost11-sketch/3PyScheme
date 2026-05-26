@@ -83,7 +83,7 @@
 ...       (with-exception-handler
 ...         (lambda (x) (if (error? x) (k #f) (raise x)))
 ...         thunk))))
-==> #<void>
+==>
 
 >>> (try (lambda () 17))
 ==> 17
@@ -140,7 +140,7 @@
 >>> (define-syntax try
 ...   (syntax-rules ()
 ...     [(_ e1 e2 ...) (guard (x [(error? x) #f]) e1 e2 ...)]))
-==> #<void>
+==>
 
 >>> (try 17)
 ==> 17

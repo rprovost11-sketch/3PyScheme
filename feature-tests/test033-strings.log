@@ -196,7 +196,7 @@
 ==> "BBB"
 
 >>> (string-fill! (make-string 1 #\A) #\B)
-==> #<void>
+==>
 >>> (string-fill!)
 %%% SchemeArityError: line 1, col 1: string-fill!: 0 arguments provided; 2 to 4 expected
 %%% (string-fill!)
@@ -439,7 +439,7 @@
 ==> (#\c #\b #\a)
 
 >>> (string-for-each display "")
-==> #<void>
+==>
 
 >>> (string-for-each)
 %%% SchemeArityError: line 1, col 1: string-for-each: 0 arguments provided; at least 2 expected

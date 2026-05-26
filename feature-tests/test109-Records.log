@@ -268,7 +268,7 @@
 >>> (define record->name
 ...   (lambda (x)
 ...     (and (record? x) (record-type-name (record-rtd x)))))
-==> #<void>
+==>
 
 >>> (define-record-type dim (fields w l h))
 %%% SchemeArityError: line 1, col 1: define-record-type: 2 arguments provided; at least 4 expected
@@ -391,7 +391,7 @@
 ...           (display "=")
 ...           (write ((record-accessor rtd i) r))
 ...           (newline))))))
-==> #<void>
+==>
 
 >>> (define-record-type point (fields x y))
 %%% SchemeArityError: line 1, col 1: define-record-type: 2 arguments provided; at least 4 expected

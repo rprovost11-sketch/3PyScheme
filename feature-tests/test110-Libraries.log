@@ -34,10 +34,10 @@
 ;;; R7RS (import (scheme base)) works; R6RS (rnrs ...) names are not found
 
 >>> (import (scheme base))
-==> #<void>
+==>
 
 >>> (import (scheme write))
-==> #<void>
+==>
 
 >>> (import (rnrs base))
 %%% line 1, col 9: import: library not found: (rnrs base)

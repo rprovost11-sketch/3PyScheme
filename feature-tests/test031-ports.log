@@ -13,46 +13,46 @@
 %%% ^
 >>> (display 42)
 42
-==> #<void>
+==>
 
 >>> (display #t)
 #t
-==> #<void>
+==>
 
 >>> (display #f)
 #f
-==> #<void>
+==>
 
 >>> (display "hello")
 hello
-==> #<void>
+==>
 
 >>> (display 'foo)
 foo
-==> #<void>
+==>
 
 >>> (display '(1 2 3))
 (1 2 3)
-==> #<void>
+==>
 
 >>> (display '#(1 2 3))
 #(1 2 3)
-==> #<void>
+==>
 
 >>> (display '())
 ... ; display vs write: strings not quoted in display mode
 ()
-==> #<void>
+==>
 
 >>> (begin (display "abc") (display 42))
 ... ; display to stdout still works alongside port output
 abc42
-==> #<void>
+==>
 
 >>> (display "stdout")
 ... ; arity error
 stdout
-==> #<void>
+==>
 
 >>> (display)
 %%% SchemeArityError: line 1, col 1: display: 0 arguments provided; 1 or 2 expected
@@ -60,35 +60,35 @@ stdout
 %%% ^
 >>> (write 42)
 42
-==> #<void>
+==>
 
 >>> (write "hello")
 "hello"
-==> #<void>
+==>
 
 >>> (write 'foo)
 foo
-==> #<void>
+==>
 
 >>> (write '(1 "two" #t))
 (1 "two" #t)
-==> #<void>
+==>
 
 >>> (write #t)
 #t
-==> #<void>
+==>
 
 >>> (write '())
 ... ; arity error
 ()
-==> #<void>
+==>
 
 >>> (write)
 %%% SchemeArityError: line 1, col 1: write: 0 arguments provided; 1 or 2 expected
 %%% (write)
 %%% ^
 >>> (newline)
-==> #<void>
+==>
 
 >>> (begin (display "a") (newline) (display "b"))
 ... ; ==========================================================
@@ -96,19 +96,19 @@ foo
 ... ; ==========================================================
 a
 b
-==> #<void>
+==>
 
 >>> (write-char #\A)
 A
-==> #<void>
+==>
 
 >>> (write-char #\a)
 a
-==> #<void>
+==>
 
 >>> (write-char #\newline)
 ... ; arity error
-==> #<void>
+==>
 
 >>> (write-char)
 %%% SchemeArityError: line 1, col 1: write-char: 0 arguments provided; 1 or 2 expected
@@ -126,7 +126,7 @@ a
 
 >>> (write-simple '(1 "a" #t))
 (1 "a" #t)
-==> #<void>
+==>
 
 >>> (write-simple #\space)
 ... ; ==========================================================
@@ -134,61 +134,61 @@ a
 ... ; ==========================================================
 ... ; --- non-shared structure: output same as write ---
 #\space
-==> #<void>
+==>
 
 >>> (write-shared '(1 2 3))
 (1 2 3)
-==> #<void>
+==>
 
 >>> (write-shared "hello")
 "hello"
-==> #<void>
+==>
 
 >>> (write-shared #t)
 ... ; simple list, no sharing
 #t
-==> #<void>
+==>
 
 >>> (write-shared '(a b c))
 ... ; nested list, no sharing
 (a b c)
-==> #<void>
+==>
 
 >>> (write-shared '(1 (2 3) 4))
 ... ; --- shared structure: same object in two positions ---
 (1 (2 3) 4)
-==> #<void>
+==>
 
 >>> (let ((x '(1 2)))
 ...   (write-shared (list x x)))
 ... ; --- cyclic list ---
 (#0=(1 2) #0#)
-==> #<void>
+==>
 
 >>> (let ((x (list 1 2 3)))
 ...   (set-cdr! (cddr x) x)
 ...   (write-shared x))
 ... ; --- shared vector ---
 #0=(1 2 3 . #0#)
-==> #<void>
+==>
 
 >>> (let ((v (vector 1 2)))
 ...   (write-shared (list v v)))
 ... ; optional port argument
 (#0=#(1 2) #0#)
-==> #<void>
+==>
 
 >>> (write-shared '(a b) (current-output-port))
 ... ; --- write vs write-shared distinction ---
 ... ; write does not detect sharing
 (a b)
-==> #<void>
+==>
 
 >>> (let ((x '(a b)))
 ...   (write (list x x)))
 ... ; write-shared does detect sharing
 ((a b) (a b))
-==> #<void>
+==>
 
 >>> (let ((x '(a b)))
 ...   (write-shared (list x x)))
@@ -196,7 +196,7 @@ a
 ... ; 8. eof-object, eof-object?
 ... ; ==========================================================
 (#0=(a b) #0#)
-==> #<void>
+==>
 
 >>> (eof-object? (eof-object))
 ==> #t

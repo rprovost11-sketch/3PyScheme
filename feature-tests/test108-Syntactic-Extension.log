@@ -100,7 +100,7 @@
 
 >>> (let ([else #f])
 ...   (cond [else (write "oops")]))
-==> #<void>
+==>
 
 ;;; R7RS 4.2.2: a let binding name must not appear twice (syntax violation).
 
@@ -171,7 +171,7 @@
 ...   (lambda (x y)
 ...     (eq? (syntax->datum x)
 ...          (syntax->datum y))))
-==> #<void>
+==>
 
 ;;; loop using datum->syntax: #' not supported
 
@@ -196,7 +196,7 @@
 >>> (define-syntax rec
 ...   (syntax-rules ()
 ...     [(_ x e) (letrec ([x e]) x)]))
-==> #<void>
+==>
 
 >>> (map (rec sum
 ...        (lambda (x)
@@ -214,7 +214,7 @@
 ...      ((rec f (lambda (x ...) b1 b2 ...)) e ...)]
 ...     [(_ ((x e) ...) b1 b2 ...)
 ...      ((lambda (x ...) b1 b2 ...) e ...)]))
-==> #<void>
+==>
 
 >>> (let fact ((n 5))
 ...   (if (= n 0) 1 (* n (fact (- n 1)))))
@@ -229,14 +229,14 @@
 ...        (syntax-rules ()
 ...          [(_ e0 e1 (... ...))
 ...           (begin e0 e1 (... ...))]))]))
-==> #<void>
+==>
 
 >>> (be-like-begin sequence)
-==> #<void>
+==>
 
 >>> (sequence (display "Say what?") (newline))
 Say what?
-==> #<void>
+==>
 
 ;;; loop using syntax-rules: under R7RS hygiene 'break' introduced by the
 ;;; macro template is renamed and is not visible to the user's body.
@@ -249,7 +249,7 @@ Say what?
 ...      (call/cc
 ...        (lambda (break)
 ...          (let f () e ... (f))))]))
-==> #<void>
+==>
 
 >>> (let ([n 3] [ls '()])
 ...   (loop

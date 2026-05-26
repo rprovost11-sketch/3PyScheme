@@ -4,20 +4,20 @@
 ;;; ============================================================
 
 >>> (define a 5)
-==> #<void>
+==>
 
 >>> a
 ==> 5
 
 >>> (define b 99)
-==> #<void>
+==>
 
 >>> b
 ... ;;; -------- set! --------
 ==> 99
 
 >>> (set! a 100)
-==> #<void>
+==>
 
 >>> a
 ==> 100
@@ -41,7 +41,7 @@
 
 >>> (if #f 1)
 ... ;;; In Scheme, only #f is false.  0 and '() and "" are all true.
-==> #<void>
+==>
 
 >>> (if 0 'true 'false-branch)
 ... ;;; -------- Single-arg lambda + application --------
@@ -58,13 +58,13 @@
 ==> 3
 
 >>> (define (id x) x)
-==> #<void>
+==>
 
 >>> (id 42)
 ==> 42
 
 >>> (define id2 (lambda (x) x))
-==> #<void>
+==>
 
 >>> (id2 99)
 ... ;;; -------- Multi-arg lambda --------
@@ -83,13 +83,13 @@
 ==> 42
 
 >>> (define (pick-second a b) b)
-==> #<void>
+==>
 
 >>> (pick-second 1 2)
 ==> 2
 
 >>> (define (third a b c) c)
-==> #<void>
+==>
 
 >>> (third 100 200 300)
 ... ;;; -------- Multi-expression body (implicit begin) --------
@@ -100,10 +100,10 @@
 ==> 2
 
 >>> (define outer-x 1)
-==> #<void>
+==>
 
 >>> ((lambda (_) (set! outer-x 99)) 0)
-==> #<void>
+==>
 
 >>> outer-x
 ... ;;; -------- Arity errors --------
@@ -125,7 +125,7 @@
 ...   (lambda (x)
 ...     ((lambda (n) n)
 ...      x)))
-==> #<void>
+==>
 
 >>> (square 7)
 ==> 7
@@ -146,7 +146,7 @@
 ==> (1 3 4)
 
 >>> (define (f . args) args)
-==> #<void>
+==>
 
 >>> (f 1 2 3)
 ==> (1 2 3)
@@ -155,7 +155,7 @@
 ==> ()
 
 >>> (define (g x . rest) rest)
-==> #<void>
+==>
 
 >>> (g 1 2 3)
 ==> (2 3)
@@ -354,7 +354,7 @@
 ==> yes
 
 >>> (if #f 'never)
-==> #<void>
+==>
 
 >>> (if #t 'yes)
 ... ; malformed if
@@ -469,14 +469,14 @@
 
 >>> (when #f 1 2 3)
 ... ; --- unless ---
-==> #<void>
+==>
 
 >>> (unless #f 42)
 ==> 42
 
 >>> (unless #t 42)
 ... ; --- begin ---
-==> #<void>
+==>
 
 >>> (begin 1)
 ==> 1
@@ -486,7 +486,7 @@
 ==> 20
 
 >>> (define x 42)
-==> #<void>
+==>
 
 >>> x
 ==> 42
@@ -497,11 +497,11 @@
 %%% (define y)
 %%% ^
 >>> (define (square n) (* n n))
-==> #<void>
+==>
 
 >>> (define (fact n)
 ...   (if (= n 0) 1 (* n (fact (- n 1)))))
-==> #<void>
+==>
 
 >>> (fact 0)
 ... ; define with rest args
@@ -509,7 +509,7 @@
 
 >>> (define (sum . args)
 ...   (fold-left + 0 args))
-==> #<void>
+==>
 
 >>> (sum 1 2 3 4 5)
 %%% line 2, col 4: unbound variable: fold-left
@@ -521,10 +521,10 @@
 %%%   (fold-left + 0 args))
 %%%    ^
 >>> (define z 1)
-==> #<void>
+==>
 
 >>> (set! z 99)
-==> #<void>
+==>
 
 >>> z
 ... ; set! of unbound variable
@@ -642,7 +642,7 @@
 ==> 4
 
 >>> (define-values (a b c) (values 1 2 3))
-==> #<void>
+==>
 
 >>> b
 ==> 2
@@ -765,13 +765,13 @@
 ==> (1 . 2)
 
 >>> (define (make-point x y) `(point ,x ,y))
-==> #<void>
+==>
 
 >>> (make-point 3 4)
 ==> (point 3 4)
 
 >>> (define (wrap . args) `(wrapped ,@args end))
-==> #<void>
+==>
 
 >>> (wrap 'a 'b 'c)
 ==> (wrapped a b c end)

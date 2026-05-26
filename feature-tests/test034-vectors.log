@@ -292,7 +292,7 @@
 ==> 15
 
 >>> (vector-for-each display '#())
-==> #<void>
+==>
 
 >>> (vector-for-each)
 %%% SchemeArityError: line 1, col 1: vector-for-each: 0 arguments provided; at least 2 expected

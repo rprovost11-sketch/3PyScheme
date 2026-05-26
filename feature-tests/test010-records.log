@@ -8,10 +8,10 @@
 ...   point?
 ...   (x point-x)
 ...   (y point-y))
-==> #<void>
+==>
 
 >>> (define p (make-point 3 4))
-==> #<void>
+==>
 
 >>> (point? p)
 ==> #t
@@ -33,16 +33,16 @@
 ...   (make-counter value)
 ...   counter?
 ...   (value counter-value set-counter-value!))
-==> #<void>
+==>
 
 >>> (define c (make-counter 0))
-==> #<void>
+==>
 
 >>> (counter-value c)
 ==> 0
 
 >>> (set-counter-value! c 42)
-==> #<void>
+==>
 
 >>> (counter-value c)
 ... ; --- record with mix of mutable and immutable fields ---
@@ -53,10 +53,10 @@
 ...   person?
 ...   (name person-name)
 ...   (age  person-age set-person-age!))
-==> #<void>
+==>
 
 >>> (define alice (make-person "Alice" 30))
-==> #<void>
+==>
 
 >>> (person-name alice)
 ==> "Alice"
@@ -65,7 +65,7 @@
 ==> 30
 
 >>> (set-person-age! alice 31)
-==> #<void>
+==>
 
 >>> (person-age alice)
 ... ; name is immutable — no modifier
@@ -84,29 +84,29 @@
 ...   node?
 ...   (value node-value)
 ...   (next  node-next set-node-next!))
-==> #<void>
+==>
 
 >>> (define n (make-node 10))
-==> #<void>
+==>
 
 >>> (node-value n)
 ==> 10
 
 >>> (node-next n)
-==> #<void>
+==>
 
 >>> (set-node-next! n 'end)
-==> #<void>
+==>
 
 >>> (node-next n)
 ... ; --- multiple instances are independent ---
 ==> end
 
 >>> (define p1 (make-point 1 2))
-==> #<void>
+==>
 
 >>> (define p2 (make-point 5 6))
-==> #<void>
+==>
 
 >>> (point-x p1)
 ==> 1
@@ -123,7 +123,7 @@
 ==> #f
 
 >>> (define pts (list (make-point 1 2) (make-point 3 4)))
-==> #<void>
+==>
 
 >>> (point-x (car pts))
 ==> 1
@@ -135,7 +135,7 @@
 >>> (define-record-type empty-rec
 ...   (make-empty-rec)
 ...   empty-rec?)
-==> #<void>
+==>
 
 >>> (empty-rec? (make-empty-rec))
 ==> #t
@@ -174,7 +174,7 @@
 ==> caught
 
 >>> (eval '(define x 42))
-==> #<void>
+==>
 
 >>> (eval 'x)
 ==> 42
@@ -202,7 +202,7 @@
 ==> (1 4 9)
 
 >>> (eval '(define test-env-var 777) (interaction-environment))
-==> #<void>
+==>
 
 >>> test-env-var
 ... ; ============================================================
@@ -407,7 +407,7 @@
 
 >>> (define-record-type box (make-box v) box? (v box-v set-box-v!)) (define b (make-box 10)) (set-box-v! b 42)
 ... ;;; Records print inline with their field values.
-==> #<void>
+==>
 
 >>> (define-record-type point (make-point x y) point? (x point-x) (y point-y)) (make-point 3 4)
 ... ;;; Field spec with no mutator: accessor works, no mutator bound.
@@ -422,7 +422,7 @@
 %%%                                                      ^
 >>> (define-record-type rec (make-rec a) rec? (a rec-a) (b rec-b set-rec-b!)) (rec-b (make-rec 1))
 ... ;;; set! on that uninitialized field works.
-==> #<void>
+==>
 
 >>> (define-record-type rec (make-rec a) rec? (a rec-a) (b rec-b set-rec-b!)) (define r (make-rec 1)) (set-rec-b! r 22) (rec-b r)
 ... ;;; Distinct record types are distinct even with same shape.

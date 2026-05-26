@@ -62,16 +62,16 @@
 %%% ^
 >>> (for-each display '(1 2 3))
 123
-==> #<void>
+==>
 
 >>> (for-each (lambda (x) (display (* x x))) '(1 2 3))
 ... ; for-each over empty list
 149
-==> #<void>
+==>
 
 >>> (for-each display '())
 ... ; for-each with multiple lists
-==> #<void>
+==>
 
 >>> (for-each)
 %%% SchemeArityError: line 1, col 1: for-each: 0 arguments provided; at least 2 expected
@@ -105,7 +105,7 @@
 
 >>> (define (count-down n)
 ...   (if (= n 0) 'done (count-down (- n 1))))
-==> #<void>
+==>
 
 >>> (count-down 100000)
 ... ; --- tail position in cond ---
@@ -115,7 +115,7 @@
 ...   (cond ((< n 0) 'negative)
 ...         ((= n 0) 'zero)
 ...         (else    'positive)))
-==> #<void>
+==>
 
 >>> (classify -5)
 ==> negative
@@ -131,7 +131,7 @@
 ...   (or (null? lst)
 ...       (and (positive? (car lst))
 ...            (all-positive? (cdr lst)))))
-==> #<void>
+==>
 
 >>> (all-positive? '(1 2 3 4 5))
 ==> #t
@@ -145,7 +145,7 @@
 ...       (car lst)
 ...       (begin
 ...         (last-of-list (cdr lst)))))
-==> #<void>
+==>
 
 >>> (last-of-list '(1 2 3 4 5))
 ... ; ==========================================================
@@ -170,7 +170,7 @@
 ...   (if (= n 0)
 ...       'done
 ...       (apply count-down (list (- n 1)))))
-==> #<void>
+==>
 
 >>> (count-down 50000)
 ... ; ==========================================================
@@ -187,7 +187,7 @@
 ==> 11
 
 >>> (define saved-k #f)
-==> #<void>
+==>
 
 >>> (+ 1 (call/cc (lambda (k) (set! saved-k k) 0)))
 ==> 1
@@ -241,7 +241,7 @@
 ...       (call-with-values
 ...         (lambda () (values n (+ acc n)))
 ...         (lambda (n acc) (cwv-loop (- n 1) acc)))))
-==> #<void>
+==>
 
 >>> (cwv-loop 10000 0)
 ... ; ==========================================================
@@ -386,7 +386,7 @@
 ...         (lambda () #f)
 ...         (lambda () (dw-loop (- n 1)))
 ...         (lambda () #f))))
-==> #<void>
+==>
 
 >>> (dw-loop 10000)
 ... ; ==========================================================
@@ -505,7 +505,7 @@
 ...       (with-exception-handler
 ...         (lambda (e) 'err)
 ...         (lambda () (weh-loop (- n 1))))))
-==> #<void>
+==>
 
 >>> (weh-loop 10000)
 ... ; ==========================================================
@@ -563,7 +563,7 @@ caught
 ...     (let loop ((i n))
 ...       (if (= i 0) 'done
 ...           (loop (- i 1))))))
-==> #<void>
+==>
 
 >>> (guard-tco-test 100000)
 ... ; --- guard with read-error? ---
@@ -700,10 +700,10 @@ caught
 ... ; 17. parameterize + call/cc: parameter state saved and restored
 ... ; ==========================================================
 >>> (define p-cc (make-parameter 1))
-==> #<void>
+==>
 
 >>> (define k-cc #f)
-==> #<void>
+==>
 
 >>> (parameterize ((p-cc 2))
 ...   (call/cc (lambda (k) (set! k-cc k)))
@@ -717,10 +717,10 @@ caught
 ... ; 18. nested dynamic-wind + call/cc: both wind stacks fire on re-entry
 ... ; ==========================================================
 >>> (define k-dw #f)
-==> #<void>
+==>
 
 >>> (define log-dw '())
-==> #<void>
+==>
 
 >>> (dynamic-wind
 ...   (lambda () (set! log-dw (cons 'outer-in log-dw)))
@@ -730,7 +730,7 @@ caught
 ...       (lambda () (call/cc (lambda (k) (set! k-dw k))))
 ...       (lambda () (set! log-dw (cons 'inner-out log-dw)))))
 ...   (lambda () (set! log-dw (cons 'outer-out log-dw))))
-==> #<void>
+==>
 
 >>> (reverse log-dw)
 ==> (outer-in inner-in inner-out outer-out)
@@ -766,7 +766,7 @@ caught
 >>> (define vp
 ...   (make-parameter 0 (lambda (x)
 ...     (if (negative? x) (error "negative" x) (* x 2)))))
-==> #<void>
+==>
 
 >>> (vp)
 ==> 0
