@@ -677,3 +677,36 @@ a
 
 >>> (port-open? 42)
 ==> #f
+
+
+;;; ==========================================================================
+;;; Regression: write must NOT emit datum labels for shared-but-acyclic
+;;; structure.  _has_cycle previously returned true for any shared object
+;;; because the DFS "seen" set conflated "currently on path" with "visited".
+;;; The fix uses an enter/exit gray-set algorithm.
+;;; ==========================================================================
+
+;;; Two references to the same list -- write prints it twice, no labels.
+>>> (let ((x '(a b c)))
+...   (write (list x x)))
+((a b c) (a b c))
+==>
+
+;;; Two references to the same vector.
+>>> (let ((v (vector 1 2)))
+...   (write (list v v)))
+(#(1 2) #(1 2))
+==>
+
+;;; write-shared DOES use labels for shared structure.
+>>> (let ((x '(a b)))
+...   (write-shared (list x x)))
+(#0=(a b) #0#)
+==>
+
+;;; A genuine cycle must still trigger datum labels via write.
+>>> (let ((x (list 1 2)))
+...   (set-cdr! (cdr x) x)
+...   (write-shared x))
+#0=(1 2 . #0#)
+==>

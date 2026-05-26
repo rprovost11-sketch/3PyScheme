@@ -802,3 +802,46 @@ caught
 >>> (call/cc (lambda (k) (case 5 ((5) => k) (else 'no)) 'unreached))
 ==> 5
 
+
+
+;;; ==========================================================================
+;;; Regression: outer with-exception-handler must remain visible when an
+;;; inner with-exception-handler is installed in tail position of the outer
+;;; thunk.  The previous optimisation popped the outer handler from
+;;; handler_stack, so exceptions raised inside the inner handler body could
+;;; not propagate outward.
+;;; ==========================================================================
+
+;;; raise-continuable inside inner handler reaches outer handler.
+>>> (with-exception-handler
+...   (lambda (e) (+ e 100))
+...   (lambda ()
+...     (with-exception-handler
+...       (lambda (e) (raise-continuable (+ e 1)))
+...       (lambda () (raise-continuable 5)))))
+==> 106
+
+;;; raise inside inner handler reaches outer handler via call/cc escape.
+>>> (call/cc
+...   (lambda (k)
+...     (with-exception-handler
+...       (lambda (e) (k (+ e 100)))
+...       (lambda ()
+...         (with-exception-handler
+...           (lambda (e) (raise (+ e 10)))
+...           (lambda () (raise 1)))))))
+==> 111
+
+;;; Three levels: innermost raise propagates through two handlers to outermost.
+>>> (call/cc
+...   (lambda (k)
+...     (with-exception-handler
+...       (lambda (e) (k (* e 2)))
+...       (lambda ()
+...         (with-exception-handler
+...           (lambda (e) (raise (+ e 1)))
+...           (lambda ()
+...             (with-exception-handler
+...               (lambda (e) (raise (+ e 10)))
+...               (lambda () (raise 1)))))))))
+==> 24

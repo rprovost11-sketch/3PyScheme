@@ -963,7 +963,14 @@ class Listener:
       grand_fail = 0
       per_file   = []   # list of (name, pass, fail) tuples (positional access only)
 
+      # Absolutify so filenames survive the chdir below.
+      filenames = [os.path.abspath(f) for f in filenames]
+
       savedStdout = sys.stdout
+      savedCwd    = os.getcwd()
+      # Run tests with CWD set to the project root (parent of the test dir)
+      # so that relative file paths inside test logs resolve correctly.
+      os.chdir(os.path.dirname(self._testdir))
       try:
          for filename in filenames:
             self._interp.reboot(load_rc=False)
@@ -989,6 +996,7 @@ class Listener:
             print(status, file=savedStdout, flush=True)
       finally:
          sys.stdout = savedStdout
+         os.chdir(savedCwd)
 
       self._interp.reboot(load_rc=False)
 

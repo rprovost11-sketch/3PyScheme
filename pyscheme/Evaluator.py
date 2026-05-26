@@ -1680,13 +1680,11 @@ def _cek_loop(expr, env, ctx):
                               src_of(app_node) if app_node is not None else None)
                         handler = new_collected[0]
                         thunk   = new_collected[1]
-                        # Tail-call optimization: if K's top is FRAME_POP_HANDLER
-                        # this call is in tail position of the previous thunk.
-                        # That thunk is done so its handler is dead; replace it.
-                        if K and K[-1][0] == FRAME_POP_HANDLER:
-                           K.pop()
-                           if ctx.handler_stack:
-                              ctx.handler_stack.pop()
+                        # Do NOT drop the enclosing handler when a nested
+                        # with-exception-handler is in tail position.  The outer
+                        # handler must remain on handler_stack so that exceptions
+                        # raised inside the inner handler body (e.g. from a nested
+                        # raise or raise-continuable) can propagate to it.
                         ctx.handler_stack.append(handler)
                         K.append((FRAME_POP_HANDLER,))
                         fn_value = thunk

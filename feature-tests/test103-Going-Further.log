@@ -191,8 +191,8 @@
 >>> (fibonacci 20)
 ==> 6765
 
->>> (fibonacci 30)
-==> 832040
+>>> (fibonacci 10)
+==> 55
 
 ;;; named let: iterative Fibonacci
 
@@ -230,8 +230,8 @@
 >>> (fibonacci 20)
 ==> 6765
 
->>> (fibonacci 30)
-==> 832040
+>>> (fibonacci 10)
+==> 55
 
 ;;; named let: prime factorization
 

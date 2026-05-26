@@ -69,27 +69,35 @@ _CHAR_NAMES_REVERSE = {
 
 
 def _has_cycle(val):
-   """Return True if val contains any reference cycle (cons or vector)."""
-   seen = set()
-   stack = [val]
+   """Return True if val contains any reference cycle (cons or vector).
+
+   Uses enter/exit events to track nodes currently on the DFS path (gray
+   set).  A node is a cycle only if it is encountered while already on the
+   current path.  Shared-but-acyclic structure (e.g. (list x x)) is not a
+   false positive: after x is fully explored it leaves the gray set, so a
+   second encounter does not trigger the cycle check."""
+   gray  = set()
+   stack = [(val, False)]
    while stack:
-      v = stack.pop()
+      v, exiting = stack.pop()
+      if not (is_cons(v) or is_vector(v)):
+         continue
+      k = id(v)
+      if exiting:
+         gray.discard(k)
+         continue
+      if k in gray:
+         return True
+      gray.add(k)
+      stack.append((v, True))
       if is_cons(v):
-         k = id(v)
-         if k in seen:
-            return True
-         seen.add(k)
-         stack.append(v.car)
-         stack.append(v.cdr)
-      elif is_vector(v):
-         k = id(v)
-         if k in seen:
-            return True
-         seen.add(k)
+         stack.append((v.car, False))
+         stack.append((v.cdr, False))
+      else:
          items = as_vector_items(v)
          i = 0
          while i < len(items):
-            stack.append(items[i])
+            stack.append((items[i], False))
             i = i + 1
    return False
 
