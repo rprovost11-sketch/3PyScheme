@@ -175,6 +175,7 @@ _SYMBOL_ESCAPES = {
    'r':  '\r',
    '\\': '\\',
    '|':  '|',
+   '"':  '"',
 }
 
 _HEX_DIGITS = '0123456789abcdefABCDEF'

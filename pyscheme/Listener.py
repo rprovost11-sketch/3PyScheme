@@ -196,7 +196,7 @@ class Listener:
 
    @staticmethod
    def _parse_log(text):
-      """Parse a session log into a list of 4-tuples (expr, output, retval, error).
+      """Parse a session log into a list of 5-tuples (expr, output, retval, error, fold_case).
 
       Each entry begins with a `>>> ` line.  Continuation lines (`... `)
       belong to the same expression.  Lines between the expression and
@@ -204,15 +204,22 @@ class Listener:
       `==> ` line gives the return value; a `%%% ` line gives the error
       message.  Comment lines starting with `;;` outside an entry are
       skipped."""
-      lines   = text.splitlines(keepends=True)
-      entries = []
-      idx     = 0
-      n       = len(lines)
+      lines     = text.splitlines(keepends=True)
+      entries   = []
+      idx       = 0
+      n         = len(lines)
+      fold_case = False
       while idx < n:
          while idx < n and not lines[idx].startswith('>>> '):
+            stripped = lines[idx].rstrip()
+            if stripped == '#!fold-case':
+               fold_case = True
+            elif stripped == '#!no-fold-case':
+               fold_case = False
             idx = idx + 1
          if idx >= n:
             break
+         entry_fold_case = fold_case
          expr   = _substring(lines[idx], 4, len(lines[idx]))
          output = ''
          retval = ''
@@ -242,6 +249,8 @@ class Listener:
                   break
                if line.startswith('... ') or line.startswith('>>> ') or line.startswith('%%% '):
                   break
+               if line.startswith('#!'):
+                  break  # fold-case directive
                if line.startswith(';'):
                   expr = expr + line
                else:
@@ -254,7 +263,7 @@ class Listener:
                error = error + _substring(lines[idx], 4, len(lines[idx]))
                idx = idx + 1
          if expr:
-            entries.append((expr, output.rstrip(), retval.rstrip(), error.rstrip()))
+            entries.append((expr, output.rstrip(), retval.rstrip(), error.rstrip(), entry_fold_case))
       return entries
 
    @staticmethod
@@ -557,8 +566,9 @@ class Listener:
       entries = Listener._parse_log(text)
       k = 0
       while k < len(entries):
-         entry = entries[k]
-         expr  = entry[0]
+         entry     = entries[k]
+         expr      = entry[0]
+         fold_case = entry[4]
          if verbosity > 0:
             exp_lines = expr.splitlines()
             j = 0
@@ -568,8 +578,9 @@ class Listener:
                else:
                   print('... ' + exp_lines[j])
                j = j + 1
+         eval_expr = ('#!fold-case\n' if fold_case else '') + expr
          try:
-            resultStr = self._interp.eval(expr)
+            resultStr = self._interp.eval(eval_expr)
          except Exception:
             resultStr = ''
          if verbosity >= 3:
@@ -621,15 +632,17 @@ class Listener:
          expected_output = entry[1]
          expected_retval = entry[2]
          expected_error  = entry[3]
+         fold_case       = entry[4]
          i               = k + 1
 
          actual_retval = ''
          actual_error  = ''
          out_capture   = io.StringIO()
+         eval_expr = ('#!fold-case\n' if fold_case else '') + expr_src.strip()
          ctx = self._interp.get_ctx()
          ctx.timeout_at = time.monotonic() + 30.0
          try:
-            actual_retval = self._interp.eval(expr_src.strip(),
+            actual_retval = self._interp.eval(eval_expr,
                                               outStrm=out_capture)
          except KeyboardInterrupt:
             actual_error = 'Interrupted.'
