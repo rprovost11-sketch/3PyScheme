@@ -854,6 +854,9 @@ class Parser:
       if kind == TOK_LABEL_DEF:
          self._advance()
          label_n = tok.value
+         if label_n in self.labels:
+            raise SchemeSyntaxError(
+               'duplicate datum label #%d=' % label_n, tok.src)
          nxt = self._peek()
          # Pre-allocate a stub so forward #n# refs inside the datum work.
          if nxt.kind == TOK_LPAREN or nxt.kind == TOK_LBRACKET:
