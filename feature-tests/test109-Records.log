@@ -187,9 +187,7 @@
 ...     (lambda (pargs->new)
 ...       (lambda (c x y)
 ...         ((pargs->new x y) c)))))
-%%% line 1, col 21: unbound variable: cpoint
-%%% (define-record-type cpoint
-%%%                     ^
+%%% %any-error% non-standard (parent ...) clause or malformed record type
 
 ;;; ============================================================
 ;;; 9.2  Procedural Interface

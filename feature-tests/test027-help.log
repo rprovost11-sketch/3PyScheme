@@ -15,7 +15,13 @@ Primitive  |  args: pre-evaluated
 ==>
 
 >>> (help if)
-... ;;; -------- Per-entry: user-defined procedure with docstring --------
+... ;;; -------- (help if) unquoted errors: if is a syntactic keyword --------
+%%% line 1, col 7: keyword used as expression: if
+%%% (help if)
+%%%       ^
+
+>>> (help 'if)
+... ;;; -------- (help 'if) quoted form works --------
 Special Form  |  args: unevaluated
 
    Usage: (if <test> <then> [<else>])

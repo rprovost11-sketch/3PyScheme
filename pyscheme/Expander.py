@@ -684,7 +684,11 @@ def _rename_refs_in_form(form, rename_table):
    if is_symbol(head):
       hname = as_symbol(head)
       if hname == 'quote':
-         return form
+         gs = rename_table.get(hname)
+         if gs is None:
+            return form
+         new_head = make_symbol(gs, src_of(head))
+         return alloc_cons(new_head, form.cdr, form.src)
       if hname == 'lambda':
          return _rrif_lambda(form, rename_table)
       if hname in ('let', 'let*', 'letrec', 'letrec*'):

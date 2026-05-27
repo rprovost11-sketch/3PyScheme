@@ -222,6 +222,12 @@
 %%% (delay-force)
 %%% ^
 >>> (help delay)
+... ;;; -------- (help delay) unquoted errors: delay is a syntactic keyword --------
+%%% line 1, col 7: keyword used as expression: delay
+%%% (help delay)
+%%%       ^
+
+>>> (help 'delay)
 Special Form  |  args: unevaluated
 
    Usage: (delay <expr>)

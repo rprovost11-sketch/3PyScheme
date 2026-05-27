@@ -139,6 +139,21 @@ FRAME_NONCONTIN_RETURN   = 25
 FRAME_GUARD              = 26
 
 
+# R7RS §3.1: syntactic keywords that may not be used as expressions.
+# When a bare symbol evaluates to the global stub primitive for one of
+# these names (i.e., there is no local binding that shadows it), the
+# evaluator raises SchemeSyntaxError instead of returning the stub.
+_SYNTACTIC_KEYWORDS = frozenset([
+   'and', 'begin', 'case', 'case-lambda', 'cond', 'cond-expand',
+   'define', 'define-library', 'define-record-type', 'define-syntax',
+   'define-values', 'delay', 'delay-force', 'do', 'guard', 'if',
+   'import', 'include', 'include-ci', 'lambda', 'let', 'let*',
+   'let*-values', 'let-syntax', 'let-values', 'letrec', 'letrec*',
+   'letrec-syntax', 'or', 'parameterize', 'quasiquote', 'quote',
+   'set!', 'syntax-rules', 'unless', 'when',
+])
+
+
 # Frames that are not single-value continuations: FRAME_CWV_CONSUMER
 # unpacks multi-values; FRAME_SEQ discards V (begin/body sequencing);
 # the wind / handler pop frames forward V transparently to the next
@@ -1350,6 +1365,12 @@ def _cek_loop(expr, env, ctx):
                   except SchemeUnboundError as e:
                      e.src = src_of(C)
                      raise
+                  name = as_symbol(C)
+                  if (name in _SYNTACTIC_KEYWORDS
+                        and is_primitive(V)
+                        and as_primitive_name(V) == name):
+                     raise SchemeSyntaxError(
+                        'keyword used as expression: ' + name, src_of(C))
                   break
 
                # Atom (literal), NIL, VOID, or any other tagged value: self-eval.
