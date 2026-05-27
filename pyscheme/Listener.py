@@ -927,25 +927,28 @@ class Listener:
       if len(args) == 1:
          arg = args[0]
          if os.path.isdir(arg):
+            testDir   = os.path.abspath(arg)
             filenames = retrieveFileList(arg)
             if not filenames:
                raise ListenerCommandError('No .log files in ' + repr(arg))
          else:
+            testDir   = os.path.dirname(os.path.abspath(arg))
             filenames = [arg]
       else:
          if not os.path.isdir(self._testdir):
             raise ListenerCommandError(
                'No test directory: ' + repr(self._testdir))
+         testDir   = self._testdir
          filenames = retrieveFileList(self._testdir)
          if not filenames:
             raise ListenerCommandError(
                'No .log files in ' + repr(self._testdir))
 
-      self._runTestFiles(filenames)
+      self._runTestFiles(filenames, testDir)
 
-   def _runTestFiles(self, filenames):
+   def _runTestFiles(self, filenames, testDir):
       """Run each file through sessionLog_test, reboot between files,
-      write a run report to testing/runs/, print a grand total."""
+      write a run report to <testDir>/runs/, print a grand total."""
       color = self._use_color()
       if color:
          BOLD  = '\033[1;97m'
@@ -958,19 +961,21 @@ class Listener:
          RED   = ''
          RESET = ''
 
-      # Prepare a run report file when more than one log is being run.
+      testDir = os.path.abspath(testDir)
+
+      # Prepare a run report file for every run.
       runFile     = None
       runFilename = ''
-      if len(filenames) > 1:
-         runsDir = os.path.join(self._testdir, 'runs')
-         try:
-            os.makedirs(runsDir, exist_ok=True)
-            timestamp   = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
-            runFilename = os.path.join(runsDir, 'test-' + timestamp + '.run')
-            runFile     = open(runFilename, 'w')
-         except OSError:
-            runFile     = None
-            runFilename = ''
+      runsDir = os.path.join(testDir, 'runs')
+      try:
+         os.makedirs(runsDir, exist_ok=True)
+         timestamp   = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
+         runFilename = os.path.join(
+            runsDir, timestamp + '-' + self._language + '.run')
+         runFile     = open(runFilename, 'w', encoding='utf-8')
+      except OSError:
+         runFile     = None
+         runFilename = ''
 
       grand_pass = 0
       grand_fail = 0
@@ -981,14 +986,12 @@ class Listener:
 
       savedStdout = sys.stdout
       savedCwd    = os.getcwd()
-      # Run tests with CWD set to the project root (parent of the test dir)
-      # so that relative file paths inside test logs resolve correctly.
-      os.chdir(os.path.dirname(self._testdir))
+      os.chdir(testDir)
       try:
          for filename in filenames:
             self._interp.reboot(load_rc=False)
             base   = os.path.basename(filename)
-            padded = base.ljust(40)
+            padded = base.ljust(56)
             # Name and status are intentionally two separate print calls.
             # Name flushes before the test runs so the user sees progress;
             # status completes the same line after.  Do not merge into one print.
@@ -1018,11 +1021,10 @@ class Listener:
          print()
          total = grand_pass + grand_fail
          if grand_fail == 0:
-            print(GREEN + str(total) + ' TESTS PASSED across '
-                  + str(len(filenames)) + ' files' + RESET)
+            print(GREEN + 'all ' + str(total) + ' test cases passed' + RESET)
          else:
             print(RED + str(grand_fail) + ' of ' + str(total)
-                  + ' FAILED across ' + str(len(filenames)) + ' files' + RESET)
+                  + ' tests failed' + RESET)
 
          # Write the tail of the report file.
          if runFile is not None:
@@ -1041,15 +1043,13 @@ class Listener:
                else:
                   total = p + f
                   msg   = '(' + str(f) + '/' + str(total) + ') Failed.'
-               report.append(short.ljust(40) + ' ' + msg)
+               report.append(short.ljust(56) + ' ' + msg)
             report.append('')
             report.append('Total test files: ' + str(len(filenames)) + '.')
             report.append('Total test cases: '
                           + str(grand_pass + grand_fail) + '.')
-            k = 0
-            while k < len(report):
-               print(report[k], file=runFile)
-               k = k + 1
+            for reportLine in report:
+               print(reportLine, file=runFile)
             runFile.close()
             print()
             print('Test output: ' + runFilename)
@@ -1089,7 +1089,7 @@ class Listener:
          fpath = os.path.join(compdir, fname)
          if not os.path.isfile(fpath):
             raise ListenerCommandError('File not found: ' + fname)
-         self._runComplianceFiles([fpath], compdir)
+         self._runTestFiles([fpath], compdir)
          return
 
       # Range mode: 0 args = all, 1 arg = [start, ∞), 2 args = [start, end).
@@ -1102,7 +1102,7 @@ class Listener:
          raise ListenerCommandError('No .log files in ' + compdir)
 
       if not args:
-         self._runComplianceFiles(all_files, compdir)
+         self._runTestFiles(all_files, compdir)
          return
 
       start_lc = args[0].lower()
@@ -1122,104 +1122,7 @@ class Listener:
             raise ListenerCommandError(
                'No .log files at or after "' + args[0] + '"')
 
-      self._runComplianceFiles(filtered, compdir)
-
-   def _runComplianceFiles(self, filenames, compliancedir):
-      """Run each file through sessionLog_test, reboot between files,
-      write a run report to <compliancedir>/runs/, print totals."""
-      color = self._use_color()
-      if color:
-         BOLD  = '\033[1;97m'
-         GREEN = '\033[92m'
-         RED   = '\033[91m'
-         RESET = '\033[0m'
-      else:
-         BOLD  = ''
-         GREEN = ''
-         RED   = ''
-         RESET = ''
-
-      runsDir = os.path.join(os.path.abspath(compliancedir), 'runs')
-      runFile     = None
-      runFilename = ''
-      try:
-         os.makedirs(runsDir, exist_ok=True)
-         timestamp   = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
-         runFilename = os.path.join(runsDir,
-                                    timestamp + '-' + self._language + '.run')
-         runFile     = open(runFilename, 'w', encoding='utf-8')
-      except OSError:
-         runFile     = None
-         runFilename = ''
-
-      grand_pass = 0
-      grand_fail = 0
-      per_file   = []
-
-      savedStdout = sys.stdout
-      savedCwd    = os.getcwd()
-      try:
-         os.chdir(os.path.abspath(compliancedir))
-         for filename in filenames:
-            self._interp.reboot(load_rc=False)
-            base   = os.path.basename(filename)
-            padded = base.ljust(56)
-            print(padded + ' ', end='', flush=True, file=savedStdout)
-            if runFile is not None:
-               sys.stdout = runFile
-            r = self.sessionLog_test(filename, verbosity=3)
-            if runFile is not None:
-               sys.stdout = savedStdout
-            grand_pass = grand_pass + r.n_pass
-            grand_fail = grand_fail + r.n_fail
-            per_file.append((filename, r.n_pass, r.n_fail))
-            if r.n_fail == 0:
-               status = GREEN + str(r.n_pass) + ' passed' + RESET
-            else:
-               total  = r.n_pass + r.n_fail
-               status = RED + str(r.n_fail) + ' of ' + str(total) + ' failed' + RESET
-            print(status, file=savedStdout, flush=True)
-      finally:
-         sys.stdout = savedStdout
-         os.chdir(savedCwd)
-
-      self._interp.reboot(load_rc=False)
-
-      # Grand-total screen summary.
-      print()
-      total = grand_pass + grand_fail
-      if grand_fail == 0:
-         print(GREEN + 'all ' + str(total) + ' test cases passed' + RESET)
-      else:
-         print(RED + str(grand_fail) + ' of ' + str(total) + ' tests failed' + RESET)
-
-      # Write the tail of the report file.
-      if runFile is not None:
-         report = []
-         report.append('')
-         report.append('')
-         report.append('Test Report')
-         report.append('===========')
-         for entry in per_file:
-            name  = entry[0]
-            p     = entry[1]
-            f     = entry[2]
-            short = os.path.basename(name)
-            if f == 0:
-               msg = str(p) + ' TESTS PASSED!'
-            else:
-               tot = p + f
-               msg = '(' + str(f) + '/' + str(tot) + ') Failed.'
-            report.append(short.ljust(56) + ' ' + msg)
-         report.append('')
-         report.append('Total test files: ' + str(len(filenames)) + '.')
-         report.append('Total test cases: ' + str(grand_pass + grand_fail) + '.')
-         k = 0
-         for reportLine in report:
-            print(report[reportLine], file=runFile)
-         runFile.close()
-         print()
-         print('Compliance run report: ' + runFilename)
+      self._runTestFiles(filtered, compdir)
 
    def _cmd_cd(self, args):
       """Usage: ]cd <directory>

@@ -111,60 +111,60 @@
 ... ;;; -------- file-exists? --------
 ==> "\"hello\""
 
->>> (file-exists? "feature-tests/test000-parser.log")
+>>> (file-exists? "test000-parser.log")
 ==> #t
 
 >>> (file-exists? "no-such-file-xyz.scm")
 ... ;;; -------- call-with-input-file --------
 ==> #f
 
->>> (call-with-output-file "feature-tests/test19-tmp.scm" (lambda (p) (write (quote (+ 1 2)) p) #t))
+>>> (call-with-output-file "test19-tmp.scm" (lambda (p) (write (quote (+ 1 2)) p) #t))
 ==> #t
 
->>> (call-with-input-file "feature-tests/test19-tmp.scm" read)
+>>> (call-with-input-file "test19-tmp.scm" read)
 ... ;;; -------- with-input-from-file --------
 ==> (+ 1 2)
 
->>> (with-input-from-file "feature-tests/test19-tmp.scm" read)
+>>> (with-input-from-file "test19-tmp.scm" read)
 ... ;;; -------- with-output-to-file --------
 ==> (+ 1 2)
 
->>> (with-output-to-file "feature-tests/test19-tmp2.txt" (lambda () (display "ok")))
+>>> (with-output-to-file "test19-tmp2.txt" (lambda () (display "ok")))
 ==>
 
->>> (file-exists? "feature-tests/test19-tmp2.txt")
+>>> (file-exists? "test19-tmp2.txt")
 ... ;;; -------- delete-file and rename-file --------
 ==> #t
 
->>> (delete-file "feature-tests/test19-tmp2.txt")
+>>> (delete-file "test19-tmp2.txt")
 ==>
 
->>> (file-exists? "feature-tests/test19-tmp2.txt")
+>>> (file-exists? "test19-tmp2.txt")
 ==> #f
 
->>> (rename-file "feature-tests/test19-tmp.scm" "feature-tests/test19-tmp-renamed.scm")
+>>> (rename-file "test19-tmp.scm" "test19-tmp-renamed.scm")
 ==>
 
->>> (file-exists? "feature-tests/test19-tmp.scm")
+>>> (file-exists? "test19-tmp.scm")
 ==> #f
 
->>> (file-exists? "feature-tests/test19-tmp-renamed.scm")
+>>> (file-exists? "test19-tmp-renamed.scm")
 ==> #t
 
->>> (delete-file "feature-tests/test19-tmp-renamed.scm")
+>>> (delete-file "test19-tmp-renamed.scm")
 ... ;;; -------- load --------
 ==>
 
->>> (call-with-output-file "feature-tests/test19-load.scm" (lambda (p) (write (quote (define load-test-result 42)) p) #t))
+>>> (call-with-output-file "test19-load.scm" (lambda (p) (write (quote (define load-test-result 42)) p) #t))
 ==> #t
 
->>> (load "feature-tests/test19-load.scm")
+>>> (load "test19-load.scm")
 ==>
 
 >>> load-test-result
 ==> 42
 
->>> (delete-file "feature-tests/test19-load.scm")
+>>> (delete-file "test19-load.scm")
 ... ;;; -------- get-environment-variable --------
 ==>
 
