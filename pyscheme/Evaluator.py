@@ -1365,12 +1365,6 @@ def _cek_loop(expr, env, ctx):
                   except SchemeUnboundError as e:
                      e.src = src_of(C)
                      raise
-                  name = as_symbol(C)
-                  if (name in _SYNTACTIC_KEYWORDS
-                        and is_primitive(V)
-                        and as_primitive_name(V) == name):
-                     raise SchemeSyntaxError(
-                        'keyword used as expression: ' + name, src_of(C))
                   break
 
                # Atom (literal), NIL, VOID, or any other tagged value: self-eval.

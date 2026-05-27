@@ -61,6 +61,8 @@ Public API:
 from pyscheme.Environment import (
    _PositionedSchemeError, SchemeArityError, arity_mismatch_msg,
 )
+from pyscheme.Parser import SchemeSyntaxError
+from pyscheme.Evaluator import _SYNTACTIC_KEYWORDS
 from pyscheme.primitives import PRIMITIVE_ARITIES
 from pyscheme.AST import (
    is_cons, is_nil, is_symbol, is_integer, is_real, is_rational, is_complex,
@@ -303,6 +305,13 @@ def analyze(sexpr, static_env=None):
 
    if not is_cons(sexpr):
       # Atom (literal) or symbol (variable reference) - both are leaves.
+      # R7RS §3.1: using a syntactic keyword as a variable is an error,
+      # unless it is locally rebound (static_env stores None for local names).
+      if is_symbol(sexpr):
+         name = as_symbol(sexpr)
+         if name in _SYNTACTIC_KEYWORDS and static_env.get(name) is not None:
+            raise SchemeSyntaxError(
+               'keyword used as expression: ' + name, src_of(sexpr))
       return sexpr
 
    head = sexpr.car
@@ -322,7 +331,13 @@ def analyze(sexpr, static_env=None):
    while is_cons(cur):
       args.append(cur.car)
       cur = cur.cdr
-   analyze(fn_sexpr, static_env)
+   # Don't fire keyword check for the fn/head position: a keyword in head
+   # position is a malformed special form, and the arity check below gives a
+   # better error.  Keywords in arg positions are still checked.
+   if not (is_symbol(fn_sexpr)
+           and as_symbol(fn_sexpr) in _SYNTACTIC_KEYWORDS
+           and static_env.get(as_symbol(fn_sexpr)) is not None):
+      analyze(fn_sexpr, static_env)
    i = 0
    while i < len(args):
       analyze(args[i], static_env)

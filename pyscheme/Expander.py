@@ -1602,16 +1602,30 @@ def _expand_let_star_values(sexpr):
          items.append(body_items[i])
          i = i + 1
       return list_from_items(items, src)
-   # Build nested call-with-values from innermost out: the innermost consumer
-   # has the body as its forms; each outer consumer wraps the next level.
-   inner = _mv_lambda(clauses[len(clauses) - 1][0], body_items, src)
-   result = _mv_cwv(_mv_thunk(clauses[len(clauses) - 1][1], src), inner, src)
-   i = len(clauses) - 2
+   # Build from innermost out.  Single-variable formals use (let ((v e)) ...)
+   # directly — eliminates two lambda applications per such clause and gives
+   # the evaluator's native let* path a chance to handle tail calls cheaply.
+   # Multi-variable (or rest) formals still require call-with-values.
+   def _single_var(formals):
+      return is_cons(formals) and is_symbol(formals.car) and is_nil(formals.cdr)
+   current_items = body_items
+   i = len(clauses) - 1
    while i >= 0:
-      consumer = _mv_lambda(clauses[i][0], [result], src)
-      result = _mv_cwv(_mv_thunk(clauses[i][1], src), consumer, src)
+      formals, init = clauses[i]
+      if _single_var(formals):
+         binding = list_from_items([formals.car, init], src)
+         bindings = list_from_items([binding], src)
+         items = [make_symbol('let', src), bindings]
+         j = 0
+         while j < len(current_items):
+            items.append(current_items[j])
+            j = j + 1
+         current_items = [list_from_items(items, src)]
+      else:
+         consumer = _mv_lambda(formals, current_items, src)
+         current_items = [_mv_cwv(_mv_thunk(init, src), consumer, src)]
       i = i - 1
-   return result
+   return current_items[0]
 
 
 def _expand_let_values(sexpr):

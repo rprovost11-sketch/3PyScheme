@@ -34,8 +34,7 @@ from pyscheme.Listener      import InterpreterBase
 from pyscheme.Debugger      import Debugger
 from pyscheme.Tracer        import Tracer
 from pyscheme.PrettyPrinter import pretty_print
-from pyscheme.AST           import is_void, is_symbol, as_symbol
-from pyscheme.Evaluator     import _SYNTACTIC_KEYWORDS
+from pyscheme.AST           import is_void
 from pyscheme.library     import register_standard_libraries
 from pyscheme.Expander    import set_runtime_env
 
@@ -117,9 +116,6 @@ class Interpreter(InterpreterBase):
          while i < len(forms):
             form     = forms[i]
             expanded = expand(form)
-            if is_symbol(expanded) and as_symbol(expanded) in _SYNTACTIC_KEYWORDS:
-               raise SchemeSyntaxError(
-                  'keyword used as expression: ' + as_symbol(expanded), expanded)
             analyze(expanded, self._static_env)
             extend_static_env_with_define(self._static_env, expanded)
             last = cek_eval(expanded, self._env, self._ctx)
