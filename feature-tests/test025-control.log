@@ -660,7 +660,7 @@ caught
 
 >>> (integer->char #x10FFFF)
 ... ; --- out of range: negative ---
-==> #\􏿿
+==> #\x10FFFF
 
 >>> (guard (e (#t e))
 ...   (integer->char -1))

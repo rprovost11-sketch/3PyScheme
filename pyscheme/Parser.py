@@ -441,6 +441,53 @@ def _starts_like_number(s):
    return False
 
 
+def _decimal_str_to_rat(s):
+   """Parse a decimal string to _Rat without going through float.
+   Port of C++ decimal_str_to_rat.  Handles sign, '.', and e/E exponent."""
+   sign = 1
+   i = 0
+   if s and s[0] == '-':
+      sign = -1
+      i = 1
+   elif s and s[0] == '+':
+      i = 1
+   e_idx = -1
+   j = i
+   while j < len(s):
+      if s[j] == 'e' or s[j] == 'E':
+         e_idx = j
+         break
+      j = j + 1
+   exp = 0
+   if e_idx >= 0:
+      exp = int(_substring(s, e_idx + 1, len(s)))
+      mantissa = _substring(s, i, e_idx)
+   else:
+      mantissa = _substring(s, i, len(s))
+   dot_idx = -1
+   k = 0
+   while k < len(mantissa):
+      if mantissa[k] == '.':
+         dot_idx = k
+         break
+      k = k + 1
+   if dot_idx >= 0:
+      int_str = _substring(mantissa, 0, dot_idx) + _substring(mantissa, dot_idx + 1, len(mantissa))
+      frac_digits = len(mantissa) - dot_idx - 1
+   else:
+      int_str = mantissa
+      frac_digits = 0
+   if not int_str:
+      int_str = '0'
+   num = int(int_str)
+   den = 10 ** frac_digits
+   if exp > 0:
+      num = num * (10 ** exp)
+   elif exp < 0:
+      den = den * (10 ** (-exp))
+   return _Rat(sign * num, den)
+
+
 def _try_parse_prefixed_number(text, src):
    """Parse #b/#o/#d/#x/#e/#i prefix forms.
    Returns a Token or raises SchemeSyntaxError.  Returns None only when
@@ -539,7 +586,7 @@ def _try_parse_prefixed_number(text, src):
                   "#e applied to non-finite real %r" % rest, src)
             if f.is_integer():
                return Token(TOK_INT, int(f), src)
-            frac = _Rat.from_float(f)
+            frac = _decimal_str_to_rat(rest)
             return Token(TOK_RATIONAL, (frac.numerator, frac.denominator), src)
          return Token(TOK_REAL, f, src)
       except ValueError:

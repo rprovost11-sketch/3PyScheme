@@ -654,8 +654,8 @@ class Listener:
          actual_output   = out_capture.getvalue().rstrip()
          expected_output = expected_output.rstrip()
 
-         # '%%% *' means any error is acceptable (used in compliance tests).
-         if expected_error == '*':
+         # '%%% *' or '%%% %any-error% <hint>' means any error is acceptable.
+         if expected_error == '*' or expected_error.startswith('%any-error%'):
             error_ok = bool(actual_error)
          else:
             error_ok = actual_error == expected_error
@@ -685,7 +685,7 @@ class Listener:
                print('         expected output: [' + expected_output + ']')
                print('         actual output:   [' + actual_output + ']')
             if not error_ok:
-               if expected_error == '*':
+               if expected_error == '*' or expected_error.startswith('%any-error%'):
                   print('         expected an error, but none was raised')
                else:
                   print('         expected error:  [' + expected_error + ']')

@@ -145,7 +145,10 @@ def pretty_print(val):
       c = as_character(val)
       if c in _CHAR_NAMES_REVERSE:
          return '#\\' + _CHAR_NAMES_REVERSE[c]
-      return '#\\' + c
+      cp = ord(c)
+      if 0x20 <= cp <= 0x7E:
+         return '#\\' + c
+      return '#\\x' + format(cp, 'X')
    if is_string(val):
       return '"' + _escape_string(as_string(val)) + '"'
    if is_closure(val):
