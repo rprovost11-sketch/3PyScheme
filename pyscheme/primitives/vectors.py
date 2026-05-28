@@ -78,7 +78,10 @@ def _prim_vector_ref(ctx, env, args, app_node):
 
 
 def _prim_vector_set(ctx, env, args, app_node):
-   items = _check_vector(args[0], 'vector-set!', app_node)
+   v = args[0]
+   items = _check_vector(v, 'vector-set!', app_node)
+   if v.immutable:
+      raise SchemeTypeError('vector-set!: argument is an immutable literal', src_of(app_node))
    k = _check_index(args[1], 'vector-set!', len(items), app_node)
    items[k] = args[2]
    return VOID_VALUE
@@ -123,7 +126,10 @@ def _prim_list_to_vector(ctx, env, args, app_node):
 
 
 def _prim_vector_fill(ctx, env, args, app_node):
-   items = _check_vector(args[0], 'vector-fill!', app_node)
+   v = args[0]
+   items = _check_vector(v, 'vector-fill!', app_node)
+   if v.immutable:
+      raise SchemeTypeError('vector-fill!: argument is an immutable literal', src_of(app_node))
    fill  = args[1]
    start = 0
    end   = len(items)
@@ -168,7 +174,10 @@ def _prim_vector_copy(ctx, env, args, app_node):
 
 
 def _prim_vector_copy_bang(ctx, env, args, app_node):
-   dst   = _check_vector(args[0], 'vector-copy!', app_node, 1)
+   dst_v = args[0]
+   dst   = _check_vector(dst_v, 'vector-copy!', app_node, 1)
+   if dst_v.immutable:
+      raise SchemeTypeError('vector-copy!: destination is an immutable literal', src_of(app_node))
    if not is_integer(args[1]):
       raise SchemeTypeError(
          'vector-copy!: at must be an integer', src_of(app_node))

@@ -166,7 +166,7 @@ def pretty_print(val):
    if is_multi_values(val):
       vs = as_multi_values_list(val)
       if len(vs) == 0:
-         return '#<values>'
+         return ''
       parts = []
       i = 0
       while i < len(vs):

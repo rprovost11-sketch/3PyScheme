@@ -71,6 +71,7 @@ from pyscheme.AST import (
    make_integer, make_real, make_rational, make_complex, make_exact_complex,
    make_string, make_character,
    make_boolean, make_symbol, make_vector, make_bytevector, as_vector_items,
+   mark_literal_immutable,
    src_of,
    REAL, RATIONAL, INTEGER, CHARACTER, BOOLEAN, STRING, SYMBOL, NIL,
 )
@@ -915,7 +916,9 @@ class Parser:
          return make_exact_complex(re_s, im_s, tok.src)
       if kind == TOK_STRING:
          self._advance()
-         return make_string(tok.value, tok.src)
+         s = make_string(tok.value, tok.src)
+         s.immutable = True
+         return s
       if kind == TOK_CHAR:
          self._advance()
          return make_character(tok.value, tok.src)
@@ -973,7 +976,9 @@ class Parser:
          tok = self._peek()
          if tok.kind == TOK_RPAREN:
             self._advance()
-            return make_bytevector(bytearray(items))
+            bv = make_bytevector(bytearray(items))
+            bv.immutable = True
+            return bv
          if tok.kind == TOK_EOF:
             raise SchemeSyntaxError('unterminated bytevector literal', bv_tok.src)
          elem = self.parse_expr()
@@ -994,7 +999,9 @@ class Parser:
          tok = self._peek()
          if tok.kind == TOK_RPAREN:
             self._advance()
-            return make_vector(items)
+            v = make_vector(items)
+            v.immutable = True
+            return v
          if tok.kind == TOK_EOF:
             raise SchemeSyntaxError('unterminated vector literal', vec_tok.src)
          items.append(self.parse_expr())

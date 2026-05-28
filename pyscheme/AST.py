@@ -82,6 +82,7 @@ class ConsCell:
       self.car = car
       self.cdr = cdr
       self.src = src
+      self.immutable = False
 
 
 class Promise:
@@ -115,14 +116,33 @@ class Parameter:
 class SchemeString:
    """Mutable string value.  Wraps a Python str; mutation replaces _s in
    place so all references to the same instance see the update.
-   C port: struct SchemeString { GcHeader h; char* s; size_t len; };"""
+   C port: struct SchemeString { GcHeader h; char* s; size_t len; bool immutable; };"""
    def __init__(self, s, src=None):
-      self._s   = s
-      self._src = src
+      self._s        = s
+      self._src      = src
+      self.immutable = False
    def __eq__(self, other):
       return isinstance(other, SchemeString) and self._s == other._s
    def __hash__(self):
       raise TypeError('SchemeString is not hashable')
+
+
+class SchemeVector:
+   """Mutable vector value.  Wraps a Python list; mutations via vector-set!
+   mutate the list in place.
+   C port: struct SchemeVector { GcHeader h; Value* data; size_t len; bool immutable; };"""
+   def __init__(self, items):
+      self.items     = items
+      self.immutable = False
+
+
+class SchemeBytevector:
+   """Mutable bytevector value.  Wraps a Python bytearray; mutations via
+   bytevector-u8-set! mutate it in place.
+   C port: struct SchemeBytevector { GcHeader h; uint8_t* data; size_t len; bool immutable; };"""
+   def __init__(self, items):
+      self.items     = items
+      self.immutable = False
 
 
 class ErrorObject:
@@ -366,12 +386,12 @@ def make_vector(items):
    """Build a vector value.  items is a Python list of element values;
    it is stored by reference, so mutations via vector-set! are visible
    to all sharers (matching Scheme vector semantics)."""
-   return (VECTOR, items)
+   return SchemeVector(items)
 
 def make_bytevector(items):
    """Build a bytevector value.  items is a Python bytearray of u8
    values (0-255); stored by reference for in-place mutation."""
-   return (BYTEVECTOR, items)
+   return SchemeBytevector(items)
 
 def make_port(port_obj):
    """Wrap a Port instance as a Scheme port value."""
@@ -469,10 +489,10 @@ def is_record_mutator(val):
    return isinstance(val, tuple) and len(val) >= 1 and val[0] == RECORD_MUTATOR
 
 def is_vector(val):
-   return isinstance(val, tuple) and len(val) >= 1 and val[0] == VECTOR
+   return isinstance(val, SchemeVector)
 
 def is_bytevector(val):
-   return isinstance(val, tuple) and len(val) >= 1 and val[0] == BYTEVECTOR
+   return isinstance(val, SchemeBytevector)
 
 def is_port(val):
    return isinstance(val, tuple) and len(val) >= 1 and val[0] == PORT
@@ -711,10 +731,10 @@ def as_record_mutator_name(val):
    return val[3]
 
 def as_vector_items(val):
-   return val[1]
+   return val.items
 
 def as_bytevector_items(val):
-   return val[1]
+   return val.items
 
 def as_port(val):
    return val[1]
@@ -752,6 +772,35 @@ def eqv_atom(a, b):
               eqv_atom(as_exact_complex_imag(a), as_exact_complex_imag(b)))
    if is_character(a) and is_character(b):
       return as_character(a) == as_character(b)
+   return False
+
+
+# --- Immutability ------------------------------------------------------
+
+def mark_literal_immutable(val):
+   """Recursively mark a literal datum (from quote or the reader) as
+   immutable.  Guards against cycles via the immutable flag itself."""
+   if isinstance(val, ConsCell):
+      if val.immutable:
+         return
+      val.immutable = True
+      mark_literal_immutable(val.car)
+      mark_literal_immutable(val.cdr)
+   elif isinstance(val, SchemeString):
+      val.immutable = True
+   elif isinstance(val, SchemeVector):
+      if val.immutable:
+         return
+      val.immutable = True
+      for item in val.items:
+         mark_literal_immutable(item)
+   elif isinstance(val, SchemeBytevector):
+      val.immutable = True
+
+def is_immutable(val):
+   """Return True if val is a mutable-type object that has been locked."""
+   if isinstance(val, (ConsCell, SchemeString, SchemeVector, SchemeBytevector)):
+      return val.immutable
    return False
 
 

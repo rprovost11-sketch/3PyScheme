@@ -481,9 +481,6 @@ def _analyze_if(sexpr, static_env):
 
 
 def _analyze_begin(sexpr, static_env):
-   if _proper_list_length(sexpr) < 2:
-      raise SchemeAnalysisError(
-         "begin must have at least one body expression", src_of(sexpr))
    cur = sexpr.cdr
    while is_cons(cur):
       analyze(cur.car, static_env)
@@ -1026,6 +1023,7 @@ if __name__ == '__main__':
       '(if #t 1)',
       '(f 1 2)',
       '(f)',
+      '(begin)',
       '(begin 1 2 3)',
       '(let ((x 1) (y 2)) x)',
       '(let* ((x 1) (y x)) y)',
@@ -1078,7 +1076,6 @@ if __name__ == '__main__':
       ('(set! 1 2)',             'expected an identifier'),
       ('(if)',                   'requires 2 or 3 arguments'),
       ('(if a b c d)',           'requires 2 or 3 arguments'),
-      ('(begin)',                'at least one body expression'),
       ('(let)',                  'binding list'),
       ('(let ((x)) x)',          'binding must be'),
       ('(let ((1 2)) x)',        'expected an identifier'),

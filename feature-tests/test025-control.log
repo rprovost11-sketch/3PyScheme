@@ -845,3 +845,30 @@ caught
 ...               (lambda (e) (raise (+ e 10)))
 ...               (lambda () (raise 1)))))))))
 ==> 24
+
+>>> (define (late-setter!) (set! late-target 99))
+... ;;; ============================================================
+... ;;; set! late-binding semantics (R7RS 4.1.6)
+... ;;; set! resolves its target at call time, not closure-creation time.
+... ;;; If the variable is bound when set! is evaluated, no error occurs.
+... ;;; ============================================================
+... ;;; Closure is defined before late-target exists in the environment.
+==>
+
+>>> (define late-target 0)
+==>
+
+>>> (late-setter!)
+... ;;; Call succeeds: late-target is bound by the time set! is evaluated.
+==>
+
+>>> late-target
+... ;;; Verify the mutation took effect.
+==> 99
+
+>>> (define (always-unbound!) (set! truly-unbound-var 1))
+... ;;; Contrast: set! on a variable that remains unbound at call time still errors.
+==>
+
+>>> (always-unbound!)
+%%% %any-error%

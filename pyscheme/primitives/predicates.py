@@ -18,6 +18,7 @@ from pyscheme.AST import (
    as_integer, as_real, as_rational_num, as_rational_den,
    as_complex_real, as_complex_imag,
    as_exact_complex_real, as_exact_complex_imag,
+   is_immutable,
    make_boolean,
 )
 from pyscheme.Environment import SchemeTypeError
@@ -211,6 +212,10 @@ def _prim_string_p(ctx, env, args, app_node):
    return make_boolean(is_string(args[0]))
 
 
+def _prim_immutable_p(ctx, env, args, app_node):
+   return make_boolean(is_immutable(args[0]))
+
+
 def register():
    register_primitive('number?', (1, 1), _prim_number_p,
       doc='Return #t if a is any kind of number.',
@@ -270,4 +275,7 @@ def register():
       category=CATEGORY)
    register_primitive('nan?', (1, 1), _prim_nan_p,
       doc='Return #t if z is +nan.0.',
+      category=CATEGORY)
+   register_primitive('immutable?', (1, 1), _prim_immutable_p,
+      doc='Return #t if obj is a mutable-type object (pair, string, vector, bytevector) that has been marked immutable.',
       category=CATEGORY)

@@ -92,7 +92,10 @@ def _prim_bytevector_u8_ref(ctx, env, args, app_node):
 
 
 def _prim_bytevector_u8_set(ctx, env, args, app_node):
-   bs = _check_bv(args[0], 'bytevector-u8-set!', app_node)
+   bv = args[0]
+   bs = _check_bv(bv, 'bytevector-u8-set!', app_node)
+   if bv.immutable:
+      raise SchemeTypeError('bytevector-u8-set!: argument is an immutable literal', src_of(app_node))
    k  = _check_index(args[1], 'bytevector-u8-set!', len(bs), app_node)
    bs[k] = _check_u8(args[2], 'bytevector-u8-set!', app_node)
    return VOID_VALUE
@@ -119,7 +122,10 @@ def _prim_bytevector_copy(ctx, env, args, app_node):
 
 
 def _prim_bytevector_copy_bang(ctx, env, args, app_node):
-   dst = _check_bv(args[0], 'bytevector-copy!', app_node, 1)
+   dst_bv = args[0]
+   dst = _check_bv(dst_bv, 'bytevector-copy!', app_node, 1)
+   if dst_bv.immutable:
+      raise SchemeTypeError('bytevector-copy!: destination is an immutable literal', src_of(app_node))
    if not is_integer(args[1]):
       raise SchemeTypeError(
          'bytevector-copy!: at must be an integer', src_of(app_node))

@@ -101,6 +101,7 @@ from pyscheme.AST import (
    make_boolean, make_closure, make_case_closure, make_promise_lazy,
    make_continuation, make_multi_values, make_primitive, make_parameter, make_symbol,
    make_read_error_object,
+   mark_literal_immutable,
    eqv_atom, intern_symbol,
    src_of,
    VOID, BOOLEAN, COMPLEX, REAL, RATIONAL, INTEGER, CHARACTER, STRING,
@@ -1092,6 +1093,7 @@ def _cek_loop(expr, env, ctx):
                      if name == 'quote':
                         # (quote datum) - datum self-evaluates
                         V = C.cdr.car
+                        mark_literal_immutable(V)
                         break
 
                      if name == 'lambda':
@@ -1146,8 +1148,10 @@ def _cek_loop(expr, env, ctx):
                         continue
 
                      if name == 'begin':
-                        # (begin body...)  - body cons chain, non-empty (analyzer checks)
                         body = C.cdr
+                        if is_nil(body):
+                           V = VOID_VALUE
+                           break
                         C = body.car
                         if is_cons(body.cdr):
                            K.append((FRAME_SEQ, body.cdr, E))

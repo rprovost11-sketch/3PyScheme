@@ -254,8 +254,9 @@ Primitive  |  args: pre-evaluated
 ==>
 
 >>> (values)
-... ;;; Single-value (values x) unwraps to x.
-==> #<values>
+... ;;; Zero-argument (values) returns no values; REPL prints nothing.
+==>
+
 
 >>> (values 42)
 ==> 42

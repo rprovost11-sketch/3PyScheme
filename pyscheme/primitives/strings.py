@@ -341,6 +341,8 @@ def _prim_string_set_bang(ctx, env, args, app_node):
    from pyscheme.AST import VOID_VALUE, is_character, as_character
    s = args[0]
    _check_string(s, 'string-set!', app_node, 1)
+   if s.immutable:
+      raise SchemeTypeError('string-set!: argument is an immutable literal', src_of(app_node))
    if not is_integer(args[1]):
       raise SchemeTypeError('string-set!: index must be an integer', src_of(app_node))
    k = as_integer(args[1])
@@ -368,6 +370,8 @@ def _prim_string_fill_bang(ctx, env, args, app_node):
    from pyscheme.AST import VOID_VALUE, is_character, as_character
    s = args[0]
    _check_string(s, 'string-fill!', app_node, 1)
+   if s.immutable:
+      raise SchemeTypeError('string-fill!: argument is an immutable literal', src_of(app_node))
    if not is_character(args[1]):
       raise SchemeTypeError('string-fill!: second argument must be a character', src_of(app_node))
    ch = as_character(args[1])

@@ -40,9 +40,7 @@
 %%% (if a b c d)
 %%% ^
 >>> (begin)
-%%% line 1, col 1: begin must have at least one body expression
-%%% (begin)
-%%% ^
+==>
 >>> (let ((x)) x)
 %%% line 1, col 7: let binding must be (name value), got (x)
 %%% (let ((x)) x)

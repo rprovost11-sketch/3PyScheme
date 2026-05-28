@@ -342,6 +342,9 @@ def _prim_set_car(ctx, env, args, app_node):
    if not is_cons(v):
       raise SchemeTypeError(
          'set-car!: argument must be a pair', src_of(app_node))
+   if v.immutable:
+      raise SchemeTypeError(
+         'set-car!: argument is an immutable literal', src_of(app_node))
    set_car(v, args[1])
    return VOID_VALUE
 
@@ -351,6 +354,9 @@ def _prim_set_cdr(ctx, env, args, app_node):
    if not is_cons(v):
       raise SchemeTypeError(
          'set-cdr!: argument must be a pair', src_of(app_node))
+   if v.immutable:
+      raise SchemeTypeError(
+         'set-cdr!: argument is an immutable literal', src_of(app_node))
    set_cdr(v, args[1])
    return VOID_VALUE
 

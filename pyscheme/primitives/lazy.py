@@ -32,6 +32,8 @@ def _prim_force_unreached(ctx, env, args, app_node):
 
 
 def _prim_make_promise(ctx, env, args, app_node):
+   if is_promise(args[0]):
+      return args[0]
    return make_promise_done(args[0])
 
 
