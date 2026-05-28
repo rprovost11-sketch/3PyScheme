@@ -46,15 +46,18 @@ def main():
                file=sys.stderr)
          sys.exit(1)
 
+   _scheme_tests = os.path.join(
+      os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+      'scheme-tests')
    listener = Listener(
       interp,
-      testdir='feature-tests',
+      testdir=os.path.join(_scheme_tests, 'feature-tests'),
       language='pyscheme',
       version=__version__,
       author='Ron Provost/Longo',
       project='https://github.com/rprovost11/pyscheme',
-      compliancedir=os.path.join(os.path.dirname(os.path.dirname(
-         os.path.abspath(__file__))), '..', 'R7RS-Compliance-Tests'),
+      compliancedir=os.path.join(_scheme_tests, 'R7RS-Compliance-Tests'),
+      runsdir=os.path.join(_scheme_tests, 'runs'),
    )
    try:
       listener.readEvalPrintLoop()

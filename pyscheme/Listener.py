@@ -300,11 +300,13 @@ class Listener:
                 language='pyscheme', version='0.1',
                 author='pyscheme authors',
                 project='https://example/pyscheme',
-                compliancedir=''):
+                compliancedir='',
+                runsdir=''):
       self._interp        = anInterpreter
       # Absolutify so ]cd doesn't break ]test / ]compliance.
       self._testdir       = os.path.abspath(testdir)
       self._compliancedir = os.path.abspath(compliancedir) if compliancedir else ''
+      self._runsdir       = os.path.abspath(runsdir) if runsdir else ''
       self._logFile       = None
       self._language      = language
       self._version       = version
@@ -966,7 +968,7 @@ class Listener:
       # Prepare a run report file for every run.
       runFile     = None
       runFilename = ''
-      runsDir = os.path.join(testDir, 'runs')
+      runsDir = self._runsdir if self._runsdir else os.path.join(testDir, 'runs')
       try:
          os.makedirs(runsDir, exist_ok=True)
          timestamp   = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
