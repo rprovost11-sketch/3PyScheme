@@ -689,6 +689,17 @@ def _rename_refs_in_form(form, rename_table):
             return form
          new_head = make_symbol(gs, src_of(head))
          return alloc_cons(new_head, form.cdr, form.src)
+      if hname == 'quasiquote' and rename_table.get(hname) is None \
+            and is_cons(form.cdr) and is_nil(form.cdr.cdr):
+         # Walk the template with quasiquote-level tracking so that only
+         # *active* (unquoted) references are renamed; quoted template data
+         # is left untouched.  A plain (quote ...) inside a template must not
+         # short-circuit a deeper (unquote ...) -- cf. `,'<var>` patterns.
+         tmpl = form.cdr.car
+         new_tmpl = _rrif_quasiquote_template(tmpl, rename_table, 1)
+         if new_tmpl is tmpl:
+            return form
+         return alloc_cons(head, alloc_cons(new_tmpl, NIL_VALUE, form.cdr.src), form.src)
       if hname == 'lambda':
          return _rrif_lambda(form, rename_table)
       if hname in ('let', 'let*', 'letrec', 'letrec*'):
@@ -858,6 +869,57 @@ def _rrif_bindings_let_star(bindings, table):
                      alloc_cons(new_init, pair.cdr.cdr, pair.cdr.src), pair.src)
       return pair
    return _map_list_cars(bindings, _rename_pair)
+
+
+def _rrif_quasiquote_template(tmpl, rename_table, level):
+   """Walk a quasiquote template at nesting `level` (>= 1), renaming only the
+   active (unquoted) sub-expressions per rename_table and leaving quoted
+   template data untouched.  Mirrors the level logic in qq_walk: quasiquote
+   raises the level, unquote/unquote-splicing lower it, and an expression
+   becomes active when it reaches level 0."""
+   if is_cons(tmpl):
+      head = tmpl.car
+      if is_symbol(head):
+         hname = as_symbol(head)
+         if hname in ('unquote', 'unquote-splicing') \
+               and is_cons(tmpl.cdr) and is_nil(tmpl.cdr.cdr):
+            e = tmpl.cdr.car
+            if level == 1:
+               new_e = _rename_refs_in_form(e, rename_table)        # active code
+            else:
+               new_e = _rrif_quasiquote_template(e, rename_table, level - 1)
+            if new_e is e:
+               return tmpl
+            return alloc_cons(head, alloc_cons(new_e, NIL_VALUE, tmpl.cdr.src), tmpl.src)
+         if hname == 'quasiquote' and is_cons(tmpl.cdr) and is_nil(tmpl.cdr.cdr):
+            e = tmpl.cdr.car
+            new_e = _rrif_quasiquote_template(e, rename_table, level + 1)
+            if new_e is e:
+               return tmpl
+            return alloc_cons(head, alloc_cons(new_e, NIL_VALUE, tmpl.cdr.src), tmpl.src)
+      # Ordinary template list (incl. dotted tails): recurse car and cdr at
+      # the same level so nested unquotes are still found.
+      new_car = _rrif_quasiquote_template(tmpl.car, rename_table, level)
+      new_cdr = _rrif_quasiquote_template(tmpl.cdr, rename_table, level)
+      if new_car is tmpl.car and new_cdr is tmpl.cdr:
+         return tmpl
+      return alloc_cons(new_car, new_cdr, tmpl.src)
+   if is_vector(tmpl):
+      items = as_vector_items(tmpl)
+      new_items = []
+      changed = False
+      i = 0
+      while i < len(items):
+         ni = _rrif_quasiquote_template(items[i], rename_table, level)
+         new_items.append(ni)
+         if ni is not items[i]:
+            changed = True
+         i = i + 1
+      if not changed:
+         return tmpl
+      return make_vector(new_items)
+   # Atom (including symbols appearing as template data): unchanged.
+   return tmpl
 
 
 # ---- let family (let, let*, letrec, letrec*) -----------------------------
@@ -1443,10 +1505,18 @@ def _qq_walk(x, level, default_src):
                _qq_walk(e, level + 1, src),
                src)
          if name == 'unquote-splicing':
-            # unquote-splicing must appear inside a list, never as the
-            # whole template - reject here to surface a clear error.
-            raise SchemeSyntaxError(
-               'unquote-splicing must appear inside a list, not at the top of a template',
+            # unquote-splicing at the top of a template is unspecified in R7RS
+            # (cf. §4.2.8 footnote); we evaluate the argument and return its
+            # value as-is, matching the "whole list" interpretation used by
+            # several Schemes (e.g., Chez, Gauche).
+            if not is_cons(x.cdr) or not is_nil(x.cdr.cdr):
+               raise SchemeSyntaxError(
+                  'unquote-splicing requires exactly one argument', src)
+            if level == 1:
+               return expand(x.cdr.car)
+            return _qq_make_list(
+               _qq_quote(make_symbol('unquote-splicing', src), src),
+               _qq_walk(x.cdr.car, level - 1, src),
                src)
       # Splicing in element position: x.car itself is (unquote-splicing <e>).
       if is_cons(head) and is_symbol(head.car):

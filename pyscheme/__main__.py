@@ -57,6 +57,7 @@ def main():
       author='Ron Provost/Longo',
       project='https://github.com/rprovost11/pyscheme',
       compliancedir=os.path.join(_scheme_tests, 'R7RS-Compliance-Tests'),
+      regressiondir=os.path.join(_scheme_tests, 'regression-tests'),
       runsdir=os.path.join(_scheme_tests, 'runs'),
    )
    try:

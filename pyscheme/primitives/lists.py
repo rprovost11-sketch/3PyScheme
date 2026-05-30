@@ -283,6 +283,29 @@ def _prim_map(ctx, env, args, app_node):
    return result
 
 
+def _prim_filter(ctx, env, args, app_node):
+   from pyscheme.primitives.meta import _apply_scheme_proc
+   from pyscheme.Evaluator       import isFalse
+   pred = args[0]
+   lst  = args[1]
+   collected = []
+   while is_cons(lst):
+      keep = _apply_scheme_proc(pred, [lst.car], ctx, None, app_node)
+      if not isFalse(keep):
+         collected.append(lst.car)
+      lst = lst.cdr
+   if not is_nil(lst):
+      raise SchemeTypeError(
+         'filter: list argument must be a proper list',
+         src_of(app_node))
+   result = NIL_VALUE
+   i = len(collected) - 1
+   while i >= 0:
+      result = alloc_cons(collected[i], result, None)
+      i = i - 1
+   return result
+
+
 def _prim_for_each(ctx, env, args, app_node):
    from pyscheme.primitives.meta import _apply_scheme_proc
    from pyscheme.AST import VOID_VALUE
@@ -518,6 +541,10 @@ def register():
    register_primitive('for-each', (2, None), _prim_for_each,
       doc=('(for-each proc list1 list2 ...) applies proc element-wise '
            'for effect and returns an unspecified value.  R7RS 6.10.'),
+      category=CATEGORY)
+   register_primitive('filter', (2, 2), _prim_filter,
+      doc=('(filter pred list) returns a new list containing the elements '
+           'of list for which pred returns a true value.  R7RS-large / SRFI-1.'),
       category=CATEGORY)
    register_primitive('set-car!', (2, 2), _prim_set_car,
       doc='(set-car! pair obj) replaces the car of pair with obj.  R7RS 6.4.',

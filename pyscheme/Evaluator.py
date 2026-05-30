@@ -2273,22 +2273,38 @@ def _cek_loop(expr, env, ctx):
          _w = K
          handler = None
          is_guard_handler = False
+         # A raise-continuable pops its handler off handler_stack but leaves the
+         # handler's FRAME_POP_HANDLER / FRAME_GUARD on K, with a
+         # FRAME_REINSTALL_HANDLER above it.  When the handler then raises and we
+         # unwind, those orphaned frames must be skipped WITHOUT popping
+         # handler_stack, or K frames and handler_stack drift out of alignment and
+         # we pair a frame with the wrong handler (e.g. treat a guard handler as a
+         # plain one and spuriously raise "exception handler returned").  Count
+         # the FRAME_REINSTALL_HANDLER frames and skip that many handler frames.
+         pending_reinstalls = 0
          while _w:
             frame = _w.pop()
             ftag  = frame[0]
+            if ftag == FRAME_REINSTALL_HANDLER:
+               pending_reinstalls += 1
+               continue
             if ftag == FRAME_POP_HANDLER:
+               if pending_reinstalls > 0:
+                  pending_reinstalls -= 1
+                  continue
                if not ctx.handler_stack:
                   break
                handler = ctx.handler_stack.pop()
                break
             if ftag == FRAME_GUARD:
+               if pending_reinstalls > 0:
+                  pending_reinstalls -= 1
+                  continue
                if not ctx.handler_stack:
                   break
                handler = ctx.handler_stack.pop()
                is_guard_handler = True
                break
-            if ftag == FRAME_REINSTALL_HANDLER:
-               continue
             if ftag == FRAME_DYNAMIC_WIND_AFTER:
                after = frame[1]
                if ctx.wind_stack:

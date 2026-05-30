@@ -301,11 +301,13 @@ class Listener:
                 author='pyscheme authors',
                 project='https://example/pyscheme',
                 compliancedir='',
+                regressiondir='',
                 runsdir=''):
       self._interp        = anInterpreter
-      # Absolutify so ]cd doesn't break ]test / ]compliance.
+      # Absolutify so ]cd doesn't break ]test / ]compliance / ]regression.
       self._testdir       = os.path.abspath(testdir)
       self._compliancedir = os.path.abspath(compliancedir) if compliancedir else ''
+      self._regressiondir = os.path.abspath(regressiondir) if regressiondir else ''
       self._runsdir       = os.path.abspath(runsdir) if runsdir else ''
       self._logFile       = None
       self._language      = language
@@ -330,6 +332,7 @@ class Listener:
          'resume':   self._cmd_resume,
          'test':       self._cmd_test,
          'compliance': self._cmd_compliance,
+         'regression': self._cmd_regression,
          'cd':         self._cmd_cd,
          'pwd':      self._cmd_pwd,
          'lhistory': self._cmd_lhistory,
@@ -946,11 +949,13 @@ class Listener:
             raise ListenerCommandError(
                'No .log files in ' + repr(self._testdir))
 
-      self._runTestFiles(filenames, testDir)
+      self._runTestFiles(filenames, testDir, 'feature')
 
-   def _runTestFiles(self, filenames, testDir):
+   def _runTestFiles(self, filenames, testDir, suite):
       """Run each file through sessionLog_test, reboot between files,
-      write a run report to <testDir>/runs/, print a grand total."""
+      write a run report to <testDir>/runs/, print a grand total.
+      `suite` is 'feature' | 'compliance' | 'regression'; it becomes part
+      of the run-report filename: yyyy-mm-dd-hhmmss-<suite>-PyScheme.run."""
       color = self._use_color()
       if color:
          BOLD  = '\033[1;97m'
@@ -973,7 +978,7 @@ class Listener:
          os.makedirs(runsDir, exist_ok=True)
          timestamp   = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
          runFilename = os.path.join(
-            runsDir, timestamp + '-' + self._language + '.run')
+            runsDir, timestamp + '-' + suite + '-PyScheme.run')
          runFile     = open(runFilename, 'w', encoding='utf-8')
       except OSError:
          runFile     = None
@@ -1022,11 +1027,13 @@ class Listener:
       if len(filenames) > 1:
          print()
          total = grand_pass + grand_fail
+         nfiles = len(filenames)
          if grand_fail == 0:
-            print(GREEN + 'all ' + str(total) + ' test cases passed' + RESET)
+            print(GREEN + 'all ' + str(total) + ' test cases passed across '
+                  + str(nfiles) + ' files' + RESET)
          else:
             print(RED + str(grand_fail) + ' of ' + str(total)
-                  + ' tests failed' + RESET)
+                  + ' tests failed across ' + str(nfiles) + ' files' + RESET)
 
          # Write the tail of the report file.
          if runFile is not None:
@@ -1091,7 +1098,7 @@ class Listener:
          fpath = os.path.join(compdir, fname)
          if not os.path.isfile(fpath):
             raise ListenerCommandError('File not found: ' + fname)
-         self._runTestFiles([fpath], compdir)
+         self._runTestFiles([fpath], compdir, 'compliance')
          return
 
       # Range mode: 0 args = all, 1 arg = [start, ∞), 2 args = [start, end).
@@ -1104,7 +1111,7 @@ class Listener:
          raise ListenerCommandError('No .log files in ' + compdir)
 
       if not args:
-         self._runTestFiles(all_files, compdir)
+         self._runTestFiles(all_files, compdir, 'compliance')
          return
 
       start_lc = args[0].lower()
@@ -1124,7 +1131,76 @@ class Listener:
             raise ListenerCommandError(
                'No .log files at or after "' + args[0] + '"')
 
-      self._runTestFiles(filtered, compdir)
+      self._runTestFiles(filtered, compdir, 'compliance')
+
+   def _cmd_regression(self, args):
+      """Usage: ]regression [<file.log> | <start> [<end>]]
+
+      Run the regression test suite against the configured directory.
+        ]regression                  -- run all regression files
+        ]regression 03               -- run files with filename >= "03"
+        ]regression 03 06            -- run files with "03" <= filename < "06"
+        ]regression 03-evaluator.log -- run that one file
+
+      Regression tests are Scheme-observable, non-spec tripwires pinned to
+      past bugs; spec deviations are guarded by ]compliance instead.  Files
+      are grouped by subsystem (numeric prefix forces fundamental->abstract
+      order).  See regression-tests/00-conventions.md.
+
+      The interpreter is rebooted before each file and after the suite.
+      A timestamped run report is written to the configured runs/ directory.
+      """
+      if self._logFile:
+         raise ListenerCommandError(
+            'Please close the log before running regressions (]close).')
+
+      regdir = self._regressiondir
+      if not regdir:
+         raise ListenerCommandError(
+            'No regression directory configured.  Set regressiondir= at startup.')
+      if not os.path.isdir(regdir):
+         raise ListenerCommandError('Regression directory not found: ' + regdir)
+
+      # Detect single-file mode: last token ends with ".log".
+      if args and args[-1].endswith('.log'):
+         fname = ' '.join(args)
+         fpath = os.path.join(regdir, fname)
+         if not os.path.isfile(fpath):
+            raise ListenerCommandError('File not found: ' + fname)
+         self._runTestFiles([fpath], regdir, 'regression')
+         return
+
+      # Range mode: 0 args = all, 1 arg = [start, inf), 2 args = [start, end).
+      if len(args) > 2:
+         raise ListenerCommandError(
+            'Usage: ]regression [<file.log> | <start> [<end>]]')
+
+      all_files = retrieveFileList(regdir)
+      if not all_files:
+         raise ListenerCommandError('No .log files in ' + regdir)
+
+      if not args:
+         self._runTestFiles(all_files, regdir, 'regression')
+         return
+
+      start_lc = args[0].lower()
+      end_lc   = args[1].lower() if len(args) == 2 else None
+
+      filtered = [
+         f for f in all_files
+         if os.path.basename(f).lower() >= start_lc
+         and (end_lc is None or os.path.basename(f).lower() < end_lc)
+      ]
+
+      if not filtered:
+         if end_lc is not None:
+            raise ListenerCommandError(
+               'No .log files in range [' + args[0] + ', ' + args[1] + ')')
+         else:
+            raise ListenerCommandError(
+               'No .log files at or after "' + args[0] + '"')
+
+      self._runTestFiles(filtered, regdir, 'regression')
 
    def _cmd_cd(self, args):
       """Usage: ]cd <directory>

@@ -312,6 +312,17 @@ def analyze(sexpr, static_env=None):
          if name in _SYNTACTIC_KEYWORDS and static_env.get(name) is not None:
             raise SchemeSyntaxError(
                'keyword used as expression: ' + name, src_of(sexpr))
+         # A user-defined macro keyword (define-syntax / let-syntax) used as an
+         # expression is likewise an error (R7RS 4.3.1).  A FREE reference is
+         # absent from static_env; a locally rebound name is present-as-None
+         # (recorded by _shadow), so `name not in static_env` keeps lexical
+         # shadowing working.  Quoted data never reaches here (quote does not
+         # analyze its datum), so 'kw-only is unaffected.
+         if name not in static_env:
+            from pyscheme.Expander import _lookup_macro
+            if _lookup_macro(sexpr) is not None:
+               raise SchemeSyntaxError(
+                  'keyword used as expression: ' + name, src_of(sexpr))
       return sexpr
 
    head = sexpr.car
@@ -791,11 +802,10 @@ def _analyze_unquote_outside(sexpr, static_env):
 
 def _analyze_case_lambda(sexpr, static_env):
    # (case-lambda <clause>...)  where each clause is (formals body...).
+   # Zero clauses is permitted by R7RS §4.2.9; the resulting procedure raises
+   # a SchemeArityError on any call (no matching clause).
    # Each clause is validated by the shared _analyze_lambda_shape, which
    # tags error messages with the form_name 'case-lambda'.
-   if _proper_list_length(sexpr) < 2:
-      raise SchemeAnalysisError(
-         "case-lambda requires at least one clause", src_of(sexpr))
    cur = sexpr.cdr
    while is_cons(cur):
       clause = cur.car

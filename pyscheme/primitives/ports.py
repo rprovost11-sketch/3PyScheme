@@ -100,8 +100,19 @@ def _get_current_output(ctx):
    p = as_parameter_value(_current_output_param[0])
    if ctx is not None and ctx.outStrm is not None:
       if p is _current_output_default[0]:
-         cap = Port([], is_input=False, is_text=True, file_h=ctx.outStrm, name='<capture>')
-         return make_port(cap)
+         # Capture path (test harness / REPL redirect): return ONE stable port
+         # object per ctx so (current-output-port) is eq?-consistent across
+         # calls, refreshing its underlying stream (the harness hands a fresh
+         # outStrm per evaluated form).  Allocating a new port each call would
+         # break (eq? (current-output-port) saved) -- see R7RS 6.13.1.
+         cap_val = getattr(ctx, '_capture_out_port', None)
+         if cap_val is None:
+            cap_val = make_port(Port([], is_input=False, is_text=True,
+                                     file_h=ctx.outStrm, name='<capture>'))
+            ctx._capture_out_port = cap_val
+         else:
+            as_port(cap_val).file_h = ctx.outStrm
+         return cap_val
    return p
 
 
@@ -919,6 +930,27 @@ def _prim_with_output_to_file(ctx, env, args, app_node):
    return result
 
 
+def _prim_with_input_from_string(ctx, env, args, app_node):
+   # Common (non-R7RS) extension: like with-input-from-file but reads from a
+   # string port.  Temporarily make (open-input-string str) the current input
+   # port, call the thunk, then restore.
+   from pyscheme.primitives.meta import _apply_scheme_proc
+   from pyscheme.AST import as_parameter_value, set_parameter_value
+   if not is_string(args[0]):
+      raise SchemeTypeError(
+         'with-input-from-string: first argument must be a string', src_of(app_node))
+   port_val = _prim_open_input_string(ctx, env, [args[0]], app_node)
+   _get_current_input(ctx)
+   old_val = as_parameter_value(_current_input_param[0])
+   set_parameter_value(_current_input_param[0], port_val)
+   try:
+      result = _apply_scheme_proc(args[1], [], ctx, None, app_node)
+   finally:
+      set_parameter_value(_current_input_param[0], old_val)
+      _prim_close_port(ctx, env, [port_val], app_node)
+   return result
+
+
 def register():
    # Predicates
    register_primitive('port?', (1, 1), _prim_port_p,
@@ -1114,6 +1146,11 @@ def register():
    register_primitive('with-output-to-file', (2, 2), _prim_with_output_to_file,
       doc=('(with-output-to-file path thunk) opens path for writing, temporarily '
            'makes it the current output port, calls (thunk), restores.  R7RS 6.13.'),
+      category=CATEGORY)
+   register_primitive('with-input-from-string', (2, 2), _prim_with_input_from_string,
+      doc=('(with-input-from-string str thunk) temporarily makes a string input '
+           'port for str the current input port, calls (thunk), restores.  '
+           'Common extension (not R7RS).'),
       category=CATEGORY)
    register_primitive('file-exists?', (1, 1), _prim_file_exists_p,
       doc='(file-exists? path) returns #t if path names an existing file.  R7RS 6.14.',
