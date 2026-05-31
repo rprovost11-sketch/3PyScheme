@@ -716,8 +716,8 @@ def _render_display(val):
    """display: strings without quotes, characters as bare glyph,
    lists rendered with display semantics for elements."""
    from pyscheme.AST import (
-      is_string, is_character, is_void, is_cons, is_nil,
-      as_string, as_character,
+      is_string, is_character, is_void, is_cons, is_nil, is_vector,
+      as_string, as_character, as_vector_items,
    )
    from pyscheme.PrettyPrinter import pretty_print, _has_cycle
    if is_string(val):
@@ -737,6 +737,16 @@ def _render_display(val):
       if is_nil(cur):
          return '(' + ' '.join(items) + ')'
       return '(' + ' '.join(items) + ' . ' + _render_display(cur) + ')'
+   if is_vector(val):
+      if _has_cycle(val):
+         return pretty_print(val)
+      items = as_vector_items(val)
+      parts = []
+      i = 0
+      while i < len(items):
+         parts.append(_render_display(items[i]))
+         i = i + 1
+      return '#(' + ' '.join(parts) + ')'
    return pretty_print(val)
 
 

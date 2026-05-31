@@ -438,6 +438,18 @@ def _expand_body(body_cons, src):
             i = i + 1
             continue
          break
+      # R7RS §5.3.2: a body is <definition>* <expression>+ -- once the leading
+      # run of internal definitions ends (at index i), no further definition
+      # may appear.  A define / define-values after an expression is an error.
+      _k = i
+      while _k < len(forms):
+         fk = forms[_k]
+         if _is_head(fk, 'define') or _is_head(fk, 'define-values'):
+            from pyscheme.Parser import SchemeSyntaxError
+            raise SchemeSyntaxError(
+               'definition not allowed after an expression in a body',
+               src_of(fk))
+         _k = _k + 1
       if not bindings:
          result = NIL_VALUE
          j = len(forms) - 1
@@ -2116,6 +2128,10 @@ def _dv_build_setter(fixed, rest, expanded_expr, src):
    if rest is not None:
       body_items.append(list_from_items(
          [set_sym, make_symbol(rest, src), tmp_rest], src))
+   if not body_items:
+      # (define-values () <expr>): no set!s, but the consumer lambda still
+      # needs a body expression.  Yield the unspecified value.
+      body_items.append(VOID_VALUE)
    if tmp_rest is None:
       consumer_formals = list_from_items(tmp_fixed, src)
    elif not tmp_fixed:

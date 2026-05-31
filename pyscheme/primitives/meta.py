@@ -282,6 +282,37 @@ def _apply_scheme_proc(proc, arg_values, ctx, env, app_node):
       begin_sym  = make_symbol('begin', None)
       begin_form = alloc_cons(begin_sym, body, None)
       return cek_eval(begin_form, r.new_env, ctx)
+   # Record accessors / mutators are first-class procedures too (R7RS 5.5), so
+   # map / for-each / apply / call-with-values must apply them, matching the
+   # eval loop's application dispatch.
+   from pyscheme.AST import (
+      is_record_accessor, is_record_mutator, as_record_type,
+      as_record_type_name, as_record_fields,
+      as_record_accessor_type, as_record_accessor_index, as_record_accessor_name,
+      as_record_mutator_type, as_record_mutator_index, as_record_mutator_name,
+   )
+   from pyscheme.Environment import SchemeArityError, arity_mismatch_msg
+   if is_record_accessor(proc):
+      if len(arg_values) != 1:
+         raise SchemeArityError(
+            arity_mismatch_msg(as_record_accessor_name(proc), 1, 1, len(arg_values)), app_node)
+      rt  = as_record_accessor_type(proc)
+      rec = arg_values[0]
+      if not is_record(rec) or as_record_type(rec) is not rt:
+         raise SchemeTypeError(
+            as_record_accessor_name(proc) + ': argument is not a ' + as_record_type_name(rt), app_node)
+      return as_record_fields(rec)[as_record_accessor_index(proc)]
+   if is_record_mutator(proc):
+      if len(arg_values) != 2:
+         raise SchemeArityError(
+            arity_mismatch_msg(as_record_mutator_name(proc), 2, 2, len(arg_values)), app_node)
+      rt  = as_record_mutator_type(proc)
+      rec = arg_values[0]
+      if not is_record(rec) or as_record_type(rec) is not rt:
+         raise SchemeTypeError(
+            as_record_mutator_name(proc) + ': first argument is not a ' + as_record_type_name(rt), app_node)
+      as_record_fields(rec)[as_record_mutator_index(proc)] = arg_values[1]
+      return VOID_VALUE
    raise SchemeTypeError('expected a procedure', app_node)
 
 

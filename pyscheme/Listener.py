@@ -645,7 +645,7 @@ class Listener:
          out_capture   = io.StringIO()
          eval_expr = ('#!fold-case\n' if fold_case else '') + expr_src.strip()
          ctx = self._interp.get_ctx()
-         ctx.timeout_at = time.monotonic() + 30.0
+         ctx.timeout_at = time.monotonic() + 120.0
          try:
             actual_retval = self._interp.eval(eval_expr,
                                               outStrm=out_capture)

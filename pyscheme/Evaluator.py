@@ -1626,7 +1626,8 @@ def _cek_loop(expr, env, ctx):
                         flat_args = _apply_result[1]
                         if not (is_primitive(proc) or is_closure(proc)
                                 or is_case_closure(proc) or is_continuation(proc)
-                                or is_parameter(proc)):
+                                or is_parameter(proc) or is_record_accessor(proc)
+                                or is_record_mutator(proc)):
                            raise SchemeTypeError(
                               'apply: first argument must be a procedure', app_node)
                         fn_value = proc
