@@ -90,7 +90,8 @@ from pyscheme.AST import (
    as_closure_params, as_closure_body, as_closure_env, as_closure_rest_name,
    as_case_closure_clauses, as_case_closure_env, as_parameter_value,
    as_continuation_k, as_continuation_wind, as_continuation_shadow,
-   as_promise_is_done, as_promise_payload,
+   as_continuation_owner,
+   as_promise_is_done, as_promise_is_iterative, as_promise_payload,
    as_multi_values_list, as_environment, as_continuation_handlers,
    as_record_type, as_record_fields,
    as_record_accessor_type, as_record_accessor_index, as_record_accessor_name,
@@ -455,6 +456,15 @@ def _build_parameterize_winds(params_list, values_list, ctx, saved_env, app_node
    cur = params_list
    while is_cons(cur):
       p = cur.car
+      if not is_parameter(p) and is_primitive(p):
+         # R7RS 6.13.1: current-output-port / current-input-port /
+         # current-error-port ARE parameter objects.  They are exposed as
+         # accessor primitives; map the accessor to its backing parameter so
+         # parameterize can rebind it.
+         from pyscheme.primitives.ports import port_parameter_for_accessor
+         backing = port_parameter_for_accessor(as_primitive_name(p), ctx)
+         if backing is not None:
+            p = backing
       if not is_parameter(p):
          raise SchemeTypeError(
             '%with-parameters: non-parameter in parameterize binding',
@@ -521,6 +531,36 @@ def _build_parameterize_winds(params_list, values_list, ctx, saved_env, app_node
            make_primitive('%parameterize-restore', restorer))
 
 
+class ContinuationEscape(Exception):
+   """Raised when a continuation is invoked from a _cek_loop activation other
+   than the one that captured it -- i.e. the invocation is nested below the
+   owner on the Python call stack, behind native frames (a for-each / map
+   callback, a dynamic-wind thunk, ...).  Replacing K locally would only
+   redirect the nested loop and the escape value would be discarded by the
+   native caller, so we unwind the Python stack with this exception until we
+   reach the owning loop, which installs the captured continuation.
+   Deliberately NOT a Scheme-error subclass so the handler/guard machinery
+   never treats an escape as a raised condition."""
+   def __init__(self, owner_eval_id, cont, args):
+      super().__init__('continuation escape')
+      self.owner_eval_id = owner_eval_id
+      self.cont = cont
+      self.args = args
+
+
+def _eval_id_active(ctx, eval_id):
+   """True when eval_id belongs to a cek_eval still live on the Python stack."""
+   return eval_id in ctx.eval_id_stack
+
+
+def _continuation_must_escape(ctx, cont):
+   """A continuation must escape (unwind to its owner) only when its owning
+   loop is a still-live ancestor other than the current one.  When the owner
+   is the current loop, or has already returned, install it in place."""
+   owner = as_continuation_owner(cont)
+   return owner != ctx.current_eval_id and _eval_id_active(ctx, owner)
+
+
 def _enter_proc(fn_value, args, ctx, saved_env, app_node):
    """Dispatch a procedure application with known args.  Returns a
    next-state descriptor so frame handlers can update the CEK state
@@ -531,6 +571,9 @@ def _enter_proc(fn_value, args, ctx, saved_env, app_node):
                                     push FRAME_SEQ(seq, new_env) if seq is
                                     not None (multi-form body)"""
    if is_continuation(fn_value):
+      # Invoked below a still-live owning loop (behind native frames)?  Unwind.
+      if _continuation_must_escape(ctx, fn_value):
+         raise ContinuationEscape(as_continuation_owner(fn_value), fn_value, args)
       _wind_walk(ctx, as_continuation_wind(fn_value))
       _restore_handler_stack(ctx, as_continuation_handlers(fn_value))
       return ('cont',
@@ -708,6 +751,15 @@ def cek_eval(expr, env, ctx=None):
    # helper function so we can wrap it in a single try/except.
    wind_depth_entry    = len(ctx.wind_stack)
    handler_depth_entry = len(ctx.handler_stack)
+   # Claim a unique id for this activation and publish it for the duration so
+   # _cek_loop (and continuations captured in it) can route escapes.  The
+   # finally restores the parent's id and pops the stack on every exit, normal
+   # or exceptional, as the Python stack unwinds.
+   ctx.eval_id_counter += 1
+   my_eval_id = ctx.eval_id_counter
+   saved_eval_id = ctx.current_eval_id
+   ctx.current_eval_id = my_eval_id
+   ctx.eval_id_stack.append(my_eval_id)
    from pyscheme.Parser import SchemeSyntaxError
    _CATCHABLE = (SchemeRaised, SchemeTypeError, SchemeArityError,
                  SchemeUnboundError, SchemeSyntaxError)
@@ -740,6 +792,9 @@ def cek_eval(expr, env, ctx=None):
          ctx.handler_stack.pop()
       ctx.shadow_stack.clear()
       raise
+   finally:
+      ctx.current_eval_id = saved_eval_id
+      ctx.eval_id_stack.pop()
 
 
 def _library_load_path():
@@ -1105,13 +1160,14 @@ def _cek_loop(expr, env, ctx):
                         break
 
                      if name == 'delay' or name == 'delay-force':
-                        # (delay expr) and (delay-force expr) both produce a lazy
-                        # promise whose thunk evaluates expr in the current env.
-                        # force is iterative, so delay-force's tail-safety falls out.
+                        # Both produce a lazy promise whose thunk evaluates expr
+                        # in the current env.  delay-force tail-chases into a
+                        # promise result; plain delay returns it as-is (R7RS 4.2.5).
                         expr = C.cdr.car
                         body = alloc_cons(expr, NIL_VALUE, None)
                         thunk = make_closure([], body, E, None, '')
-                        V = make_promise_lazy(thunk)
+                        iterative = (name == 'delay-force')
+                        V = make_promise_lazy(thunk, iterative)
                         break
 
                      if name == 'import':
@@ -1496,8 +1552,10 @@ def _cek_loop(expr, env, ctx):
                   # frame = (FRAME_FORCE_RESULT, promise)
                   # The promise's thunk has produced V.  Resolve or become, and
                   # iterate if we ended up with another unforced promise.
+                  # Only delay-force promises tail-chase into a promise result;
+                  # plain delay resolves to it as-is (R7RS 4.2.5).
                   p = frame[1]
-                  if is_promise(V):
+                  if as_promise_is_iterative(p) and is_promise(V):
                      promise_become(p, V)
                      if as_promise_is_done(p):
                         V = as_promise_payload(p)
@@ -1529,6 +1587,8 @@ def _cek_loop(expr, env, ctx):
                   app_node  = frame[3]
                   if len(args) == 0:
                      if is_continuation(V):
+                        if _continuation_must_escape(ctx, V):
+                           raise ContinuationEscape(as_continuation_owner(V), V, [])
                         _wind_walk(ctx, as_continuation_wind(V))
                         _restore_handler_stack(ctx, as_continuation_handlers(V))
                         K = list(as_continuation_k(V))
@@ -1594,6 +1654,9 @@ def _cek_loop(expr, env, ctx):
                   if len(remaining) == 0:
                      # Invoke continuation: replace K with its snapshot.
                      if is_continuation(fn_value):
+                        if _continuation_must_escape(ctx, fn_value):
+                           raise ContinuationEscape(as_continuation_owner(fn_value),
+                                                    fn_value, new_collected)
                         _wind_walk(ctx, as_continuation_wind(fn_value))
                         _restore_handler_stack(ctx, as_continuation_handlers(fn_value))
                         K = list(as_continuation_k(fn_value))
@@ -1609,7 +1672,7 @@ def _cek_loop(expr, env, ctx):
                               src_of(app_node) if app_node is not None else None)
                         cont = make_continuation(
                            list(K), list(ctx.wind_stack), list(ctx.handler_stack),
-                           list(ctx.shadow_stack))
+                           list(ctx.shadow_stack), ctx.current_eval_id)
                         user_proc = new_collected[0]
                         # Apply the user proc with the continuation as its arg,
                         # reusing the normal dispatch paths below.
@@ -2068,6 +2131,8 @@ def _cek_loop(expr, env, ctx):
                   test_value = frame[1]
                   saved_env  = frame[2]
                   if is_continuation(V):
+                     if _continuation_must_escape(ctx, V):
+                        raise ContinuationEscape(as_continuation_owner(V), V, [test_value])
                      _wind_walk(ctx, as_continuation_wind(V))
                      _restore_handler_stack(ctx, as_continuation_handlers(V))
                      K = list(as_continuation_k(V))
@@ -2091,6 +2156,8 @@ def _cek_loop(expr, env, ctx):
                   key_value = frame[1]
                   saved_env = frame[2]
                   if is_continuation(V):
+                     if _continuation_must_escape(ctx, V):
+                        raise ContinuationEscape(as_continuation_owner(V), V, [key_value])
                      _wind_walk(ctx, as_continuation_wind(V))
                      _restore_handler_stack(ctx, as_continuation_handlers(V))
                      K = list(as_continuation_k(V))
@@ -2257,7 +2324,21 @@ def _cek_loop(expr, env, ctx):
             # fall through to outer `while True` - restart EVAL
 
 
-      # -------- Self-test --------
+      except ContinuationEscape as esc:
+         # An escape continuation captured by some loop was invoked below us,
+         # behind native frames, and unwound the Python stack to here.  Only
+         # the owning loop (current_eval_id, restored by every inner cek_eval's
+         # finally as it unwound) may install it; otherwise keep unwinding.
+         if esc.owner_eval_id != ctx.current_eval_id:
+            raise
+         cont = esc.cont
+         _wind_walk(ctx, as_continuation_wind(cont))
+         _restore_handler_stack(ctx, as_continuation_handlers(cont))
+         K = list(as_continuation_k(cont))
+         _restore_shadow_stack(ctx, as_continuation_shadow(cont))
+         V = _continuation_value(cont, esc.args)
+         skip_eval = True   # V is ready; resume in the APPLY phase
+         continue
 
       except _CATCHABLE_LOCAL as e:
          # Walk K to find a handler frame; on the way, run any

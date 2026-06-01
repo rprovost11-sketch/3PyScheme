@@ -89,8 +89,11 @@ class Promise:
    """R7RS promise box.  POD; mutable.  When is_done is False, payload is
    a zero-arg CLOSURE that produces the value on demand.  When True,
    payload is the memoized value.  force mutates in place."""
-   def __init__(self, is_done, payload):
+   def __init__(self, is_done, payload, iterative=False):
       self.is_done = is_done
+      # delay-force: force tail-chases into a promise result; plain delay:
+      # force resolves to the value as-is (R7RS 4.2.5).
+      self.iterative = iterative
       self.payload = payload
 
 
@@ -171,11 +174,17 @@ class Continuation:
    replaces K with a copy of k_snapshot, restores _shadow_stack from
    shadow_snapshot, and resumes the CEK machine."""
    def __init__(self, k_snapshot, wind_snapshot, handler_snapshot,
-                shadow_snapshot):
+                shadow_snapshot, owner_eval_id=0):
       self.k_snapshot = k_snapshot
       self.wind_snapshot = wind_snapshot
       self.handler_snapshot = handler_snapshot
       self.shadow_snapshot = shadow_snapshot
+      # Identity of the _cek_loop activation that captured this continuation.
+      # Used so invoking it can tell whether the owning loop is still a live
+      # ancestor (escape -- raise ContinuationEscape to unwind native frames
+      # such as a for-each/map callback) or has already returned (re-entry --
+      # install in place).  See Evaluator.ContinuationEscape.
+      self.owner_eval_id = owner_eval_id
 
 
 class Port:
@@ -337,8 +346,8 @@ def make_case_closure(clauses, env, docstring):
    argument count."""
    return (CASE_CLOSURE, clauses, env, docstring)
 
-def make_promise_lazy(thunk):
-   return Promise(False, thunk)
+def make_promise_lazy(thunk, iterative=False):
+   return Promise(False, thunk, iterative)
 
 def make_promise_done(value):
    return Promise(True, value)
@@ -359,9 +368,9 @@ def make_error_object(message, irritants):
    return ErrorObject(message, irritants)
 
 def make_continuation(k_snapshot, wind_snapshot, handler_snapshot,
-                      shadow_snapshot):
+                      shadow_snapshot, owner_eval_id=0):
    return Continuation(k_snapshot, wind_snapshot, handler_snapshot,
-                       shadow_snapshot)
+                       shadow_snapshot, owner_eval_id)
 
 def make_syntax_transformer(name, literals, ellipsis, rules,
                             free_id_map=None, intro_names=None):
@@ -633,6 +642,9 @@ def as_case_closure_docstring(val):
 def as_promise_is_done(val):
    return val.is_done
 
+def as_promise_is_iterative(val):
+   return val.iterative
+
 def as_promise_payload(val):
    return val.payload
 
@@ -642,6 +654,7 @@ def promise_resolve(p, value):
 
 def promise_become(p, other):
    p.is_done = other.is_done
+   p.iterative = other.iterative  # inherit chase/no-chase of the link we became
    p.payload = other.payload
 
 def as_multi_values_list(val):
@@ -700,6 +713,9 @@ def as_continuation_handlers(c):
 
 def as_continuation_shadow(c):
    return c.shadow_snapshot
+
+def as_continuation_owner(c):
+   return c.owner_eval_id
 
 def as_syntax_transformer_name(t):
    return t.name

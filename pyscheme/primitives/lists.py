@@ -270,8 +270,12 @@ def _prim_map(ctx, env, args, app_node):
          next_lists.append(lst.cdr)
       collected.append(_apply_scheme_proc(proc, arg_row, ctx, None, app_node))
       lists = next_lists
+   # R7RS 6.10: if the lists are of unequal length, map terminates when the
+   # shortest runs out, so leftover cons cells in longer lists are fine.  An
+   # improper list (a non-nil, non-pair tail) reached during traversal is an
+   # error.
    for lst in lists:
-      if not is_nil(lst):
+      if not is_cons(lst) and not is_nil(lst):
          raise SchemeTypeError(
             'map: list arguments must be proper lists',
             src_of(app_node))
@@ -330,8 +334,10 @@ def _prim_for_each(ctx, env, args, app_node):
          next_lists.append(lst.cdr)
       _apply_scheme_proc(proc, arg_row, ctx, None, app_node)
       lists = next_lists
+   # R7RS 6.10: unequal-length lists terminate at the shortest; only a
+   # genuinely improper (non-nil, non-pair) tail is an error.
    for lst in lists:
-      if not is_nil(lst):
+      if not is_cons(lst) and not is_nil(lst):
          raise SchemeTypeError(
             'for-each: list arguments must be proper lists',
             src_of(app_node))

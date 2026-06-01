@@ -370,12 +370,28 @@ def _prim_close_port(ctx, env, args, app_node):
 
 
 def _prim_close_input_port(ctx, env, args, app_node):
-   _check_input_port(args[0], 'close-input-port', app_node)
+   # R7RS 6.13.1: close-input-port has no effect on an already-closed port,
+   # so check the port TYPE (must be an input port) without requiring it to
+   # be open, then delegate to the idempotent close-port.
+   v = args[0]
+   if not is_port(v):
+      raise SchemeTypeError(
+         'close-input-port: argument must be a port', src_of(app_node))
+   if not as_port(v).is_input:
+      raise SchemeTypeError(
+         'close-input-port: argument must be an input port', src_of(app_node))
    return _prim_close_port(ctx, env, args, app_node)
 
 
 def _prim_close_output_port(ctx, env, args, app_node):
-   _check_output_port(args[0], 'close-output-port', app_node)
+   # R7RS 6.13.1: close-output-port has no effect on an already-closed port.
+   v = args[0]
+   if not is_port(v):
+      raise SchemeTypeError(
+         'close-output-port: argument must be a port', src_of(app_node))
+   if as_port(v).is_input:
+      raise SchemeTypeError(
+         'close-output-port: argument must be an output port', src_of(app_node))
    return _prim_close_port(ctx, env, args, app_node)
 
 
@@ -484,13 +500,21 @@ def _prim_read_line(ctx, env, args, app_node):
    p = _check_textual_input(port_val, 'read-line', app_node)
    if p.pos >= len(p.buf):
       return make_eof()
-   end = p.buf.find('\n', p.pos)
-   if end < 0:
+   # R7RS 6.13.2: an end of line is a linefeed, a carriage return, or a
+   # carriage return followed by a linefeed (CRLF counts as one ending).
+   n = len(p.buf)
+   i = p.pos
+   while i < n and p.buf[i] != '\n' and p.buf[i] != '\r':
+      i = i + 1
+   if i >= n:
       line = p.buf[p.pos:]
-      p.pos = len(p.buf)
+      p.pos = n
    else:
-      line = p.buf[p.pos:end]
-      p.pos = end + 1
+      line = p.buf[p.pos:i]
+      if p.buf[i] == '\r' and i + 1 < n and p.buf[i + 1] == '\n':
+         p.pos = i + 2   # CRLF
+      else:
+         p.pos = i + 1   # lone LF or lone CR
    return make_string(line)
 
 
@@ -793,6 +817,26 @@ def _prim_current_error_port(ctx, env, args, app_node):
       _current_error_param[0] = make_parameter(_stderr_port(), None)
    from pyscheme.AST import as_parameter_value
    return as_parameter_value(_current_error_param[0])
+
+
+def port_parameter_for_accessor(name, ctx):
+   """Return the internal parameter object backing a current-*-port accessor
+   primitive, or None if `name` is not one of them.  R7RS 6.13.1 specifies
+   current-output-port / current-input-port / current-error-port as parameter
+   objects; they are exposed as 0-arg accessor primitives (so the harness can
+   redirect output), but parameterize must be able to rebind them.  This maps
+   the accessor name to its backing parameter, initializing it if needed."""
+   if name == 'current-output-port':
+      _get_current_output(ctx)        # ensure initialized
+      return _current_output_param[0]
+   if name == 'current-input-port':
+      _get_current_input(ctx)
+      return _current_input_param[0]
+   if name == 'current-error-port':
+      if _current_error_param[0] is None:
+         _current_error_param[0] = make_parameter(_stderr_port(), None)
+      return _current_error_param[0]
+   return None
 
 
 def _prim_call_with_port(ctx, env, args, app_node):

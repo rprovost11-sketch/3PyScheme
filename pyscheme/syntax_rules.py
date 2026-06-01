@@ -350,10 +350,10 @@ def _match_list_pattern(pat_list, form_list, literals, ellipsis_sym, out):
          suffix_pat  = pat_rest.cdr
          suffix_need = _list_length_approx(suffix_pat)
          form_vec = []
-         tmp = form_list
-         while is_cons(tmp):
-            form_vec.append(tmp.car)
-            tmp = tmp.cdr
+         form_tail = form_list
+         while is_cons(form_tail):
+            form_vec.append(form_tail.car)
+            form_tail = form_tail.cdr
          total = len(form_vec)
          if total < suffix_need:
             return False
@@ -374,7 +374,9 @@ def _match_list_pattern(pat_list, form_list, literals, ellipsis_sym, out):
             for k in sub.ellipsis:
                out.ellipsis[k].append(sub.ellipsis[k])
             i = i + 1
-         suffix_form = NIL_VALUE
+         # Preserve any improper (dotted) tail so a trailing pattern var
+         # like `rest` in (a ... . rest) binds to it (R7RS 4.3.2).
+         suffix_form = form_tail
          j = total - 1
          while j >= n_ellipsis:
             suffix_form = alloc_cons(form_vec[j], suffix_form)
@@ -526,6 +528,48 @@ def _raise_syntax_error(args_tail, match, ellipsis_sym, use_src, free_id_map):
    raise SchemeSyntaxError(msg, use_src)
 
 
+def _expand_ellipsis_run(elem, match, num_ell, ellipsis_sym, use_src,
+                         free_id_map, output):
+   """Expand a subtemplate `elem` followed by num_ell (>= 1) ellipses, appending
+   to `output`.  num_ell == 1 is the ordinary case; num_ell >= 2 flattens that
+   many nested levels, e.g. (x ... ...) collapses ((1 2) (3) (4 5 6)) to
+   1 2 3 4 5 6 (R7RS 4.3.2)."""
+   ell_syms = []
+   _collect_ell_refs(elem, match, ell_syms)
+   if not ell_syms:
+      return
+   count = len(match.ellipsis[ell_syms[0]])
+   k = 0
+   while k < count:
+      sub = _SyntaxMatch()
+      for key in match.scalars:
+         sub.scalars[key] = match.scalars[key]
+      for key in match.ellipsis:
+         sub.ellipsis[key]  = match.ellipsis[key]
+         sub.ell_depth[key] = match.ell_depth.get(key, 0)
+      j = 0
+      while j < len(ell_syms):
+         sv     = ell_syms[j]
+         d      = match.ell_depth[sv]
+         peeled = match.ellipsis[sv][k]
+         if d == 1:
+            sub.scalars[sv] = peeled
+            if sv in sub.ellipsis:
+               del sub.ellipsis[sv]
+            if sv in sub.ell_depth:
+               del sub.ell_depth[sv]
+         else:
+            sub.ellipsis[sv]  = peeled
+            sub.ell_depth[sv] = d - 1
+         j = j + 1
+      if num_ell == 1:
+         output.append(_instantiate(elem, sub, ellipsis_sym, use_src, free_id_map))
+      else:
+         _expand_ellipsis_run(elem, sub, num_ell - 1, ellipsis_sym, use_src,
+                              free_id_map, output)
+      k = k + 1
+
+
 def _instantiate_vector(tmpl_items, match, ellipsis_sym, use_src, free_id_map):
    output = []
    i = 0
@@ -535,37 +579,15 @@ def _instantiate_vector(tmpl_items, match, ellipsis_sym, use_src, free_id_map):
       has_ell = (i + 1 < n
                  and _is_ellipsis(tmpl_items[i + 1], ellipsis_sym))
       if has_ell:
-         ell_syms = []
-         _collect_ell_refs(elem, match, ell_syms)
-         if ell_syms:
-            count = len(match.ellipsis[ell_syms[0]])
-            k = 0
-            while k < count:
-               sub = _SyntaxMatch()
-               for key in match.scalars:
-                  sub.scalars[key] = match.scalars[key]
-               for key in match.ellipsis:
-                  sub.ellipsis[key]  = match.ellipsis[key]
-                  sub.ell_depth[key] = match.ell_depth.get(key, 0)
-               j = 0
-               while j < len(ell_syms):
-                  sv     = ell_syms[j]
-                  d      = match.ell_depth[sv]
-                  peeled = match.ellipsis[sv][k]
-                  if d == 1:
-                     sub.scalars[sv] = peeled
-                     if sv in sub.ellipsis:
-                        del sub.ellipsis[sv]
-                     if sv in sub.ell_depth:
-                        del sub.ell_depth[sv]
-                  else:
-                     sub.ellipsis[sv]  = peeled
-                     sub.ell_depth[sv] = d - 1
-                  j = j + 1
-               output.append(_instantiate(elem, sub, ellipsis_sym,
-                                          use_src, free_id_map))
-               k = k + 1
-         i = i + 2
+         # Count the run of consecutive ellipses (x ... ... flattens levels).
+         num_ell = 0
+         j2 = i + 1
+         while j2 < n and _is_ellipsis(tmpl_items[j2], ellipsis_sym):
+            num_ell = num_ell + 1
+            j2 = j2 + 1
+         _expand_ellipsis_run(elem, match, num_ell, ellipsis_sym, use_src,
+                              free_id_map, output)
+         i = j2
          continue
       output.append(_instantiate(elem, match, ellipsis_sym, use_src, free_id_map))
       i = i + 1
@@ -580,37 +602,15 @@ def _instantiate_list(tmpl_list, match, ellipsis_sym, use_src, free_id_map):
       rest = cur.cdr
       has_ell = is_cons(rest) and _is_ellipsis(rest.car, ellipsis_sym)
       if has_ell:
-         ell_syms = []
-         _collect_ell_refs(elem, match, ell_syms)
-         if ell_syms:
-            n = len(match.ellipsis[ell_syms[0]])
-            i = 0
-            while i < n:
-               sub = _SyntaxMatch()
-               for k in match.scalars:
-                  sub.scalars[k] = match.scalars[k]
-               for k in match.ellipsis:
-                  sub.ellipsis[k] = match.ellipsis[k]
-                  sub.ell_depth[k] = match.ell_depth.get(k, 0)
-               j = 0
-               while j < len(ell_syms):
-                  sv = ell_syms[j]
-                  d = match.ell_depth[sv]
-                  peeled = match.ellipsis[sv][i]
-                  if d == 1:
-                     sub.scalars[sv] = peeled
-                     if sv in sub.ellipsis:
-                        del sub.ellipsis[sv]
-                     if sv in sub.ell_depth:
-                        del sub.ell_depth[sv]
-                  else:
-                     sub.ellipsis[sv] = peeled
-                     sub.ell_depth[sv] = d - 1
-                  j = j + 1
-               output.append(_instantiate(elem, sub, ellipsis_sym,
-                                          use_src, free_id_map))
-               i = i + 1
-         cur = rest.cdr
+         # Count the run of consecutive ellipses (x ... ... flattens levels).
+         num_ell = 0
+         e = rest
+         while is_cons(e) and _is_ellipsis(e.car, ellipsis_sym):
+            num_ell = num_ell + 1
+            e = e.cdr
+         _expand_ellipsis_run(elem, match, num_ell, ellipsis_sym, use_src,
+                              free_id_map, output)
+         cur = e
          continue
       output.append(_instantiate(elem, match, ellipsis_sym, use_src, free_id_map))
       cur = rest

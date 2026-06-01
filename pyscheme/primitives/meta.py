@@ -341,6 +341,12 @@ def _prim_null_environment(ctx, env, args, app_node):
    if not is_integer(args[0]):
       raise SchemeTypeError(
          'null-environment: version must be an integer', src_of(app_node))
+   # R7RS 6.12: version 5 (R5RS) must be supported; if version is neither 5
+   # nor another value supported by the implementation, an error is signaled.
+   if as_integer(args[0]) != 5:
+      raise SchemeTypeError(
+         'null-environment: unsupported version (only 5 is supported)',
+         src_of(app_node))
    e = Environment(parent=None)
    e.freeze()
    return make_environment(e)
@@ -350,14 +356,30 @@ def _prim_scheme_report_environment(ctx, env, args, app_node):
    if not is_integer(args[0]):
       raise SchemeTypeError(
          'scheme-report-environment: version must be an integer', src_of(app_node))
+   # R7RS 6.12: only version 5 (R5RS) is required; signal an error otherwise.
+   if as_integer(args[0]) != 5:
+      raise SchemeTypeError(
+         'scheme-report-environment: unsupported version (only 5 is supported)',
+         src_of(app_node))
    return make_environment(env.getGlobalEnv())
 
 
 def _prim_load(ctx, env, args, app_node):
    import os as _os
-   from pyscheme.AST import VOID_VALUE
+   from pyscheme.AST import VOID_VALUE, is_environment, as_environment
    if not is_string(args[0]):
       raise SchemeTypeError('load: filename must be a string', src_of(app_node))
+   # R7RS 6.14: (load filename [environment-specifier]).  If the optional
+   # environment is supplied, evaluate the file's forms in it; otherwise use
+   # the current (interaction) environment.
+   if len(args) >= 2:
+      if not is_environment(args[1]):
+         raise SchemeTypeError(
+            'load: second argument must be an environment specifier',
+            src_of(app_node))
+      eval_env = as_environment(args[1])
+   else:
+      eval_env = env
    path = as_string(args[0])
    abs_path = _os.path.abspath(path)
    try:
@@ -378,7 +400,7 @@ def _prim_load(ctx, env, args, app_node):
       expanded = expand(form)
       analyze(expanded, static_env)
       extend_static_env_with_define(static_env, expanded)
-      cek_eval(expanded, env, ctx)
+      cek_eval(expanded, eval_env, ctx)
       i = i + 1
    return VOID_VALUE
 
@@ -594,7 +616,7 @@ def register():
            'interaction environment.  R7RS §6.12 / (scheme r5rs).'),
       category=CATEGORY)
 
-   register_primitive('load', (1, 1), _prim_load,
+   register_primitive('load', (1, 2), _prim_load,
       doc=('(load filename) reads and evaluates all forms in filename in '
            'the current environment.  R7RS §6.14 / (scheme load).'),
       category=CATEGORY)

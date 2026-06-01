@@ -34,7 +34,7 @@ from pyscheme.Listener      import InterpreterBase
 from pyscheme.Debugger      import Debugger
 from pyscheme.Tracer        import Tracer
 from pyscheme.PrettyPrinter import pretty_print
-from pyscheme.AST           import is_void
+from pyscheme.AST           import is_void, is_multi_values, as_multi_values_list
 from pyscheme.library     import register_standard_libraries
 from pyscheme.Expander    import set_runtime_env
 
@@ -130,6 +130,13 @@ class Interpreter(InterpreterBase):
       raw = self.rawEval(source, outStrm=outStrm)
       if raw is None or is_void(raw):
          return ''
+      # A top-level expression that yields multiple values is displayed as each
+      # value (write form) separated by a space -- the REPL shows the values
+      # returned, not a single datum, so the internal #<values ...> object
+      # notation is not used here.  Matches R7RS REPL conventions and compliance
+      # 6.12 (e.g. (eval '(floor/ 17 5) ...) => "3 2").  Zero values => "".
+      if is_multi_values(raw):
+         return ' '.join(pretty_print(v) for v in as_multi_values_list(raw))
       return pretty_print(raw)
 
    def evalFile(self, filename, outStrm=None):

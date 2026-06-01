@@ -660,13 +660,22 @@ class Listener:
          expected_output = expected_output.rstrip()
 
          # '%%% *' or '%%% %any-error% <hint>' means any error is acceptable.
-         if expected_error == '*' or expected_error.startswith('%any-error%'):
-            error_ok = bool(actual_error)
+         # '%%% %optional-error% <hint>' models R7RS "it is an error" (undefined
+         # behavior): the test passes whether an error is signaled OR the form
+         # returns normally -- only termination is asserted.  The retval/output
+         # checks are bypassed too, since the outcome is unspecified.
+         optional_error = expected_error.startswith('%optional-error%')
+         if optional_error:
+            error_ok  = True
+            retval_ok = True
+            output_ok = True
          else:
-            error_ok = actual_error == expected_error
-
-         retval_ok = Listener._match_retval(actual_retval, expected_retval)
-         output_ok = actual_output == expected_output
+            if expected_error == '*' or expected_error.startswith('%any-error%'):
+               error_ok = bool(actual_error)
+            else:
+               error_ok = actual_error == expected_error
+            retval_ok = Listener._match_retval(actual_retval, expected_retval)
+            output_ok = actual_output == expected_output
 
          stripped = expr_src.strip()
          if stripped:
@@ -1077,8 +1086,13 @@ class Listener:
       A timestamped run report is written to <compliancedir>/runs/.
 
       Compliance log extras vs plain test logs:
-        ==> X or ==> Y   — either alternative is accepted
-        %%% error         — any non-empty error string is accepted
+        ==> X or ==> Y       — either alternative is accepted
+        %%% <exact>          — actual error must match exactly
+        %%% * | %%% %any-error%       — any error, but one MUST be raised
+                               (R7RS "an error is signaled")
+        %%% %optional-error%  — R7RS "it is an error" (undefined): passes
+                               whether an error is raised OR the form returns;
+                               asserts only that evaluation terminates
       """
       if self._logFile:
          raise ListenerCommandError(

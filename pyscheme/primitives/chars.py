@@ -165,19 +165,19 @@ def register():
    register_primitive('char?', (1, 1), _prim_char_p,
       doc='Return #t if obj is a character.  R7RS 6.6.',
       category=CATEGORY)
-   register_primitive('char=?', (2, None), _prim_char_eq,
+   register_primitive('char=?', (1, None), _prim_char_eq,
       doc='Return #t if all character arguments compare equal.  R7RS 6.6.',
       category=CATEGORY)
-   register_primitive('char<?', (2, None), _prim_char_lt,
+   register_primitive('char<?', (1, None), _prim_char_lt,
       doc='Return #t if characters are in strictly ascending order.  R7RS 6.6.',
       category=CATEGORY)
-   register_primitive('char<=?', (2, None), _prim_char_le,
+   register_primitive('char<=?', (1, None), _prim_char_le,
       doc='Return #t if characters are in non-descending order.  R7RS 6.6.',
       category=CATEGORY)
-   register_primitive('char>?', (2, None), _prim_char_gt,
+   register_primitive('char>?', (1, None), _prim_char_gt,
       doc='Return #t if characters are in strictly descending order.  R7RS 6.6.',
       category=CATEGORY)
-   register_primitive('char>=?', (2, None), _prim_char_ge,
+   register_primitive('char>=?', (1, None), _prim_char_ge,
       doc='Return #t if characters are in non-ascending order.  R7RS 6.6.',
       category=CATEGORY)
    register_primitive('char-alphabetic?', (1, 1), _prim_char_alphabetic,
@@ -204,19 +204,19 @@ def register():
    register_primitive('char-foldcase', (1, 1), _prim_char_foldcase,
       doc='Return char\'s case-folded equivalent (Unicode full case folding).  R7RS 6.6.',
       category=CATEGORY)
-   register_primitive('char-ci=?', (2, None), _prim_char_ci_eq,
+   register_primitive('char-ci=?', (1, None), _prim_char_ci_eq,
       doc='Case-insensitive char=?.  R7RS 6.6.',
       category=CATEGORY)
-   register_primitive('char-ci<?', (2, None), _prim_char_ci_lt,
+   register_primitive('char-ci<?', (1, None), _prim_char_ci_lt,
       doc='Case-insensitive char<?.  R7RS 6.6.',
       category=CATEGORY)
-   register_primitive('char-ci<=?', (2, None), _prim_char_ci_le,
+   register_primitive('char-ci<=?', (1, None), _prim_char_ci_le,
       doc='Case-insensitive char<=?.  R7RS 6.6.',
       category=CATEGORY)
-   register_primitive('char-ci>?', (2, None), _prim_char_ci_gt,
+   register_primitive('char-ci>?', (1, None), _prim_char_ci_gt,
       doc='Case-insensitive char>?.  R7RS 6.6.',
       category=CATEGORY)
-   register_primitive('char-ci>=?', (2, None), _prim_char_ci_ge,
+   register_primitive('char-ci>=?', (1, None), _prim_char_ci_ge,
       doc='Case-insensitive char>=?.  R7RS 6.6.',
       category=CATEGORY)
    register_primitive('char->integer', (1, 1), _prim_char_to_integer,
