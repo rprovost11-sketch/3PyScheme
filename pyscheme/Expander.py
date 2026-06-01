@@ -434,7 +434,15 @@ def _expand_body(body_cons, src):
                k = k + 1
             if rest is not None:
                bindings.append((make_symbol(rest, fsrc), VOID_VALUE, fsrc))
-            body_prefix.append(_dv_build_setter(fixed, rest, expand(expr), fsrc))
+            # Run the multi-value setter IN SOURCE ORDER within the letrec*, as a
+            # fresh dummy binding, rather than hoisting it into the body.  The
+            # body ran after every binding initializer, so a following
+            # (define s (+ p q)) evaluated its init while p/q were still unset.
+            # As an in-order binding, letrec* runs the setter before later
+            # initializers, so they observe the assigned values (R7RS 5.3.2).
+            _dv_setter = _dv_build_setter(fixed, rest, expand(expr), fsrc)
+            bindings.append((make_symbol(hygiene_gensym('dv-set'), fsrc),
+                             _dv_setter, fsrc))
             i = i + 1
             continue
          break

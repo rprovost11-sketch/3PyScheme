@@ -1070,6 +1070,7 @@ def _process_define_library(C, ctx):
 
    # Build exports env: copy each (internal, external) entry out of
    # lib_env; missing names are hard errors.
+   from pyscheme.AST import is_syntax_transformer
    exports_env = Environment(parent=None)
    i = 0
    while i < len(export_names):
@@ -1079,7 +1080,19 @@ def _process_define_library(C, ctx):
          raise SchemeSyntaxError(
             'define-library: exported name not defined: ' + internal,
             src_of(C))
-      exports_env.bind(external, lib_env.lookup(internal))
+      val = lib_env.lookup(internal)
+      exports_env.bind(external, val)
+      # A macro's free-identifier aliases (gensyms bound to the library's
+      # def-time values) are part of its hygiene closure.  They were bound in
+      # lib_env (the library's own parentless "global"), so carry them into the
+      # exports env so they travel with the import and the macro's template
+      # references resolve at the use site (R7RS 4.3 referential transparency).
+      if is_syntax_transformer(val):
+         for fid in val.free_id_map:
+            gs = val.free_id_map[fid]
+            gs_sid = intern_symbol(gs)
+            if gs_sid in lib_env._bindings and gs_sid not in exports_env._bindings:
+               exports_env.bind(gs, lib_env.lookup(gs))
       i = i + 1
    exports_env.freeze()
    library_register(key, exports_env)
