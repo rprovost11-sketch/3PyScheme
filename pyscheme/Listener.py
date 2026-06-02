@@ -644,6 +644,7 @@ class Listener:
 
          actual_retval = ''
          actual_error  = ''
+         timed_out     = False
          out_capture   = io.StringIO()
          eval_expr = ('#!fold-case\n' if fold_case else '') + expr_src.strip()
          ctx = self._interp.get_ctx()
@@ -655,6 +656,8 @@ class Listener:
             actual_error = 'Interrupted.'
          except Exception as e:
             actual_error = Listener._format_error(e)
+            if 'Evaluation timed out.' in actual_error:
+               timed_out = True
          finally:
             ctx.timeout_at = 0.0
 
@@ -667,7 +670,15 @@ class Listener:
          # returns normally -- only termination is asserted.  The retval/output
          # checks are bypassed too, since the outcome is unspecified.
          optional_error = expected_error.startswith('%optional-error%')
-         if optional_error:
+         if timed_out:
+            # A timeout is a hang, never a legitimate "an error is signaled":
+            # force a failure regardless of the expected-error marker (otherwise
+            # a hang on a '%%% *' / '%any-error%' / '%optional-error%' test would
+            # be silently scored as a pass).
+            error_ok  = False
+            retval_ok = False
+            output_ok = False
+         elif optional_error:
             error_ok  = True
             retval_ok = True
             output_ok = True
@@ -694,6 +705,8 @@ class Listener:
          else:
             n_fail = n_fail + 1
             print(RED + '  %3d. FAIL  %s' % (i, label) + RESET)
+            if timed_out:
+               print('         *** evaluation timed out (treated as failure) ***')
             if not retval_ok:
                print('         expected return: [' + expected_retval + ']')
                print('         actual return:   [' + actual_retval + ']')
