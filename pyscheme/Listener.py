@@ -136,6 +136,8 @@ class Listener:
    def _format_error(exc):
       """Produce the user-visible text for an exception.  Same text at
       REPL and test harness so expected/actual error strings compare."""
+      if isinstance(exc, MemoryError):
+         return 'out of memory'
       if isinstance(exc, NotImplementedError):
          return 'Not implemented: ' + str(exc)
       if (isinstance(exc, SchemeSyntaxError) or isinstance(exc, SchemeAnalysisError)
@@ -1000,6 +1002,7 @@ class Listener:
       # Absolutify so filenames survive the chdir below.
       filenames = [os.path.abspath(f) for f in filenames]
 
+      start_time  = time.monotonic()
       savedStdout = sys.stdout
       savedCwd    = os.getcwd()
       os.chdir(testDir)
@@ -1032,6 +1035,14 @@ class Listener:
 
       self._interp.reboot(load_rc=False)
 
+      # Total wall-clock time for the whole suite run (all files), formatted
+      # as HH:MM:SS.ssssss.
+      elapsed = time.monotonic() - start_time
+      _h = int(elapsed // 3600)
+      _m = int((elapsed % 3600) // 60)
+      _s = elapsed - _h * 3600 - _m * 60
+      elapsed_str = '%02d:%02d:%09.6f' % (_h, _m, _s)
+
       # Grand-total screen summary.
       if len(filenames) > 1:
          print()
@@ -1043,6 +1054,7 @@ class Listener:
          else:
             print(RED + str(grand_fail) + ' of ' + str(total)
                   + ' tests failed across ' + str(nfiles) + ' files' + RESET)
+         print(BOLD + 'Elapsed: ' + elapsed_str + RESET)
 
          # Write the tail of the report file.
          if runFile is not None:
@@ -1066,11 +1078,19 @@ class Listener:
             report.append('Total test files: ' + str(len(filenames)) + '.')
             report.append('Total test cases: '
                           + str(grand_pass + grand_fail) + '.')
+            report.append('Elapsed time: ' + elapsed_str)
             for reportLine in report:
                print(reportLine, file=runFile)
             runFile.close()
             print()
             print('Test output: ' + runFilename)
+      else:
+         # Single-file run: still report how long it took.
+         print(BOLD + 'Elapsed: ' + elapsed_str + RESET)
+         if runFile is not None:
+            print('', file=runFile)
+            print('Elapsed time: ' + elapsed_str, file=runFile)
+            runFile.close()
 
    def _cmd_compliance(self, args):
       """Usage: ]compliance [<file.log> | <start> [<end>]]
