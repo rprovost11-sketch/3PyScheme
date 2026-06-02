@@ -412,7 +412,9 @@ if __name__ == '__main__':
 
    # only
    env3 = Environment()
-   env3.bind('a', 1); env3.bind('b', 2); env3.bind('c', 3)
+   env3.bind('a', 1)
+   env3.bind('b', 2)
+   env3.bind('c', 3)
    library_register('abc', env3)
    only_form = alloc_cons(make_symbol('only'),
                          alloc_cons(make_name('abc'),

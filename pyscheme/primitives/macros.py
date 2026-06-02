@@ -18,10 +18,14 @@ def _stub(form_name):
       'documentation into the help system.')
 
 
-def _form_define_syntax(ctx, env, args, app_node):  _stub('define-syntax')
-def _form_let_syntax(ctx, env, args, app_node):     _stub('let-syntax')
-def _form_letrec_syntax(ctx, env, args, app_node):  _stub('letrec-syntax')
-def _form_syntax_rules(ctx, env, args, app_node):   _stub('syntax-rules')
+def _form_define_syntax(ctx, env, args, app_node):
+   _stub('define-syntax')
+def _form_let_syntax(ctx, env, args, app_node):
+   _stub('let-syntax')
+def _form_letrec_syntax(ctx, env, args, app_node):
+   _stub('letrec-syntax')
+def _form_syntax_rules(ctx, env, args, app_node):
+   _stub('syntax-rules')
 
 
 def register():

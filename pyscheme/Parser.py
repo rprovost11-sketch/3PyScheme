@@ -1083,13 +1083,20 @@ def _strip_src(v):
       return (items, _strip_src(cur))
    if is_nil(v):
       return []
-   if is_integer(v):     return make_integer(as_integer(v))
-   if is_real(v):        return make_real(as_real(v))
-   if is_rational(v):    return make_rational(as_rational_num(v), as_rational_den(v))
-   if is_string(v):      return make_string(as_string(v))
-   if is_character(v):   return make_character(as_character(v))
-   if is_boolean(v):     return make_boolean(as_boolean(v))
-   if is_symbol(v):      return make_symbol(as_symbol(v))
+   if is_integer(v):
+      return make_integer(as_integer(v))
+   if is_real(v):
+      return make_real(as_real(v))
+   if is_rational(v):
+      return make_rational(as_rational_num(v), as_rational_den(v))
+   if is_string(v):
+      return make_string(as_string(v))
+   if is_character(v):
+      return make_character(as_character(v))
+   if is_boolean(v):
+      return make_boolean(as_boolean(v))
+   if is_symbol(v):
+      return make_symbol(as_symbol(v))
    return v
 
 

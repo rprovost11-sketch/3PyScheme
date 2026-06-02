@@ -18,8 +18,10 @@ def _prim_not(ctx, env, args, app_node):
    return make_boolean(isFalse(args[0]))
 
 
-def _form_and(ctx, env, args, app_node): raise RuntimeError("'and' is a special form, not a procedure.")
-def _form_or(ctx, env, args, app_node):  raise RuntimeError("'or' is a special form, not a procedure.")
+def _form_and(ctx, env, args, app_node):
+   raise RuntimeError("'and' is a special form, not a procedure.")
+def _form_or(ctx, env, args, app_node):
+   raise RuntimeError("'or' is a special form, not a procedure.")
 
 
 def register():

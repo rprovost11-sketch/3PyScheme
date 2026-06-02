@@ -18,12 +18,18 @@ def _stub(form_name):
       'documentation into the help system.')
 
 
-def _form_include(ctx, env, args, app_node):        _stub('include')
-def _form_include_ci(ctx, env, args, app_node):     _stub('include-ci')
-def _form_cond_expand(ctx, env, args, app_node):    _stub('cond-expand')
-def _form_define_library(ctx, env, args, app_node): _stub('define-library')
-def _form_import(ctx, env, args, app_node):         _stub('import')
-def _form_export(ctx, env, args, app_node):         _stub('export')
+def _form_include(ctx, env, args, app_node):
+   _stub('include')
+def _form_include_ci(ctx, env, args, app_node):
+   _stub('include-ci')
+def _form_cond_expand(ctx, env, args, app_node):
+   _stub('cond-expand')
+def _form_define_library(ctx, env, args, app_node):
+   _stub('define-library')
+def _form_import(ctx, env, args, app_node):
+   _stub('import')
+def _form_export(ctx, env, args, app_node):
+   _stub('export')
 
 
 def register():

@@ -18,10 +18,14 @@ def _stub(form_name):
       'documentation into the help system.')
 
 
-def _form_quote(ctx, env, args, app_node):            _stub('quote')
-def _form_quasiquote(ctx, env, args, app_node):       _stub('quasiquote')
-def _form_unquote(ctx, env, args, app_node):          _stub('unquote')
-def _form_unquote_splicing(ctx, env, args, app_node): _stub('unquote-splicing')
+def _form_quote(ctx, env, args, app_node):
+   _stub('quote')
+def _form_quasiquote(ctx, env, args, app_node):
+   _stub('quasiquote')
+def _form_unquote(ctx, env, args, app_node):
+   _stub('unquote')
+def _form_unquote_splicing(ctx, env, args, app_node):
+   _stub('unquote-splicing')
 
 
 def register():

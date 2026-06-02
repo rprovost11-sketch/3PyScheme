@@ -19,18 +19,30 @@ def _stub(form_name):
       'documentation into the help system.')
 
 
-def _form_lambda(ctx, env, args, app_node):             _stub('lambda')
-def _form_case_lambda(ctx, env, args, app_node):        _stub('case-lambda')
-def _form_define(ctx, env, args, app_node):             _stub('define')
-def _form_set(ctx, env, args, app_node):                _stub('set!')
-def _form_let(ctx, env, args, app_node):                _stub('let')
-def _form_let_star(ctx, env, args, app_node):           _stub('let*')
-def _form_letrec(ctx, env, args, app_node):             _stub('letrec')
-def _form_letrec_star(ctx, env, args, app_node):        _stub('letrec*')
-def _form_let_values(ctx, env, args, app_node):         _stub('let-values')
-def _form_let_star_values(ctx, env, args, app_node):    _stub('let*-values')
-def _form_define_values(ctx, env, args, app_node):      _stub('define-values')
-def _form_define_record_type(ctx, env, args, app_node): _stub('define-record-type')
+def _form_lambda(ctx, env, args, app_node):
+   _stub('lambda')
+def _form_case_lambda(ctx, env, args, app_node):
+   _stub('case-lambda')
+def _form_define(ctx, env, args, app_node):
+   _stub('define')
+def _form_set(ctx, env, args, app_node):
+   _stub('set!')
+def _form_let(ctx, env, args, app_node):
+   _stub('let')
+def _form_let_star(ctx, env, args, app_node):
+   _stub('let*')
+def _form_letrec(ctx, env, args, app_node):
+   _stub('letrec')
+def _form_letrec_star(ctx, env, args, app_node):
+   _stub('letrec*')
+def _form_let_values(ctx, env, args, app_node):
+   _stub('let-values')
+def _form_let_star_values(ctx, env, args, app_node):
+   _stub('let*-values')
+def _form_define_values(ctx, env, args, app_node):
+   _stub('define-values')
+def _form_define_record_type(ctx, env, args, app_node):
+   _stub('define-record-type')
 
 
 def register():

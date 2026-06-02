@@ -2463,16 +2463,26 @@ if __name__ == '__main__':
          if is_nil(cur):
             return '(' + ' '.join(items) + ')'
          return '(' + ' '.join(items) + ' . ' + _to_text(cur) + ')'
-      if is_string(v):    return '"' + as_string(v) + '"'
-      if is_nil(v):       return '()'
-      if is_void(v):      return '#<void>'
-      if is_integer(v):   return str(as_integer(v))
-      if is_real(v):      return repr(as_real(v))
-      if is_boolean(v):   return '#t' if as_boolean(v) else '#f'
-      if is_character(v): return '#\\' + as_character(v)
-      if is_symbol(v):    return as_symbol(v)
-      if is_closure(v):   return '#<closure>'
-      if is_primitive(v): return '#<primitive ' + as_primitive_name(v) + '>'
+      if is_string(v):
+         return '"' + as_string(v) + '"'
+      if is_nil(v):
+         return '()'
+      if is_void(v):
+         return '#<void>'
+      if is_integer(v):
+         return str(as_integer(v))
+      if is_real(v):
+         return repr(as_real(v))
+      if is_boolean(v):
+         return '#t' if as_boolean(v) else '#f'
+      if is_character(v):
+         return '#\\' + as_character(v)
+      if is_symbol(v):
+         return as_symbol(v)
+      if is_closure(v):
+         return '#<closure>'
+      if is_primitive(v):
+         return '#<primitive ' + as_primitive_name(v) + '>'
       return repr(v)
 
    def _eval_source(source, env, static_env, ctx):

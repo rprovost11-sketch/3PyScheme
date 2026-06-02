@@ -21,8 +21,10 @@ def _stub(form_name):
       'documentation into the help system.')
 
 
-def _form_delay(ctx, env, args, app_node):       _stub('delay')
-def _form_delay_force(ctx, env, args, app_node): _stub('delay-force')
+def _form_delay(ctx, env, args, app_node):
+   _stub('delay')
+def _form_delay_force(ctx, env, args, app_node):
+   _stub('delay-force')
 
 
 def _prim_force_unreached(ctx, env, args, app_node):
