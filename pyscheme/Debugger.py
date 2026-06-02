@@ -1300,6 +1300,8 @@ class Debugger:
 
             try:
                handled = self._dispatch(line, ctx, env)
+            except _RestartRd:
+               raise
             except Exception as e:
                print('%%% internal debugger error: ' + str(e))
                continue
