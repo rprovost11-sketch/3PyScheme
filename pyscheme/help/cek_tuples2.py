@@ -65,14 +65,14 @@ FRAME_CALL = 2
 # Linked list of (name, value, parent) cells. Empty env is None.
 
 def env_lookup(env, name):
-    while env is not None:
-        if env[0] == name:
-            return env[1]
-        env = env[2]
-    raise NameError("unbound variable: " + name)
+   while env is not None:
+      if env[0] == name:
+         return env[1]
+      env = env[2]
+   raise NameError("unbound variable: " + name)
 
 def env_extend(env, name, value):
-    return (name, value, env)
+   return (name, value, env)
 
 
 # -------- Tracing (opt-in via cek_eval(expr, trace=True)) --------
@@ -107,91 +107,91 @@ def env_extend(env, name, value):
 #   (FRAME_CALL, fn_value)                waiting on an argument value
 
 def cek_eval(expr, trace=False):
-    C = expr
-    V = None
-    E = None
-    K = []
+   C = expr
+   V = None
+   E = None
+   K = []
 
-    while True:
+   while True:
 
-        # ----- state == EVAL: descend into subexprs (pushing frames) until we produce a value at an AST leaf -----
-        while True:
-            tag = C[0]
+      # ----- state == EVAL: descend into subexprs (pushing frames) until we produce a value at an AST leaf -----
+      while True:
+         tag = C[0]
 
-            if tag == EXPR_INT:    # C = (EXPR_INT, n)
-                V = (VAL_INT, C[1])
-                break
+         if tag == EXPR_INT:    # C = (EXPR_INT, n)
+            V = (VAL_INT, C[1])
+            break
 
-            elif tag == EXPR_VAR:  # C = (EXPR_VAR, name)
-                V = env_lookup(E, C[1])
-                break
+         elif tag == EXPR_VAR:  # C = (EXPR_VAR, name)
+            V = env_lookup(E, C[1])
+            break
 
-            elif tag == EXPR_LAM:  # C = (EXPR_LAM, param, body)
-                V = (VAL_CLOSURE, C[1], C[2], E)
-                break
+         elif tag == EXPR_LAM:  # C = (EXPR_LAM, param, body)
+            V = (VAL_CLOSURE, C[1], C[2], E)
+            break
 
-            elif tag == EXPR_APP:  # C = (EXPR_APP, fn_expr, arg_expr)
-                # Evaluate fn first; remember arg and env for later.
-                K.append((FRAME_ARG, C[2], E))
-                C = C[1]  # = fn_expr
-                # no break - keep descending, still in EVAL
+         elif tag == EXPR_APP:  # C = (EXPR_APP, fn_expr, arg_expr)
+            # Evaluate fn first; remember arg and env for later.
+            K.append((FRAME_ARG, C[2], E))
+            C = C[1]  # = fn_expr
+            # no break - keep descending, still in EVAL
 
-            elif tag == EXPR_IF:   # C = (EXPR_IF, test, then_br, else_br)
-                # Evaluate test first; remember both branches and env.
-                K.append((FRAME_IF, C[2], C[3], E))
-                C = C[1]  # = test
-                # no break - keep descending, still in EVAL
+         elif tag == EXPR_IF:   # C = (EXPR_IF, test, then_br, else_br)
+            # Evaluate test first; remember both branches and env.
+            K.append((FRAME_IF, C[2], C[3], E))
+            C = C[1]  # = test
+            # no break - keep descending, still in EVAL
 
+         else:
+            raise RuntimeError("unknown expression tag: " + str(tag))
+
+      # ----- state == APPLY: consume V against the top frame -----
+      while True:
+         if not K:
+            return V
+
+         frame = K.pop()
+         ftag = frame[0]
+
+         if ftag == FRAME_IF:
+            # frame = (FRAME_IF, then_br, else_br, env)
+            # V holds the test value; pick a branch.
+            # Treat (VAL_INT, 0) as false, everything else as true.
+            if V[0] == VAL_INT and V[1] == 0:
+               C = frame[2]
             else:
-                raise RuntimeError("unknown expression tag: " + str(tag))
+               C = frame[1]
+            E = frame[3]
+            break
 
-        # ----- state == APPLY: consume V against the top frame -----
-        while True:
-            if not K:
-                return V
+         elif ftag == FRAME_ARG:
+            # frame = (FRAME_ARG, arg_expr, env)
+            # Push a CALL frame carrying the function for later.
+            K.append((FRAME_CALL, V))   # V = (VAL_CLOSURE, param, bodyExpr, orig_E) assigned to V in ExPR_LAM
+            C = frame[1]  # arg_expr
+            E = frame[2]  # env
+            break
+            # C (arg_expr) gets evaluated in E (env) and its result stored in V.  Then the FRAME_CALL gets popped
 
-            frame = K.pop()
-            ftag = frame[0]
+         elif ftag == FRAME_CALL:
+            # frame = (FRAME_CALL, (VAL_CLOSURE, param, bodyExpr, env))
+            # V is the argument value; frame[1] is the closure.
+            # Bind the parameter in the closure's captured env and
+            # evaluate the body. No frame is pushed here, so a tail
+            # call inside the body reuses this K depth - that is
+            # where structural TCO comes from.
+            closure = frame[1]
+            param   = closure[1]
+            body    = closure[2]
+            clo_env = closure[3]
+            E = env_extend(clo_env, param, V)
+            C = body
+            break
 
-            if ftag == FRAME_IF:
-                # frame = (FRAME_IF, then_br, else_br, env)
-                # V holds the test value; pick a branch.
-                # Treat (VAL_INT, 0) as false, everything else as true.
-                if V[0] == VAL_INT and V[1] == 0:
-                    C = frame[2]
-                else:
-                    C = frame[1]
-                E = frame[3]
-                break
+         else:
+            raise RuntimeError("unknown frame tag: " + str(ftag))
 
-            elif ftag == FRAME_ARG:
-                # frame = (FRAME_ARG, arg_expr, env)
-                # Push a CALL frame carrying the function for later.
-                K.append((FRAME_CALL, V))   # V = (VAL_CLOSURE, param, bodyExpr, orig_E) assigned to V in ExPR_LAM
-                C = frame[1]  # arg_expr
-                E = frame[2]  # env
-                break
-                # C (arg_expr) gets evaluated in E (env) and its result stored in V.  Then the FRAME_CALL gets popped
-
-            elif ftag == FRAME_CALL:
-                # frame = (FRAME_CALL, (VAL_CLOSURE, param, bodyExpr, env))
-                # V is the argument value; frame[1] is the closure.
-                # Bind the parameter in the closure's captured env and
-                # evaluate the body. No frame is pushed here, so a tail
-                # call inside the body reuses this K depth - that is
-                # where structural TCO comes from.
-                closure = frame[1]
-                param   = closure[1]
-                body    = closure[2]
-                clo_env = closure[3]
-                E = env_extend(clo_env, param, V)
-                C = body
-                break
-
-            else:
-                raise RuntimeError("unknown frame tag: " + str(ftag))
-
-        # fall through to the outer `while True` - restarts EVAL loop
+      # fall through to the outer `while True` - restarts EVAL loop
 
 
 # -------- Test programs --------
@@ -200,71 +200,71 @@ def cek_eval(expr, trace=False):
 
 if __name__ == "__main__":
 
-    # 1. A literal.
-    #    42  ->  (VAL_INT, 42)
-    print("=== 1. literal 42 ===")
-    print(cek_eval(
-        (EXPR_INT, 42),
-        trace=False
-    ))
-    print()
+   # 1. A literal.
+   #    42  ->  (VAL_INT, 42)
+   print("=== 1. literal 42 ===")
+   print(cek_eval(
+       (EXPR_INT, 42),
+       trace=False
+   ))
+   print()
 
-    # 2. Identity applied to 7.
-    #    ((lambda (x) x) 7)  ->  (VAL_INT, 7)
-    print("=== 2. ((lambda (x) x) 7) ===")
-    print(cek_eval(
-        (EXPR_APP,
-            (EXPR_LAM, "x", (EXPR_VAR, "x")),
-            (EXPR_INT, 7)),
-        trace=False
-    ))
-    print()
+   # 2. Identity applied to 7.
+   #    ((lambda (x) x) 7)  ->  (VAL_INT, 7)
+   print("=== 2. ((lambda (x) x) 7) ===")
+   print(cek_eval(
+       (EXPR_APP,
+           (EXPR_LAM, "x", (EXPR_VAR, "x")),
+           (EXPR_INT, 7)),
+       trace=False
+   ))
+   print()
 
-    # 3. Curried constant function.
-    #    (((lambda (x) (lambda (y) x)) 3) 9)  ->  (VAL_INT, 3)
-    print("=== 3. (((lambda (x) (lambda (y) x)) 3) 9) ===")
-    print(cek_eval(
-        (EXPR_APP,
-            (EXPR_APP,
-                (EXPR_LAM, "x",
-                    (EXPR_LAM, "y", (EXPR_VAR, "x"))),
-                (EXPR_INT, 3)),
-            (EXPR_INT, 9)),
-        trace=False
-    ))
-    print()
+   # 3. Curried constant function.
+   #    (((lambda (x) (lambda (y) x)) 3) 9)  ->  (VAL_INT, 3)
+   print("=== 3. (((lambda (x) (lambda (y) x)) 3) 9) ===")
+   print(cek_eval(
+       (EXPR_APP,
+           (EXPR_APP,
+               (EXPR_LAM, "x",
+                   (EXPR_LAM, "y", (EXPR_VAR, "x"))),
+               (EXPR_INT, 3)),
+           (EXPR_INT, 9)),
+       trace=False
+   ))
+   print()
 
-    # 4. If selects the then branch when test is nonzero.
-    #    (if 1 100 200)  ->  (VAL_INT, 100)
-    print("=== 4. (if 1 100 200) ===")
-    print(cek_eval(
-        (EXPR_IF,
-            (EXPR_INT, 1),
-            (EXPR_INT, 100),
-            (EXPR_INT, 200)),
-        trace=False
-    ))
-    print()
+   # 4. If selects the then branch when test is nonzero.
+   #    (if 1 100 200)  ->  (VAL_INT, 100)
+   print("=== 4. (if 1 100 200) ===")
+   print(cek_eval(
+       (EXPR_IF,
+           (EXPR_INT, 1),
+           (EXPR_INT, 100),
+           (EXPR_INT, 200)),
+       trace=False
+   ))
+   print()
 
-    # 5. If selects the else branch when test is zero.
-    #    (if 0 100 200)  ->  (VAL_INT, 200)
-    print("=== 5. (if 0 100 200) ===")
-    print(cek_eval(
-        (EXPR_IF,
-            (EXPR_INT, 0),
-            (EXPR_INT, 100),
-            (EXPR_INT, 200)),
-        trace=False
-    ))
-    print()
+   # 5. If selects the else branch when test is zero.
+   #    (if 0 100 200)  ->  (VAL_INT, 200)
+   print("=== 5. (if 0 100 200) ===")
+   print(cek_eval(
+       (EXPR_IF,
+           (EXPR_INT, 0),
+           (EXPR_INT, 100),
+           (EXPR_INT, 200)),
+       trace=False
+   ))
+   print()
 
-    # 6. Higher-order: apply an identity function passed as argument.
-    #    ((lambda (f) (f 3)) (lambda (x) x))  ->  (VAL_INT, 3)
-    print("=== 6. ((lambda (f) (f 3)) (lambda (x) x)) ===")
-    print(cek_eval(
-        (EXPR_APP,
-            (EXPR_LAM, "f",
-                (EXPR_APP, (EXPR_VAR, "f"), (EXPR_INT, 3))),
-            (EXPR_LAM, "x", (EXPR_VAR, "x"))),
-        trace=False
-    ))
+   # 6. Higher-order: apply an identity function passed as argument.
+   #    ((lambda (f) (f 3)) (lambda (x) x))  ->  (VAL_INT, 3)
+   print("=== 6. ((lambda (f) (f 3)) (lambda (x) x)) ===")
+   print(cek_eval(
+       (EXPR_APP,
+           (EXPR_LAM, "f",
+               (EXPR_APP, (EXPR_VAR, "f"), (EXPR_INT, 3))),
+           (EXPR_LAM, "x", (EXPR_VAR, "x"))),
+       trace=False
+   ))

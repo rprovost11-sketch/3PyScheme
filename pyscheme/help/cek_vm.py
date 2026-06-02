@@ -69,14 +69,14 @@ OP_RET        = 10  # pop FRAME_RET (or halt the VM if K is empty)
 # Identical to cek_tuples.
 
 def env_lookup(env, name):
-    while env is not None:
-        if env[0] == name:
-            return env[1]
-        env = env[2]
-    raise NameError("unbound variable: " + name)
+   while env is not None:
+      if env[0] == name:
+         return env[1]
+      env = env[2]
+   raise NameError("unbound variable: " + name)
 
 def env_extend(env, name, value):
-    return (name, value, env)
+   return (name, value, env)
 
 
 # -------- Compiler --------
@@ -101,80 +101,80 @@ def env_extend(env, name, value):
 # region's length is known.
 
 def compile_expr(expr, out, tail):
-    tag = expr[0]
+   tag = expr[0]
 
-    if tag == EXPR_INT:
-        out.append((OP_INT, expr[1]))
-        if tail:
-            out.append((OP_RET,))
+   if tag == EXPR_INT:
+      out.append((OP_INT, expr[1]))
+      if tail:
+         out.append((OP_RET,))
 
-    elif tag == EXPR_VAR:
-        out.append((OP_VAR, expr[1]))
-        if tail:
-            out.append((OP_RET,))
+   elif tag == EXPR_VAR:
+      out.append((OP_VAR, expr[1]))
+      if tail:
+         out.append((OP_RET,))
 
-    elif tag == EXPR_LAM:
-        # Reserve slots for OP_LAM and its skip-over OP_JUMP, compile
-        # the body inline, then patch body_pc and past_body.
-        lam_idx = len(out)
-        out.append(None)
-        jump_idx = len(out)
-        out.append(None)
+   elif tag == EXPR_LAM:
+      # Reserve slots for OP_LAM and its skip-over OP_JUMP, compile
+      # the body inline, then patch body_pc and past_body.
+      lam_idx = len(out)
+      out.append(None)
+      jump_idx = len(out)
+      out.append(None)
 
-        body_pc = len(out)
-        compile_expr(expr[2], out, tail=True)   # body is always in tail position
-        past_body = len(out)
+      body_pc = len(out)
+      compile_expr(expr[2], out, tail=True)   # body is always in tail position
+      past_body = len(out)
 
-        out[lam_idx] = (OP_LAM, expr[1], body_pc)
-        out[jump_idx] = (OP_JUMP, past_body)
+      out[lam_idx] = (OP_LAM, expr[1], body_pc)
+      out[jump_idx] = (OP_JUMP, past_body)
 
-        if tail:
-            out.append((OP_RET,))
+      if tail:
+         out.append((OP_RET,))
 
-    elif tag == EXPR_APP:
-        out.append((OP_APP_START,))
-        compile_expr(expr[1], out, tail=False)  # fn - never in tail position
-        out.append((OP_APPLY_ARG,))
-        compile_expr(expr[2], out, tail=False)  # arg - never in tail position
-        if tail:
-            out.append((OP_TCALL,))
-        else:
-            out.append((OP_CALL,))
+   elif tag == EXPR_APP:
+      out.append((OP_APP_START,))
+      compile_expr(expr[1], out, tail=False)  # fn - never in tail position
+      out.append((OP_APPLY_ARG,))
+      compile_expr(expr[2], out, tail=False)  # arg - never in tail position
+      if tail:
+         out.append((OP_TCALL,))
+      else:
+         out.append((OP_CALL,))
 
-    elif tag == EXPR_IF:
-        # Reserve slot for OP_IF_START; fill in then_pc/else_pc below.
-        if_idx = len(out)
-        out.append(None)
+   elif tag == EXPR_IF:
+      # Reserve slot for OP_IF_START; fill in then_pc/else_pc below.
+      if_idx = len(out)
+      out.append(None)
 
-        compile_expr(expr[1], out, tail=False)  # cond
-        out.append((OP_APPLY_IF,))
+      compile_expr(expr[1], out, tail=False)  # cond
+      out.append((OP_APPLY_IF,))
 
-        then_pc = len(out)
-        compile_expr(expr[2], out, tail=tail)   # then inherits tail context
-        if not tail:
-            # Non-tail then must jump past the else branch. In the
-            # tail case the then branch ended with OP_RET and control
-            # will not fall through, so no skip is needed.
-            then_jump_idx = len(out)
-            out.append(None)
+      then_pc = len(out)
+      compile_expr(expr[2], out, tail=tail)   # then inherits tail context
+      if not tail:
+         # Non-tail then must jump past the else branch. In the
+         # tail case the then branch ended with OP_RET and control
+         # will not fall through, so no skip is needed.
+         then_jump_idx = len(out)
+         out.append(None)
 
-        else_pc = len(out)
-        compile_expr(expr[3], out, tail=tail)   # else inherits tail context
+      else_pc = len(out)
+      compile_expr(expr[3], out, tail=tail)   # else inherits tail context
 
-        if not tail:
-            end_pc = len(out)
-            out[then_jump_idx] = (OP_JUMP, end_pc)
+      if not tail:
+         end_pc = len(out)
+         out[then_jump_idx] = (OP_JUMP, end_pc)
 
-        out[if_idx] = (OP_IF_START, then_pc, else_pc)
+      out[if_idx] = (OP_IF_START, then_pc, else_pc)
 
-    else:
-        raise RuntimeError("unknown expression tag: " + str(tag))
+   else:
+      raise RuntimeError("unknown expression tag: " + str(tag))
 
 
 def compile_program(expr):
-    out = []
-    compile_expr(expr, out, tail=True)
-    return out
+   out = []
+   compile_expr(expr, out, tail=True)
+   return out
 
 
 # -------- The VM loop --------
@@ -190,96 +190,96 @@ def compile_program(expr):
 # integer opcode - no AST tag check, no state flag.
 
 def run_vm(prog):
-    pc = 0
-    V = None
-    E = None
-    K = []
+   pc = 0
+   V = None
+   E = None
+   K = []
 
-    while True:
-        instr = prog[pc]
-        op = instr[0]
+   while True:
+      instr = prog[pc]
+      op = instr[0]
 
-        if op == OP_INT:
-            # EVAL_INT
-            V = (VAL_INT, instr[1])
-            pc += 1
+      if op == OP_INT:
+         # EVAL_INT
+         V = (VAL_INT, instr[1])
+         pc += 1
 
-        elif op == OP_VAR:
-            # EVAL_VAR
-            V = env_lookup(E, instr[1])
-            pc += 1
+      elif op == OP_VAR:
+         # EVAL_VAR
+         V = env_lookup(E, instr[1])
+         pc += 1
 
-        elif op == OP_LAM:
-            # EVAL_LAM - capture current E inside the closure value.
-            V = (VAL_CLOSURE, instr[1], instr[2], E)
-            pc += 1
+      elif op == OP_LAM:
+         # EVAL_LAM - capture current E inside the closure value.
+         V = (VAL_CLOSURE, instr[1], instr[2], E)
+         pc += 1
 
-        elif op == OP_JUMP:
-            pc = instr[1]
+      elif op == OP_JUMP:
+         pc = instr[1]
 
-        elif op == OP_APP_START:
-            # EVAL_APP preamble: save env so the arg sub-expression
-            # can be evaluated in the caller's env once fn is done.
-            K.append((FRAME_ARG, E))
-            pc += 1
+      elif op == OP_APP_START:
+         # EVAL_APP preamble: save env so the arg sub-expression
+         # can be evaluated in the caller's env once fn is done.
+         K.append((FRAME_ARG, E))
+         pc += 1
 
-        elif op == OP_APPLY_ARG:
-            # APPLY_ARG: pop FRAME_ARG (restoring env), push
-            # FRAME_CALL carrying the function value we just produced.
-            frame = K.pop()
-            E = frame[1]
-            K.append((FRAME_CALL, V))
-            pc += 1
+      elif op == OP_APPLY_ARG:
+         # APPLY_ARG: pop FRAME_ARG (restoring env), push
+         # FRAME_CALL carrying the function value we just produced.
+         frame = K.pop()
+         E = frame[1]
+         K.append((FRAME_CALL, V))
+         pc += 1
 
-        elif op == OP_CALL:
-            # APPLY_CALL in non-tail position: bind parameter, record
-            # where to resume in the caller, jump to body.
-            frame = K.pop()          # (FRAME_CALL, closure)
-            closure = frame[1]
-            K.append((FRAME_RET, pc + 1))
-            E = env_extend(closure[3], closure[1], V)
-            pc = closure[2]          # body_pc
+      elif op == OP_CALL:
+         # APPLY_CALL in non-tail position: bind parameter, record
+         # where to resume in the caller, jump to body.
+         frame = K.pop()          # (FRAME_CALL, closure)
+         closure = frame[1]
+         K.append((FRAME_RET, pc + 1))
+         E = env_extend(closure[3], closure[1], V)
+         pc = closure[2]          # body_pc
 
-        elif op == OP_TCALL:
-            # APPLY_CALL in tail position: bind parameter, jump to
-            # body. No FRAME_RET pushed, so K stays flat across tail
-            # calls - structural TCO, same as cek_tuples.
-            frame = K.pop()          # (FRAME_CALL, closure)
-            closure = frame[1]
-            E = env_extend(closure[3], closure[1], V)
-            pc = closure[2]          # body_pc
+      elif op == OP_TCALL:
+         # APPLY_CALL in tail position: bind parameter, jump to
+         # body. No FRAME_RET pushed, so K stays flat across tail
+         # calls - structural TCO, same as cek_tuples.
+         frame = K.pop()          # (FRAME_CALL, closure)
+         closure = frame[1]
+         E = env_extend(closure[3], closure[1], V)
+         pc = closure[2]          # body_pc
 
-        elif op == OP_IF_START:
-            # EVAL_IF preamble: remember both branch pcs and env.
-            K.append((FRAME_IF, instr[1], instr[2], E))
-            pc += 1
+      elif op == OP_IF_START:
+         # EVAL_IF preamble: remember both branch pcs and env.
+         K.append((FRAME_IF, instr[1], instr[2], E))
+         pc += 1
 
-        elif op == OP_APPLY_IF:
-            # APPLY_IF: V holds the test value; pick a branch.
-            # Treat (VAL_INT, 0) as false, everything else as true.
-            frame = K.pop()
-            E = frame[3]
-            if V[0] == VAL_INT and V[1] == 0:
-                pc = frame[2]
-            else:
-                pc = frame[1]
-
-        elif op == OP_RET:
-            # End of a body. If K is empty we are at the top level -
-            # return V as the program's final value. Otherwise pop
-            # the FRAME_RET that the matching OP_CALL pushed and
-            # resume the caller.
-            if not K:
-                return V
-            frame = K.pop()          # (FRAME_RET, return_pc)
+      elif op == OP_APPLY_IF:
+         # APPLY_IF: V holds the test value; pick a branch.
+         # Treat (VAL_INT, 0) as false, everything else as true.
+         frame = K.pop()
+         E = frame[3]
+         if V[0] == VAL_INT and V[1] == 0:
+            pc = frame[2]
+         else:
             pc = frame[1]
 
-        else:
-            raise RuntimeError("unknown opcode: " + str(op))
+      elif op == OP_RET:
+         # End of a body. If K is empty we are at the top level -
+         # return V as the program's final value. Otherwise pop
+         # the FRAME_RET that the matching OP_CALL pushed and
+         # resume the caller.
+         if not K:
+            return V
+         frame = K.pop()          # (FRAME_RET, return_pc)
+         pc = frame[1]
+
+      else:
+         raise RuntimeError("unknown opcode: " + str(op))
 
 
 def cek_eval(expr):
-    return run_vm(compile_program(expr))
+   return run_vm(compile_program(expr))
 
 
 # -------- Test programs --------
@@ -288,54 +288,54 @@ def cek_eval(expr):
 
 if __name__ == "__main__":
 
-    # 1. A literal.
-    #    42  ->  (VAL_INT, 42)
-    print(cek_eval(
-        (EXPR_INT, 42)
-    ))
+   # 1. A literal.
+   #    42  ->  (VAL_INT, 42)
+   print(cek_eval(
+       (EXPR_INT, 42)
+   ))
 
-    # 2. Identity applied to 7.
-    #    ((lambda (x) x) 7)  ->  (VAL_INT, 7)
-    print(cek_eval(
-        (EXPR_APP,
-            (EXPR_LAM, "x", (EXPR_VAR, "x")),
-            (EXPR_INT, 7))
-    ))
+   # 2. Identity applied to 7.
+   #    ((lambda (x) x) 7)  ->  (VAL_INT, 7)
+   print(cek_eval(
+       (EXPR_APP,
+           (EXPR_LAM, "x", (EXPR_VAR, "x")),
+           (EXPR_INT, 7))
+   ))
 
-    # 3. Curried constant function.
-    #    (((lambda (x) (lambda (y) x)) 3) 9)  ->  (VAL_INT, 3)
-    print(cek_eval(
-        (EXPR_APP,
-            (EXPR_APP,
-                (EXPR_LAM, "x",
-                    (EXPR_LAM, "y", (EXPR_VAR, "x"))),
-                (EXPR_INT, 3)),
-            (EXPR_INT, 9))
-    ))
+   # 3. Curried constant function.
+   #    (((lambda (x) (lambda (y) x)) 3) 9)  ->  (VAL_INT, 3)
+   print(cek_eval(
+       (EXPR_APP,
+           (EXPR_APP,
+               (EXPR_LAM, "x",
+                   (EXPR_LAM, "y", (EXPR_VAR, "x"))),
+               (EXPR_INT, 3)),
+           (EXPR_INT, 9))
+   ))
 
-    # 4. If selects the then branch when test is nonzero.
-    #    (if 1 100 200)  ->  (VAL_INT, 100)
-    print(cek_eval(
-        (EXPR_IF,
-            (EXPR_INT, 1),
-            (EXPR_INT, 100),
-            (EXPR_INT, 200))
-    ))
+   # 4. If selects the then branch when test is nonzero.
+   #    (if 1 100 200)  ->  (VAL_INT, 100)
+   print(cek_eval(
+       (EXPR_IF,
+           (EXPR_INT, 1),
+           (EXPR_INT, 100),
+           (EXPR_INT, 200))
+   ))
 
-    # 5. If selects the else branch when test is zero.
-    #    (if 0 100 200)  ->  (VAL_INT, 200)
-    print(cek_eval(
-        (EXPR_IF,
-            (EXPR_INT, 0),
-            (EXPR_INT, 100),
-            (EXPR_INT, 200))
-    ))
+   # 5. If selects the else branch when test is zero.
+   #    (if 0 100 200)  ->  (VAL_INT, 200)
+   print(cek_eval(
+       (EXPR_IF,
+           (EXPR_INT, 0),
+           (EXPR_INT, 100),
+           (EXPR_INT, 200))
+   ))
 
-    # 6. Higher-order: apply an identity function passed as argument.
-    #    ((lambda (f) (f 3)) (lambda (x) x))  ->  (VAL_INT, 3)
-    print(cek_eval(
-        (EXPR_APP,
-            (EXPR_LAM, "f",
-                (EXPR_APP, (EXPR_VAR, "f"), (EXPR_INT, 3))),
-            (EXPR_LAM, "x", (EXPR_VAR, "x")))
-    ))
+   # 6. Higher-order: apply an identity function passed as argument.
+   #    ((lambda (f) (f 3)) (lambda (x) x))  ->  (VAL_INT, 3)
+   print(cek_eval(
+       (EXPR_APP,
+           (EXPR_LAM, "f",
+               (EXPR_APP, (EXPR_VAR, "f"), (EXPR_INT, 3))),
+           (EXPR_LAM, "x", (EXPR_VAR, "x")))
+   ))
