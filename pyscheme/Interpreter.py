@@ -34,7 +34,7 @@ from pyscheme.Listener      import InterpreterBase
 from pyscheme.Debugger      import Debugger
 from pyscheme.Tracer        import Tracer
 from pyscheme.PrettyPrinter import pretty_print
-from pyscheme.AST           import is_void, is_multi_values, as_multi_values_list
+from pyscheme.AST           import is_void, is_multi_values, as_multi_values_list, src_of
 from pyscheme.library     import register_standard_libraries
 from pyscheme.Expander    import set_runtime_env
 
@@ -110,6 +110,7 @@ class Interpreter(InterpreterBase):
          self._ctx.outStrm = outStrm
       self._ctx.shadow_stack.clear()
       try:
+         form  = None
          forms = parse(source, filename)
          last  = None
          i = 0
@@ -122,7 +123,7 @@ class Interpreter(InterpreterBase):
             i = i + 1
          return last
       except RecursionError:
-         raise SchemeRuntimeError('recursion depth exceeded')
+         raise SchemeRuntimeError('recursion depth exceeded', src_of(form))
       finally:
          self._ctx.outStrm = prev_out
 

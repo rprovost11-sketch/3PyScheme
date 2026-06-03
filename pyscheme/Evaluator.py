@@ -1466,7 +1466,11 @@ def _cek_loop(expr, env, ctx):
 
                if ftag == FRAME_DEFINE:
                   E = frame[2]
-                  E.bind_id(as_symbol_id(frame[1]), V)
+                  try:
+                     E.bind_id(as_symbol_id(frame[1]), V)
+                  except SchemeTypeError as e:
+                     e.src = src_of(frame[1])
+                     raise
                   V = VOID_VALUE
                   continue
 
@@ -1474,7 +1478,7 @@ def _cek_loop(expr, env, ctx):
                   E = frame[2]
                   try:
                      E.set_id(as_symbol_id(frame[1]), V)
-                  except SchemeUnboundError as e:
+                  except (SchemeUnboundError, SchemeTypeError) as e:
                      e.src = frame[3]
                      raise
                   V = VOID_VALUE
