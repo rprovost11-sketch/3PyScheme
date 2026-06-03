@@ -686,6 +686,11 @@ def _try_parse_complex_literal(text, src):
       re_scheme = _component_to_scheme(re_val, src)
       im_scheme = _component_to_scheme(im_val, src)
       return Token(TOK_EXACT_COMPLEX, (re_scheme, im_scheme), src)
+   # An exact zero imaginary part makes the number real, even when the real
+   # part is inexact (R7RS 6.2.6: (real? -2.5+0i) => #t, whereas
+   # (real? -2.5+0.0i) => #f, because 0.0 is an inexact imaginary part).
+   if _is_exact_component(im_val) and im_val == 0:
+      return Token(TOK_REAL, float(re_val), src)
    return Token(TOK_COMPLEX, (float(re_val), float(im_val)), src)
 
 

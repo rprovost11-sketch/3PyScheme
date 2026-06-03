@@ -45,7 +45,9 @@ def _prim_real_p(ctx, env, args, app_node):
    if is_integer(v) or is_real(v) or is_rational(v):
       return make_boolean(True)
    if is_complex(v):
-      return make_boolean(as_complex_imag(v) == 0.0)
+      # An inexact complex's imaginary part is the inexact value 0.0, not the
+      # exact value 0, so it is NOT real (R7RS 6.2.6: (real? -2.5+0.0i) => #f).
+      return make_boolean(False)
    if is_exact_complex(v):
       im = as_exact_complex_imag(v)
       return make_boolean(is_integer(im) and as_integer(im) == 0)
@@ -59,7 +61,8 @@ def _prim_rational_p(ctx, env, args, app_node):
    if is_real(v):
       return make_boolean(_math.isfinite(as_real(v)))
    if is_complex(v):
-      return make_boolean(as_complex_imag(v) == 0.0 and _math.isfinite(as_complex_real(v)))
+      # Inexact complex: not real (inexact 0.0 imaginary), hence not rational.
+      return make_boolean(False)
    if is_exact_complex(v):
       im = as_exact_complex_imag(v)
       return make_boolean(is_integer(im) and as_integer(im) == 0)
@@ -75,9 +78,8 @@ def _prim_integer_p(ctx, env, args, app_node):
       if isinstance(r, float) and r.is_integer():
          return make_boolean(True)
    if is_complex(v):
-      im = as_complex_imag(v)
-      re = as_complex_real(v)
-      return make_boolean(im == 0.0 and re == _math.floor(re))
+      # Inexact complex: not real (inexact 0.0 imaginary), hence not an integer.
+      return make_boolean(False)
    if is_exact_complex(v):
       im = as_exact_complex_imag(v)
       if not (is_integer(im) and as_integer(im) == 0):
