@@ -202,6 +202,14 @@ def _make_src(line, col, source_lines, filename):
    return SourceInfo(line, col, source_line, filename)
 
 
+def _char_repr(c):
+   """Render one character the way Python's repr() does (quote it, escape
+   backslash/quote, \\xHH for non-printables).  Factored into a helper so
+   the cppscheme2 port can mirror it line-for-line: C++ has no repr(), so
+   its char_repr() reproduces this behavior by hand."""
+   return repr(c)
+
+
 def _substring(s, start, end):
    """Return s[start:end] as an explicit character-by-character copy.
    Ports to strncpy + null terminator in C."""
@@ -338,7 +346,7 @@ def tokenize(source, filename=None):
       match = _TOKEN_RE.match(source, pos)
       if not match:
          raise SchemeSyntaxError(
-            "unexpected character %r" % source[pos],
+            "unexpected character %s" % _char_repr(source[pos]),
             _make_src(line, col, source_lines, filename))
       text = match.group(0)
       kind = match.lastgroup

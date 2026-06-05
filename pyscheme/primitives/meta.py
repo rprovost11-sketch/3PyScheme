@@ -336,6 +336,15 @@ def _prim_with_parameters_unreached(ctx, env, args, app_node):
       'in this implementation', app_node)
 
 
+def _prim_continuation_depth_unreached(ctx, env, args, app_node):
+   # The Evaluator intercepts %continuation-depth at application dispatch to
+   # read the live continuation-stack (K) length, which a normal primitive
+   # body cannot see.  This fires only if the interception was bypassed.
+   raise SchemeTypeError(
+      '%continuation-depth: cannot be called through a re-entering path '
+      'in this implementation', app_node)
+
+
 def _prim_null_environment(ctx, env, args, app_node):
    from pyscheme.Environment import Environment
    if not is_integer(args[0]):
@@ -581,6 +590,15 @@ def register():
       doc=(
          "Dynamically bind parameters for the extent of a thunk.  Internal:\n"
          "the Expander emits calls to %with-parameters for parameterize."),
+      category=CATEGORY)
+
+   register_primitive('%continuation-depth', (0, 0),
+      _prim_continuation_depth_unreached,
+      doc=(
+         "Return the current continuation-stack (K) length as an integer.\n"
+         "Internal: used by tail-call tests to assert bounded continuation\n"
+         "space.  Intercepted by the Evaluator (a normal primitive body\n"
+         "cannot see K)."),
       category=CATEGORY)
 
    # Exception object accessors

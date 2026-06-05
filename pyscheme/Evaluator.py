@@ -86,7 +86,12 @@ from pyscheme.AST import (
    is_case_closure, is_multi_values, is_parameter, is_continuation,
    is_environment, is_record, is_record_accessor, is_record_mutator,
    as_symbol, as_symbol_id, as_boolean, as_integer, as_real, as_character,
-   as_string, as_primitive_fn, as_primitive_name,
+   as_string, as_primitive_fn, as_primitive_name, as_primitive_kind,
+   PRIM_CALL_CC, PRIM_APPLY, PRIM_CALL_WITH_VALUES, PRIM_FORCE,
+   PRIM_MAKE_PARAMETER, PRIM_WITH_EXCEPTION_HANDLER, PRIM_GUARD_EVAL,
+   PRIM_RAISE, PRIM_RAISE_CONTINUABLE, PRIM_EVAL, PRIM_ERROR,
+   PRIM_WITH_PARAMETERS, PRIM_DYNAMIC_WIND, PRIM_ORDINARY,
+   PRIM_CONTINUATION_DEPTH,
    as_closure_params, as_closure_body, as_closure_env, as_closure_rest_name,
    as_case_closure_clauses, as_case_closure_env, as_parameter_value,
    as_continuation_k, as_continuation_wind, as_continuation_shadow,
@@ -99,7 +104,7 @@ from pyscheme.AST import (
    as_record_type_name,
    promise_resolve, promise_become, set_parameter_value,
    as_parameter_converter,
-   make_boolean, make_closure, make_case_closure, make_promise_lazy,
+   make_boolean, make_closure, make_case_closure, make_promise_lazy, make_integer,
    make_continuation, make_multi_values, make_primitive, make_parameter, make_symbol,
    make_read_error_object,
    mark_literal_immutable,
@@ -359,71 +364,10 @@ def _beta_reduce(closure, arg_values, app_node=None):
       arg_values, app_node)
 
 
-_CALL_CC_NAMES = ('call-with-current-continuation', 'call/cc')
-
-
-def _is_call_cc_primitive(V):
-   """Check if V is the call/cc primitive (by name).  Identified at the
-   application dispatch point so we can intercept and capture K before
-   the primitive's body would run."""
-   if not is_primitive(V):
-      return False
-   return as_primitive_name(V) in _CALL_CC_NAMES
-
-
-def _is_dynamic_wind_primitive(V):
-   """Check if V is the dynamic-wind primitive.  Intercepted at application
-   dispatch so we can install the wind frame in the CEK machine rather
-   than running entirely inside the primitive body."""
-   return is_primitive(V) and as_primitive_name(V) == 'dynamic-wind'
-
-
-def _is_apply_primitive(V):
-   """Check if V is the apply primitive.  Intercepted at application dispatch
-   so the call becomes fully TCO-preserving: instead of the primitive body
-   re-entering cek_eval, we rewrite the dispatch so the target proc is
-   tail-called via the normal CEK path."""
-   return is_primitive(V) and as_primitive_name(V) == 'apply'
-
-
-def _is_call_with_values_primitive(V):
-   return is_primitive(V) and as_primitive_name(V) == 'call-with-values'
-
-
-def _is_force_primitive(V):
-   return is_primitive(V) and as_primitive_name(V) == 'force'
-
-
-def _is_with_parameters_primitive(V):
-   return is_primitive(V) and as_primitive_name(V) == '%with-parameters'
-
-
-def _is_make_parameter_primitive(V):
-   return is_primitive(V) and as_primitive_name(V) == 'make-parameter'
-
-
-def _is_with_exception_handler_primitive(V):
-   return is_primitive(V) and as_primitive_name(V) == 'with-exception-handler'
-
-
-def _is_guard_eval_primitive(V):
-   return is_primitive(V) and as_primitive_name(V) == '%guard-eval'
-
-
-def _is_raise_primitive(V):
-   return is_primitive(V) and as_primitive_name(V) == 'raise'
-
-
-def _is_raise_continuable_primitive(V):
-   return is_primitive(V) and as_primitive_name(V) == 'raise-continuable'
-
-
-def _is_error_primitive(V):
-   return is_primitive(V) and as_primitive_name(V) == 'error'
-
-
-def _is_eval_primitive(V):
-   return is_primitive(V) and as_primitive_name(V) == 'eval'
+# Special-primitive interception is dispatched on the integer kind tag set
+# by make_primitive (AST.PRIM_*), read once per application in the
+# FRAME_CALL handler.  This replaced a ladder of ~15 per-call
+# _is_X_primitive name comparisons (optimization #2).
 
 
 # Thread-local CEK exception handler stack and dynamic-wind stack.
@@ -1632,6 +1576,13 @@ def _cek_loop(expr, env, ctx):
                               if _trc_printed:
                                  _trc._depth = _trc_depth + 1
                      if is_primitive(V):
+                        if as_primitive_kind(V) == PRIM_CONTINUATION_DEPTH:
+                           # Internal probe: report the live continuation-stack
+                           # (K) length so tail-call tests can assert bounded
+                           # continuation space.  K is in scope here but not in
+                           # a normal primitive body.
+                           V = make_integer(len(K))
+                           continue
                         result = as_primitive_fn(V)(ctx, saved_env, [], app_node)
                         if _trc_printed:
                            ctx.tracer._depth = _trc_depth
@@ -1680,8 +1631,17 @@ def _cek_loop(expr, env, ctx):
                         _restore_shadow_stack(ctx, as_continuation_shadow(fn_value))
                         V = _continuation_value(fn_value, new_collected)
                         continue
+                     # #2: classify the operator once, then dispatch on the
+                     # integer kind below instead of ~15 _is_X_primitive name
+                     # comparisons.  Ordinary primitives and closures get
+                     # PRIM_ORDINARY and fall straight through.  Cases that
+                     # rewrite fn_value re-classify it so a later case can
+                     # catch the new operator, preserving the original
+                     # top-to-bottom fall-through semantics.
+                     kind = (as_primitive_kind(fn_value)
+                             if is_primitive(fn_value) else PRIM_ORDINARY)
                      # Capture continuation: call/cc intercepted before its body.
-                     if _is_call_cc_primitive(fn_value):
+                     if kind == PRIM_CALL_CC:
                         if len(new_collected) != 1:
                            raise SchemeArityError(
                               arity_mismatch_msg(as_primitive_name(fn_value),
@@ -1695,12 +1655,14 @@ def _cek_loop(expr, env, ctx):
                         # reusing the normal dispatch paths below.
                         fn_value = user_proc
                         new_collected = [cont]
+                        kind = (as_primitive_kind(fn_value)
+                                if is_primitive(fn_value) else PRIM_ORDINARY)
                      # apply: splice the list argument, rewrite the dispatch so
                      # the target proc is tail-called through the normal CEK
                      # path.  Avoids the Python stack frame that _prim_apply's
                      # re-entry into cek_eval would create.  Loops so (apply apply
                      # ...) collapses rather than firing the stub body.
-                     while _is_apply_primitive(fn_value):
+                     while kind == PRIM_APPLY:
                         _apply_result = _unpack_apply_args(new_collected, app_node)
                         proc = _apply_result[0]
                         flat_args = _apply_result[1]
@@ -1712,8 +1674,10 @@ def _cek_loop(expr, env, ctx):
                               'apply: first argument must be a procedure', app_node)
                         fn_value = proc
                         new_collected = flat_args
+                        kind = (as_primitive_kind(fn_value)
+                                if is_primitive(fn_value) else PRIM_ORDINARY)
                      # call-with-values: install consumer frame, tail-call producer.
-                     if _is_call_with_values_primitive(fn_value):
+                     if kind == PRIM_CALL_WITH_VALUES:
                         if len(new_collected) != 2:
                            raise SchemeArityError(
                               arity_mismatch_msg('call-with-values', 2, 2,
@@ -1724,13 +1688,15 @@ def _cek_loop(expr, env, ctx):
                         K.append((FRAME_CWV_CONSUMER, consumer, app_node))
                         fn_value = producer
                         new_collected = []
+                        kind = (as_primitive_kind(fn_value)
+                                if is_primitive(fn_value) else PRIM_ORDINARY)
                      # force: install result frame, tail-call the thunk (or return
                      # the cached value immediately if the promise is already done).
                      # R7RS-small 6.10 leaves force-of-non-promise implementation-
                      # defined; we return non-promises unchanged so callers can
                      # write (force x) without first checking promise?, matching
                      # SRFI 155 and most R6RS impls.
-                     if _is_force_primitive(fn_value):
+                     if kind == PRIM_FORCE:
                         if len(new_collected) != 1:
                            raise SchemeArityError(
                               arity_mismatch_msg('force', 1, 1, len(new_collected)),
@@ -1745,11 +1711,13 @@ def _cek_loop(expr, env, ctx):
                         K.append((FRAME_FORCE_RESULT, p))
                         fn_value = as_promise_payload(p)
                         new_collected = []
+                        kind = (as_primitive_kind(fn_value)
+                                if is_primitive(fn_value) else PRIM_ORDINARY)
                      # make-parameter: if a converter is given, tail-call it with
                      # the init value and wrap its return as a Parameter via
                      # FRAME_MAKE_PARAMETER.  Without a converter, build the
                      # parameter inline.
-                     if _is_make_parameter_primitive(fn_value):
+                     if kind == PRIM_MAKE_PARAMETER:
                         if len(new_collected) not in (1, 2):
                            raise SchemeArityError(
                               arity_mismatch_msg('make-parameter', 1, 2,
@@ -1768,11 +1736,13 @@ def _cek_loop(expr, env, ctx):
                         K.append((FRAME_MAKE_PARAMETER, converter))
                         fn_value = converter
                         new_collected = [init]
+                        kind = (as_primitive_kind(fn_value)
+                                if is_primitive(fn_value) else PRIM_ORDINARY)
                      # with-exception-handler: push handler on handler_stack,
                      # push FRAME_POP_HANDLER, tail-call thunk.  Handler is
                      # popped on normal return via FRAME_POP_HANDLER, or
                      # consumed by raise / raise-continuable.
-                     if _is_with_exception_handler_primitive(fn_value):
+                     if kind == PRIM_WITH_EXCEPTION_HANDLER:
                         if len(new_collected) != 2:
                            raise SchemeArityError(
                               arity_mismatch_msg('with-exception-handler', 2, 2,
@@ -1789,11 +1759,13 @@ def _cek_loop(expr, env, ctx):
                         K.append((FRAME_POP_HANDLER,))
                         fn_value = thunk
                         new_collected = []
+                        kind = (as_primitive_kind(fn_value)
+                                if is_primitive(fn_value) else PRIM_ORDINARY)
                      # %guard-eval: guard's dedicated evaluator.  Uses FRAME_GUARD
                      # (not FRAME_POP_HANDLER) so the tail-call optimization only
                      # fires within guard chains, not across weh/guard boundaries.
                      # Guard handlers may return normally (no FRAME_NONCONTIN_RETURN).
-                     if _is_guard_eval_primitive(fn_value):
+                     if kind == PRIM_GUARD_EVAL:
                         if len(new_collected) != 2:
                            raise SchemeArityError(
                               arity_mismatch_msg('%guard-eval', 2, 2,
@@ -1827,10 +1799,12 @@ def _cek_loop(expr, env, ctx):
                         K.append((FRAME_GUARD,))
                         fn_value = thunk
                         new_collected = []
+                        kind = (as_primitive_kind(fn_value)
+                                if is_primitive(fn_value) else PRIM_ORDINARY)
                      # raise (non-continuable): throw Python SchemeRaised so the
                      # exception unwinds the CEK loop.  cek_eval's except block
                      # routes to the topmost installed handler if any.
-                     if _is_raise_primitive(fn_value):
+                     if kind == PRIM_RAISE:
                         if len(new_collected) != 1:
                            raise SchemeArityError(
                               arity_mismatch_msg('raise', 1, 1, len(new_collected)),
@@ -1841,7 +1815,7 @@ def _cek_loop(expr, env, ctx):
                      # the raise-continuable call site (R7RS-correct).  Pop the
                      # handler so a re-raise inside the handler reaches the next
                      # outer one; FRAME_REINSTALL_HANDLER puts it back on return.
-                     if _is_raise_continuable_primitive(fn_value):
+                     if kind == PRIM_RAISE_CONTINUABLE:
                         if len(new_collected) != 1:
                            raise SchemeArityError(
                               arity_mismatch_msg('raise-continuable', 1, 1,
@@ -1854,6 +1828,8 @@ def _cek_loop(expr, env, ctx):
                         K.append((FRAME_REINSTALL_HANDLER, handler))
                         fn_value = handler
                         new_collected = [raised_val]
+                        kind = (as_primitive_kind(fn_value)
+                                if is_primitive(fn_value) else PRIM_ORDINARY)
                      # eval: expand and analyze the datum once, then set C to the
                      # expanded form and continue in the same cek_eval call.  Tail
                      # calls inside the eval'd expression compose with the
@@ -1862,7 +1838,7 @@ def _cek_loop(expr, env, ctx):
                      # selects the evaluation environment: an env value from
                      # (interaction-environment) or (environment ...).  Without
                      # it, the caller's global env is used.
-                     if _is_eval_primitive(fn_value):
+                     if kind == PRIM_EVAL:
                         if len(new_collected) not in (1, 2):
                            raise SchemeArityError(
                               arity_mismatch_msg('eval', 1, 2, len(new_collected)),
@@ -1888,7 +1864,7 @@ def _cek_loop(expr, env, ctx):
                      # error: build an ErrorObject and throw Python SchemeUserError
                      # (which subclasses SchemeRaised), letting cek_eval's except
                      # path route to the handler stack.
-                     if _is_error_primitive(fn_value):
+                     if kind == PRIM_ERROR:
                         if len(new_collected) < 1:
                            raise SchemeArityError(
                               arity_mismatch_msg('error', 1, None, len(new_collected)),
@@ -1907,7 +1883,7 @@ def _cek_loop(expr, env, ctx):
                      # %with-parameters: apply converters, save old, install new,
                      # push wind frame so we integrate with dynamic-wind / continuation
                      # re-entry, tail-call thunk.
-                     if _is_with_parameters_primitive(fn_value):
+                     if kind == PRIM_WITH_PARAMETERS:
                         if len(new_collected) != 3:
                            raise SchemeArityError(
                               arity_mismatch_msg('%with-parameters', 3, 3,
@@ -1943,10 +1919,12 @@ def _cek_loop(expr, env, ctx):
                         K.append((FRAME_DYNAMIC_WIND_AFTER, restore_prim))
                         fn_value = new_collected[2]
                         new_collected = []
+                        kind = (as_primitive_kind(fn_value)
+                                if is_primitive(fn_value) else PRIM_ORDINARY)
                      # dynamic-wind: install the wind frame in the CEK machine
                      # so continuation captures see it and FRAME_DYNAMIC_WIND_AFTER
                      # runs the after thunk when the body returns.
-                     if _is_dynamic_wind_primitive(fn_value):
+                     if kind == PRIM_DYNAMIC_WIND:
                         if len(new_collected) != 3:
                            raise SchemeArityError(
                               arity_mismatch_msg('dynamic-wind',

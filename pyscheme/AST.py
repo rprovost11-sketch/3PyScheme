@@ -336,8 +336,48 @@ def make_closure(params, body, env, rest_name, docstring):
       docstring - str"""
    return (CLOSURE, params, body, env, rest_name, docstring)
 
+# Primitive kinds (#2).  PRIM_ORDINARY (0) is the common case; nonzero
+# kinds mark the special primitives the evaluator intercepts at the
+# FRAME_CALL application point.  Stored as the 4th slot of the primitive
+# tuple so the evaluator dispatches on one integer instead of ~15 name
+# comparisons per call.  C port: an enum field on the primitive struct.
+PRIM_ORDINARY               = 0
+PRIM_CALL_CC                = 1
+PRIM_APPLY                  = 2
+PRIM_CALL_WITH_VALUES       = 3
+PRIM_FORCE                  = 4
+PRIM_MAKE_PARAMETER         = 5
+PRIM_WITH_EXCEPTION_HANDLER = 6
+PRIM_GUARD_EVAL             = 7
+PRIM_RAISE                  = 8
+PRIM_RAISE_CONTINUABLE      = 9
+PRIM_EVAL                   = 10
+PRIM_ERROR                  = 11
+PRIM_WITH_PARAMETERS        = 12
+PRIM_DYNAMIC_WIND           = 13
+PRIM_CONTINUATION_DEPTH     = 14
+
+_PRIMITIVE_KIND_BY_NAME = {
+   'call-with-current-continuation': PRIM_CALL_CC,
+   'call/cc':                        PRIM_CALL_CC,
+   'apply':                          PRIM_APPLY,
+   'call-with-values':               PRIM_CALL_WITH_VALUES,
+   'force':                          PRIM_FORCE,
+   'make-parameter':                 PRIM_MAKE_PARAMETER,
+   'with-exception-handler':         PRIM_WITH_EXCEPTION_HANDLER,
+   '%guard-eval':                    PRIM_GUARD_EVAL,
+   'raise':                          PRIM_RAISE,
+   'raise-continuable':              PRIM_RAISE_CONTINUABLE,
+   'eval':                           PRIM_EVAL,
+   'error':                          PRIM_ERROR,
+   '%with-parameters':               PRIM_WITH_PARAMETERS,
+   'dynamic-wind':                   PRIM_DYNAMIC_WIND,
+   '%continuation-depth':            PRIM_CONTINUATION_DEPTH,
+   }
+
 def make_primitive(name, fn):
-   return (PRIMITIVE, name, fn)
+   return (PRIMITIVE, name, fn,
+           _PRIMITIVE_KIND_BY_NAME.get(name, PRIM_ORDINARY))
 
 def make_case_closure(clauses, env, docstring):
    """Build a case-lambda closure.  `clauses` is a Python list of
@@ -629,6 +669,9 @@ def as_primitive_name(val):
 
 def as_primitive_fn(val):
    return val[2]
+
+def as_primitive_kind(val):
+   return val[3]
 
 def as_case_closure_clauses(val):
    return val[1]
@@ -974,6 +1017,8 @@ if __name__ == '__main__':
    check('is_primitive',     is_primitive(p))
    check('as_primitive_name', as_primitive_name(p) == 'prim')
    check('as_primitive_fn',   as_primitive_fn(p) is dummy_fn)
+   check('as_primitive_kind', as_primitive_kind(p) == PRIM_ORDINARY)
+   check('special prim kind',  as_primitive_kind(make_primitive('apply', dummy_fn)) == PRIM_APPLY)
 
    # Case closure
    case_cls = make_case_closure([(('x',), NIL_VALUE, None)], None, 'doc')

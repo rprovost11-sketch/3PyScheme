@@ -180,7 +180,8 @@ def _expand_define_syntax(sexpr):
       raise SchemeSyntaxError(
          'define-syntax: transformer must be (syntax-rules ...)',
          src_of(tr_expr))
-   t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), macro_name)
+   t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), macro_name,
+                          src_of(tr_expr))
    env = _runtime_env_ref[0]
    if env is not None:
       env.bind(macro_name, t)
@@ -226,7 +227,8 @@ def _expand_let_syntax(sexpr, is_letrec):
             raise SchemeSyntaxError(
                'let-syntax: transformer must be (syntax-rules ...)',
                src_of(tr_expr))
-         t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), bname)
+         t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), bname,
+                                src_of(tr_expr))
          if is_letrec:
             child_env.bind(bname, t)
          else:

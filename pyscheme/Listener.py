@@ -19,7 +19,7 @@ Ported from pythonslisp/Listener.py.  Features:
   an existing log for append and replays it (restoring interpreter state).
 - Log playback: `]readlog file [v]` replays a log without comparison.
 - Source loading: `]readsrc file` (alias `]load`).
-- Testing: `]test [file]` runs a single log file or every log under the
+- Testing: `]feature [file]` (legacy alias `]test`) runs a single log file or every log under the
   testing directory.  Output is compared verbatim with the log's
   expectation.  Full runs produce a timestamped report in testing/runs/.
 - Color output when stdout is a TTY.
@@ -306,7 +306,7 @@ class Listener:
                 regressiondir='',
                 runsdir=''):
       self._interp        = anInterpreter
-      # Absolutify so ]cd doesn't break ]test / ]compliance / ]regression.
+      # Absolutify so ]cd doesn't break ]feature / ]compliance / ]regression.
       self._testdir       = os.path.abspath(testdir)
       self._compliancedir = os.path.abspath(compliancedir) if compliancedir else ''
       self._regressiondir = os.path.abspath(regressiondir) if regressiondir else ''
@@ -332,7 +332,8 @@ class Listener:
          'log':      self._cmd_log,
          'close':    self._cmd_close,
          'resume':   self._cmd_resume,
-         'test':       self._cmd_test,
+         'feature':    self._cmd_feature,
+         'test':       self._cmd_feature,  # legacy alias for ]feature
          'compliance': self._cmd_compliance,
          'regression': self._cmd_regression,
          'cd':         self._cmd_cd,
@@ -928,8 +929,8 @@ class Listener:
       self._writeLn(';;; Dribble resumed ' + ts)
       self._writeLn('')
 
-   def _cmd_test(self, args):
-      """Usage: ]test [<filename>]
+   def _cmd_feature(self, args):
+      """Usage: ]feature [<filename>]   (legacy alias: ]test)
 
       With a filename: read a session log file and verify that the
       interpreter produces the same return values, output, and errors
@@ -948,7 +949,7 @@ class Listener:
          ;;; comment at top level (ignored)
       """
       if len(args) > 1:
-         raise ListenerCommandError('Usage: ]test [<filename>]')
+         raise ListenerCommandError('Usage: ]feature [<filename>]')
       if self._logFile:
          raise ListenerCommandError(
             'Please close the log before running tests (]close).')

@@ -664,8 +664,12 @@ def apply_syntax_transformer(t, form):
 
 # ── Parse (syntax-rules [ellipsis] (literals) rules...) ─────────────────────
 
-def parse_syntax_rules(tail, def_env, name):
+def parse_syntax_rules(tail, def_env, name, form_src=None):
    """Parse a syntax-rules body into a SyntaxTransformer.
+
+   form_src is the source position of the whole (syntax-rules ...) form,
+   used for the 'malformed' diagnostic since tail (the form's cdr) may be
+   a bare NIL with no position.
 
    def_env is a flat dict snapshot of the current runtime env (name->value).
    For each free template identifier:
@@ -674,7 +678,8 @@ def parse_syntax_rules(tail, def_env, name):
      - If not found: add to intro_names (introduced binding sites)."""
    from pyscheme.Parser import SchemeSyntaxError
    if not is_cons(tail):
-      raise SchemeSyntaxError('syntax-rules: malformed', src_of(tail))
+      raise SchemeSyntaxError('syntax-rules: malformed',
+                              form_src if form_src is not None else src_of(tail))
    ellipsis_sym = '...'
    first = tail.car
    rest = tail.cdr
