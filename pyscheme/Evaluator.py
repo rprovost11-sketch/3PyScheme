@@ -146,6 +146,65 @@ FRAME_NONCONTIN_RETURN   = 25
 FRAME_GUARD              = 26
 
 
+# --- Special-form dispatch kinds (optimization #1) ---------------------
+# The CEK eval loop, on every cons-with-symbol-head, formerly walked a
+# ladder of ~21 sequential string == comparisons to recognize a special
+# form before falling through to the application path.  Every application
+# paid all 21 compares.  Instead, stamp each keyword's interned symbol id
+# with an integer kind in _SPECIAL_FORM_KIND; the loop does ONE dict.get
+# on the head's symbol id.  Applications (the hot case) get None in one
+# miss and skip the ladder entirely; special forms dispatch on the int
+# kind via an inlined switch (if/elif).  C port: a switch on these kinds.
+_SF_QUOTE          = 1
+_SF_LAMBDA         = 2
+_SF_CASE_LAMBDA    = 3
+_SF_DELAY          = 4
+_SF_DELAY_FORCE    = 5
+_SF_IMPORT         = 6
+_SF_DEFINE_LIBRARY = 7
+_SF_IF             = 8
+_SF_DEFINE         = 9
+_SF_SET            = 10
+_SF_BEGIN          = 11
+_SF_WHEN           = 12
+_SF_UNLESS         = 13
+_SF_AND            = 14
+_SF_OR             = 15
+_SF_COND           = 16
+_SF_CASE           = 17
+_SF_LET            = 18
+_SF_LET_STAR       = 19
+_SF_LETREC         = 20    # letrec and letrec* share one body
+_SF_TRACE          = 21
+_SF_UNTRACE        = 22
+
+_SPECIAL_FORM_KIND = {
+   intern_symbol('quote'):          _SF_QUOTE,
+   intern_symbol('lambda'):         _SF_LAMBDA,
+   intern_symbol('case-lambda'):    _SF_CASE_LAMBDA,
+   intern_symbol('delay'):          _SF_DELAY,
+   intern_symbol('delay-force'):    _SF_DELAY_FORCE,
+   intern_symbol('import'):         _SF_IMPORT,
+   intern_symbol('define-library'): _SF_DEFINE_LIBRARY,
+   intern_symbol('if'):             _SF_IF,
+   intern_symbol('define'):         _SF_DEFINE,
+   intern_symbol('set!'):           _SF_SET,
+   intern_symbol('begin'):          _SF_BEGIN,
+   intern_symbol('when'):           _SF_WHEN,
+   intern_symbol('unless'):         _SF_UNLESS,
+   intern_symbol('and'):            _SF_AND,
+   intern_symbol('or'):             _SF_OR,
+   intern_symbol('cond'):           _SF_COND,
+   intern_symbol('case'):           _SF_CASE,
+   intern_symbol('let'):            _SF_LET,
+   intern_symbol('let*'):           _SF_LET_STAR,
+   intern_symbol('letrec'):         _SF_LETREC,
+   intern_symbol('letrec*'):        _SF_LETREC,
+   intern_symbol('trace'):          _SF_TRACE,
+   intern_symbol('untrace'):        _SF_UNTRACE,
+}
+
+
 # R7RS §3.1: syntactic keywords that may not be used as expressions.
 # When a bare symbol evaluates to the global stub primitive for one of
 # these names (i.e., there is no local binding that shadows it), the
@@ -1100,67 +1159,79 @@ def _cek_loop(expr, env, ctx):
                   head = C.car
 
                   if is_symbol(head):
-                     name = as_symbol(head)
+                     # One dict.get on the head's interned symbol id (head[1],
+                     # i.e. as_symbol_id) replaces the former ~21-compare string
+                     # ladder.  Applications (the hot case) miss -> None and take
+                     # the application path immediately; keywords dispatch on the
+                     # integer kind below via an inlined switch (optimization #1).
+                     sf_kind = _SPECIAL_FORM_KIND.get(head[1])
+                     if sf_kind is None:
+                        # Symbol head but not a keyword - application.
+                        # Walk arg cons chain into Python list.
+                        args = _collect_cons_to_list(C.cdr)
+                        K.append((FRAME_ARG, args, E, C))
+                        C = head
+                        continue
 
-                     if name == 'quote':
+                     if sf_kind == _SF_QUOTE:
                         # (quote datum) - datum self-evaluates
                         V = C.cdr.car
                         mark_literal_immutable(V)
                         break
 
-                     if name == 'lambda':
+                     elif sf_kind == _SF_LAMBDA:
                         V = _make_closure_from_lambda(C, E)
                         break
 
-                     if name == 'case-lambda':
+                     elif sf_kind == _SF_CASE_LAMBDA:
                         V = _make_case_closure_from_form(C, E)
                         break
 
-                     if name == 'delay' or name == 'delay-force':
+                     elif sf_kind == _SF_DELAY or sf_kind == _SF_DELAY_FORCE:
                         # Both produce a lazy promise whose thunk evaluates expr
                         # in the current env.  delay-force tail-chases into a
                         # promise result; plain delay returns it as-is (R7RS 4.2.5).
                         expr = C.cdr.car
                         body = alloc_cons(expr, NIL_VALUE, None)
                         thunk = make_closure([], body, E, None, '')
-                        iterative = (name == 'delay-force')
+                        iterative = (sf_kind == _SF_DELAY_FORCE)
                         V = make_promise_lazy(thunk, iterative)
                         break
 
-                     if name == 'import':
+                     elif sf_kind == _SF_IMPORT:
                         # (import <import-set>...) - resolve each set and bind
                         # each exported name into the current env.  Returns VOID.
                         _process_import(C.cdr, E, ctx)
                         V = VOID_VALUE
                         break
 
-                     if name == 'define-library':
+                     elif sf_kind == _SF_DEFINE_LIBRARY:
                         # (define-library <name> <decl>...) - install a new
                         # library.  Returns VOID; no visible effect on E.
                         _process_define_library(C, ctx)
                         V = VOID_VALUE
                         break
 
-                     if name == 'if':
+                     elif sf_kind == _SF_IF:
                         # (if test then else)  -- expander supplies VOID for missing else
                         K.append((FRAME_IF, C.cdr.cdr.car, C.cdr.cdr.cdr.car, E))
                         C = C.cdr.car
                         continue
 
-                     if name == 'define':
+                     elif sf_kind == _SF_DEFINE:
                         # (define name value)
                         K.append((FRAME_DEFINE, C.cdr.car, E))
                         C = C.cdr.cdr.car
                         continue
 
-                     if name == 'set!':
+                     elif sf_kind == _SF_SET:
                         # (set! name value)
                         name_sexpr = C.cdr.car
                         K.append((FRAME_SET, name_sexpr, E, src_of(name_sexpr)))
                         C = C.cdr.cdr.car
                         continue
 
-                     if name == 'begin':
+                     elif sf_kind == _SF_BEGIN:
                         body = C.cdr
                         if is_nil(body):
                            V = VOID_VALUE
@@ -1170,19 +1241,19 @@ def _cek_loop(expr, env, ctx):
                            K.append((FRAME_SEQ, body.cdr, E))
                         continue
 
-                     if name == 'when':
+                     elif sf_kind == _SF_WHEN:
                         # (when test body...)
                         K.append((FRAME_WHEN, C.cdr.cdr, E))
                         C = C.cdr.car
                         continue
 
-                     if name == 'unless':
+                     elif sf_kind == _SF_UNLESS:
                         # (unless test body...)
                         K.append((FRAME_UNLESS, C.cdr.cdr, E))
                         C = C.cdr.car
                         continue
 
-                     if name == 'and':
+                     elif sf_kind == _SF_AND:
                         body = C.cdr
                         if is_nil(body):
                            V = make_boolean(True)
@@ -1192,7 +1263,7 @@ def _cek_loop(expr, env, ctx):
                         C = body.car
                         continue
 
-                     if name == 'or':
+                     elif sf_kind == _SF_OR:
                         body = C.cdr
                         if is_nil(body):
                            V = make_boolean(False)
@@ -1202,7 +1273,7 @@ def _cek_loop(expr, env, ctx):
                         C = body.car
                         continue
 
-                     if name == 'cond':
+                     elif sf_kind == _SF_COND:
                         # (cond clauses...) - analyzer ensures non-empty
                         clauses = C.cdr
                         first   = clauses.car
@@ -1218,7 +1289,7 @@ def _cek_loop(expr, env, ctx):
                         C = kind[1]   # the test expression
                         continue
 
-                     if name == 'case':
+                     elif sf_kind == _SF_CASE:
                         # (case <key> <clause>...) - analyzer ensures shape:
                         # key present, at least one clause, each clause a proper
                         # list starting with a datum-list or 'else'.
@@ -1229,7 +1300,7 @@ def _cek_loop(expr, env, ctx):
                         C = C.cdr.car   # the key expression
                         continue
 
-                     if name == 'let':
+                     elif sf_kind == _SF_LET:
                         # (let [name] bindings body...)
                         if is_symbol(C.cdr.car):
                            # named let: desugar at runtime
@@ -1285,7 +1356,7 @@ def _cek_loop(expr, env, ctx):
                         # E stays at outer env - all val_exprs evaluate in it
                         continue
 
-                     if name == 'let*':
+                     elif sf_kind == _SF_LET_STAR:
                         # (let* bindings body...) - each val sees prior bindings
                         bindings_cons = C.cdr.car
                         body_cons     = C.cdr.cdr
@@ -1305,7 +1376,7 @@ def _cek_loop(expr, env, ctx):
                         C = pairs[0][1]
                         continue
 
-                     if name == 'letrec' or name == 'letrec*':
+                     elif sf_kind == _SF_LETREC:
                         # (letrec bindings body...) - all names visible in val_exprs
                         bindings_cons = C.cdr.car
                         body_cons     = C.cdr.cdr
@@ -1331,7 +1402,7 @@ def _cek_loop(expr, env, ctx):
                         E = new_env
                         continue
 
-                     if name == 'trace':
+                     elif sf_kind == _SF_TRACE:
                         tracer    = ctx.tracer
                         args_cons = C.cdr
                         if is_nil(args_cons):
@@ -1347,7 +1418,7 @@ def _cek_loop(expr, env, ctx):
                         V = _sorted_sym_list(tracer.get_fns())
                         break
 
-                     if name == 'untrace':
+                     elif sf_kind == _SF_UNTRACE:
                         tracer    = ctx.tracer
                         args_cons = C.cdr
                         if is_nil(args_cons):
@@ -1362,13 +1433,6 @@ def _cek_loop(expr, env, ctx):
                               cur = cur.cdr
                         V = _sorted_sym_list(tracer.get_fns())
                         break
-
-                     # Symbol head but not a keyword - application.
-                     # Walk arg cons chain into Python list.
-                     args = _collect_cons_to_list(C.cdr)
-                     K.append((FRAME_ARG, args, E, C))
-                     C = head
-                     continue
 
                   # head is not a symbol - application (e.g., immediate lambda).
                   args = _collect_cons_to_list(C.cdr)
