@@ -428,14 +428,23 @@ def _prim_command_line(ctx, env, args, app_node):
 def _prim_exit(ctx, env, args, app_node):
    import sys as _sys
    from pyscheme.AST import is_boolean, as_boolean, is_integer, as_integer
+   from pyscheme.Environment import ReplExit
    if len(args) == 0:
-      _sys.exit(0)
-   obj = args[0]
-   if is_boolean(obj):
-      _sys.exit(0 if as_boolean(obj) is True else 1)
-   if is_integer(obj):
-      _sys.exit(as_integer(obj))
-   _sys.exit(1)
+      code = 0
+   else:
+      obj = args[0]
+      if is_boolean(obj):
+         code = 0 if as_boolean(obj) is True else 1
+      elif is_integer(obj):
+         code = as_integer(obj)
+      else:
+         code = 1
+   # In a live REPL session (exit) aborts the current evaluation and returns
+   # to the '>>> ' prompt rather than terminating the process; batch file
+   # execution still exits the process.  See Context.interactive.
+   if getattr(ctx, 'interactive', False):
+      raise ReplExit(code)
+   _sys.exit(code)
 
 
 def _prim_emergency_exit(ctx, env, args, app_node):

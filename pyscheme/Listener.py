@@ -39,6 +39,7 @@ import time
 from pyscheme.Environment import (
    SchemeUnboundError, SchemeRuntimeError,
    SchemeArityError, SchemeTypeError, SchemeRaised,
+   ReplExit,
 )
 from pyscheme.Parser      import SchemeSyntaxError
 from pyscheme.Analyzer    import SchemeAnalysisError
@@ -305,6 +306,10 @@ class Listener:
                 regressiondir='',
                 runsdir=''):
       self._interp        = anInterpreter
+      # A live Listener means an interactive REPL session: (exit) should abort
+      # to the prompt, not terminate the process (batch evalFile never builds a
+      # Listener, so its (exit) still exits).  See primitives/meta.py:_prim_exit.
+      self._interp.get_ctx().interactive = True
       # Absolutify so ]cd doesn't break ]feature / ]compliance / ]regression.
       self._testdir       = os.path.abspath(testdir)
       self._compliancedir = os.path.abspath(compliancedir) if compliancedir else ''
@@ -562,6 +567,13 @@ class Listener:
                self._writeResult(result)
          except StopIteration:
             break
+         except ReplExit:
+            # (exit) at an interactive prompt: unwind to top level and note it
+            # quietly (dim), then carry on at the next '>>> '.
+            if self._use_color():
+               print('\033[2m; (exit) ignored at REPL top level\033[0m')
+            else:
+               print('; (exit) ignored at REPL top level')
          except KeyboardInterrupt:
             self._writeErrorMsg('Interrupted.')
          except Exception as e:
@@ -600,6 +612,8 @@ class Listener:
          eval_expr = ('#!fold-case\n' if fold_case else '') + expr
          try:
             resultStr = self._interp.eval(eval_expr)
+         except ReplExit:
+            resultStr = ''
          except Exception:
             resultStr = ''
          if verbosity >= 3:
@@ -664,6 +678,11 @@ class Listener:
          try:
             actual_retval = self._interp.eval(eval_expr,
                                               outStrm=out_capture)
+         except ReplExit:
+            # A test that calls (exit): contain the abort so the suite keeps
+            # running.  Recorded as an error token so the entry flags rather
+            # than silently passing.
+            actual_error = '(exit)'
          except KeyboardInterrupt:
             actual_error = 'Interrupted.'
          except Exception as e:

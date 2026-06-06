@@ -13,6 +13,24 @@ from pyscheme.AST import (
 )
 
 
+# --- Non-error control escape ------------------------------------------
+# ReplExit unwinds an interactive evaluation back to the REPL top level
+# when (exit) is called from the prompt rather than from a batch file.  It
+# is deliberately a BaseException -- NOT a Scheme error -- so guard /
+# with-exception-handler (which only catch Exception subclasses) never
+# intercept it, mirroring how Evaluator.ContinuationEscape stays outside
+# the condition system.  Batch-mode (exit) still calls sys.exit(); the
+# mode is read from Context.interactive.  See primitives/meta.py:_prim_exit.
+
+class ReplExit(BaseException):
+   """Raised by (exit [code]) in interactive mode to abort the current
+   evaluation and return to the '>>> ' prompt.  Carries the requested exit
+   code for completeness (it is ignored at the REPL)."""
+   def __init__(self, code=0):
+      self.code = code
+      super().__init__('repl exit')
+
+
 # --- Scheme runtime error hierarchy ------------------------------------
 # Python exceptions with a fixed hierarchy; map to setjmp/longjmp in C
 # and to try/catch in C++.  Every subclass carries optional SourceInfo

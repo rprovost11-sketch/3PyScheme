@@ -22,6 +22,10 @@ class Context:
          self.outStrm = outStrm
       self._debugging    = False   # True while rd is running
       self._instrumented = False   # gate: any debug tooling active
+      self.interactive   = False   # True in a live REPL session (set by the
+                                   # Listener); (exit) aborts to the prompt
+                                   # instead of terminating the process.  See
+                                   # primitives/meta.py:_prim_exit.
       self.debugger      = None    # Debugger instance; set by Interpreter
       self.tracer        = None    # Tracer instance; set by Interpreter
       self.lEval         = None    # (env, expr) -> Value; set by Interpreter
