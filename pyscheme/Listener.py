@@ -282,10 +282,9 @@ class Listener:
       return actual == expected
 
    @staticmethod
-   def _print_welcome_banner():
+   def _print_welcome_banner(use_color):
       """Short welcome banner printed by _banner and ]reboot."""
-      useColor = sys.stdout.isatty()
-      if useColor:
+      if use_color:
          BOLD_GREEN = '\033[1;92m'
          CYAN       = '\033[96m'
          RESET      = '\033[0m'
@@ -316,6 +315,16 @@ class Listener:
       self._version       = version
       self._author        = author
       self._project       = project
+      # When True, ANSI color escape codes are emitted even though stdout is
+      # not a TTY -- e.g. when the REPL is driven through a pipe by a GUI
+      # front-end (cherry) that renders the codes itself.  Toggled with
+      # ]toggle-tty-color; queried with ]tty-color.  Default off, so piped
+      # output stays plain unless a front-end opts in.
+      self._emit_color_codes = False
+      # True while a test run is redirecting sys.stdout to a .run report file.
+      # Forces color OFF even when _emit_color_codes is set, so report files
+      # stay clean text (mirrors cppscheme2's _output_to_file).
+      self._output_to_file = False
       self._init_readline()
       # Wire the Listener's prompt function into the interpreter's debugger
       # so debug> prompts use the same readline session as the REPL.
@@ -340,6 +349,8 @@ class Listener:
          'pwd':      self._cmd_pwd,
          'lhistory': self._cmd_lhistory,
          'debug':    self._cmd_debug,
+         'toggle-tty-color': self._cmd_toggle_tty_color,
+         'tty-color':        self._cmd_tty_color,
       }
       self._banner()
 
@@ -379,7 +390,7 @@ class Listener:
    # ---- I/O helpers ----
 
    def _use_color(self):
-      return sys.stdout.isatty()
+      return (self._emit_color_codes or sys.stdout.isatty()) and not self._output_to_file
 
    def _banner(self):
       color = self._use_color()
@@ -398,7 +409,7 @@ class Listener:
       print(DIM + '- Interpreter Initialized' + RESET, flush=True)
       print(DIM + '- Listener Initialized' + RESET, flush=True)
       print()
-      Listener._print_welcome_banner()
+      Listener._print_welcome_banner(self._use_color())
       print()
 
    def _writeLn(self, value='', file=None, flush=False):
@@ -821,7 +832,7 @@ class Listener:
       print(DIM + '- Initializing interpreter' + RESET)
       self._interp.reboot()
       print()
-      Listener._print_welcome_banner()
+      Listener._print_welcome_banner(self._use_color())
       print()
 
    def _cmd_readsrc(self, args):
@@ -1031,9 +1042,11 @@ class Listener:
             print(padded + ' ', end='', flush=True, file=savedStdout)
             if runFile is not None:
                sys.stdout = runFile
+               self._output_to_file = True
             r = self.sessionLog_test(filename, verbosity=3)
             if runFile is not None:
                sys.stdout = savedStdout
+               self._output_to_file = False
             grand_pass = grand_pass + r.n_pass
             grand_fail = grand_fail + r.n_fail
             per_file.append((filename, r.n_pass, r.n_fail))
@@ -1045,6 +1058,7 @@ class Listener:
             print(status, file=savedStdout, flush=True)
       finally:
          sys.stdout = savedStdout
+         self._output_to_file = False
          os.chdir(savedCwd)
 
       self._interp.reboot(load_rc=False)
@@ -1279,6 +1293,32 @@ class Listener:
       if args:
          raise ListenerCommandError('Usage: ]pwd')
       print(os.getcwd())
+
+   def _print_tty_color_state(self):
+      """Print the current forced-color state as 'tty-color: on|off'."""
+      print('tty-color: ' + ('on' if self._emit_color_codes else 'off'))
+
+   def _cmd_toggle_tty_color(self, args):
+      """Usage: ]toggle-tty-color
+      Toggle forced emission of ANSI color escape codes.  When ON, color
+      codes are emitted even when stdout is not a TTY (e.g. when the REPL is
+      driven through a pipe by a GUI front-end such as cherry that renders
+      the codes itself).  When OFF, color follows the usual rule -- emitted
+      only to a real terminal.  Prints the resulting state.
+      """
+      if args:
+         raise ListenerCommandError('Usage: ]toggle-tty-color')
+      self._emit_color_codes = not self._emit_color_codes
+      self._print_tty_color_state()
+
+   def _cmd_tty_color(self, args):
+      """Usage: ]tty-color
+      Show whether forced ANSI color-code emission is currently on or off
+      (see ]toggle-tty-color).
+      """
+      if args:
+         raise ListenerCommandError('Usage: ]tty-color')
+      self._print_tty_color_state()
 
    def _cmd_lhistory(self, args):
       """Usage: ]lhistory [<n>]
