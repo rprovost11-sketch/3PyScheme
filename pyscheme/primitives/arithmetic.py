@@ -176,6 +176,21 @@ def _has_any_complex(args):
 
 
 def _prim_add(ctx, env, args, app_node):
+   # Fast path: every argument an exact integer (the overwhelmingly common
+   # case).  Sum the raw Python ints directly, skipping the complex scan, the
+   # per-arg _any_num dispatch, and _wrap.  Bail to the general tower on the
+   # first non-integer (the partial sum is discarded and recomputed below).
+   total = 0
+   n = len(args)
+   i = 0
+   while i < n:
+      a = args[i]
+      if not is_integer(a):
+         break
+      total = total + as_integer(a)
+      i = i + 1
+   if i == n:
+      return make_integer(total)
    if _has_any_complex(args):
       acc_re    = 0
       acc_im    = 0
@@ -200,6 +215,23 @@ def _prim_add(ctx, env, args, app_node):
 
 
 def _prim_sub(ctx, env, args, app_node):
+   # Fast path: all exact integers (see _prim_add).  One arg negates; many
+   # args subtract the rest from the first.
+   n = len(args)
+   a0 = args[0]
+   if is_integer(a0):
+      result = as_integer(a0)
+      if n == 1:
+         return make_integer(-result)
+      i = 1
+      while i < n:
+         a = args[i]
+         if not is_integer(a):
+            break
+         result = result - as_integer(a)
+         i = i + 1
+      if i == n:
+         return make_integer(result)
    if _has_any_complex(args):
       acc = _extract_complex(args[0])
       if acc.re is None:
@@ -228,6 +260,18 @@ def _prim_sub(ctx, env, args, app_node):
 
 
 def _prim_mul(ctx, env, args, app_node):
+   # Fast path: all exact integers (see _prim_add).
+   result = 1
+   n = len(args)
+   i = 0
+   while i < n:
+      a = args[i]
+      if not is_integer(a):
+         break
+      result = result * as_integer(a)
+      i = i + 1
+   if i == n:
+      return make_integer(result)
    if _has_any_complex(args):
       acc = NumResult(1, 0, True)
       i = 0

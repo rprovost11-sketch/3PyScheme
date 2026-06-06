@@ -50,6 +50,14 @@ import pyscheme.Expander as _expander_mod
 _DEFAULT_TEST_DIR = 'testing'
 _HIST_FILE        = os.path.expanduser('~/.pyscheme_history')
 
+# Default value the test runner binds to %MAX_TCO_ITER_COUNT% before each test
+# file (after the per-file reboot).  Compliance test 3.05 reads it to size its
+# proper-tail-recursion soak loops; ]compliance -I:<count> overrides it.  Kept
+# modest so routine runs stay fast -- a big count is a per-machine memory soak,
+# not a portable TCO proof (3.05 proves TCO with %continuation-depth instead).
+_TCO_ITER_DEFAULT = 100000
+_TCO_ITER_VAR     = '%MAX_TCO_ITER_COUNT%'
+
 
 def _substring(s, start, end):
    """Return s[start:end] as an explicit char-by-char copy.  Ports to
@@ -1006,11 +1014,34 @@ class Listener:
 
       self._runTestFiles(filenames, testDir, 'feature')
 
-   def _runTestFiles(self, filenames, testDir, suite):
+   @staticmethod
+   def _parse_iter_count(value):
+      """Parse the value of an -I: switch: a positive integer with an optional
+      metric suffix (k/K = 1e3, m/M = 1e6).  e.g. '100000', '100k', '5M'.
+      Raises ListenerCommandError on a malformed value."""
+      s = value.strip()
+      mult = 1
+      if s and s[-1] in 'kK':
+         mult = 1000
+         s = s[:-1]
+      elif s and s[-1] in 'mM':
+         mult = 1000000
+         s = s[:-1]
+      try:
+         n = int(s)
+      except ValueError:
+         raise ListenerCommandError(
+            'Invalid -I: iteration count (use e.g. -I:100000, -I:100k, -I:5M)')
+      if n <= 0:
+         raise ListenerCommandError('-I: iteration count must be positive')
+      return n * mult
+
+   def _runTestFiles(self, filenames, testDir, suite, tco_iters=_TCO_ITER_DEFAULT):
       """Run each file through sessionLog_test, reboot between files,
       write a run report to <testDir>/runs/, print a grand total.
       `suite` is 'feature' | 'compliance' | 'regression'; it becomes part
-      of the run-report filename: yyyy-mm-dd-hhmmss-<suite>-PyScheme.run."""
+      of the run-report filename: yyyy-mm-dd-hhmmss-<suite>-PyScheme.run.
+      `tco_iters` is bound to %MAX_TCO_ITER_COUNT% after each file's reboot."""
       color = self._use_color()
       if color:
          BOLD  = '\033[1;97m'
@@ -1053,6 +1084,10 @@ class Listener:
       try:
          for filename in filenames:
             self._interp.reboot(load_rc=False)
+            # Bind %MAX_TCO_ITER_COUNT% in the fresh env so 3.05 (and any future
+            # iteration-tunable test) can size its loops.  Harmless elsewhere.
+            self._interp.rawEval('(define ' + _TCO_ITER_VAR + ' '
+                                 + str(tco_iters) + ')')
             base   = os.path.basename(filename)
             padded = base.ljust(56)
             # Name and status are intentionally two separate print calls.
@@ -1140,13 +1175,21 @@ class Listener:
             runFile.close()
 
    def _cmd_compliance(self, args):
-      """Usage: ]compliance [<file.log> | <start> [<end>]]
+      """Usage: ]compliance [-I:<count>] [<file.log> | <start> [<end>]]
 
       Run the R7RS compliance test suite against the configured directory.
         ]compliance                    -- run all tests
         ]compliance 3                  -- run tests with filename >= "3"
         ]compliance 3 4                -- run tests with "3" <= filename < "4"
         ]compliance 3.1 - Booleans.log -- run that one file
+        ]compliance -I:5M              -- run all, sizing TCO soak loops to 5,000,000
+        ]compliance -I:1M 3.05         -- run the 3.05 file with 1,000,000 iters
+
+      -I:<count> sets %MAX_TCO_ITER_COUNT% (default 100000), the upper bound
+      compliance test 3.05 uses for its proper-tail-recursion soak loops.
+      Accepts a plain integer or a metric suffix: -I:100000, -I:100k, -I:5M.
+      A high count is a per-machine memory soak, not a portable TCO proof
+      (3.05 proves TCO with %continuation-depth at small N regardless).
 
       Filename comparison is case-insensitive on the bare filename only.
       The interpreter is rebooted before each file and after the suite.
@@ -1172,6 +1215,16 @@ class Listener:
       if not os.path.isdir(compdir):
          raise ListenerCommandError('Compliance directory not found: ' + compdir)
 
+      # Pull out an optional -I:<count> switch; the rest are file/range selectors.
+      tco_iters = _TCO_ITER_DEFAULT
+      rest = []
+      for a in args:
+         if a.startswith('-I:'):
+            tco_iters = Listener._parse_iter_count(a[3:])
+         else:
+            rest.append(a)
+      args = rest
+
       # Detect single-file mode: last token ends with ".log".
       # Tokens are rejoined since filenames may contain spaces.
       if args and args[-1].endswith('.log'):
@@ -1179,7 +1232,7 @@ class Listener:
          fpath = os.path.join(compdir, fname)
          if not os.path.isfile(fpath):
             raise ListenerCommandError('File not found: ' + fname)
-         self._runTestFiles([fpath], compdir, 'compliance')
+         self._runTestFiles([fpath], compdir, 'compliance', tco_iters=tco_iters)
          return
 
       # Range mode: 0 args = all, 1 arg = [start, ∞), 2 args = [start, end).
@@ -1192,7 +1245,7 @@ class Listener:
          raise ListenerCommandError('No .log files in ' + compdir)
 
       if not args:
-         self._runTestFiles(all_files, compdir, 'compliance')
+         self._runTestFiles(all_files, compdir, 'compliance', tco_iters=tco_iters)
          return
 
       start_lc = args[0].lower()
@@ -1212,7 +1265,7 @@ class Listener:
             raise ListenerCommandError(
                'No .log files at or after "' + args[0] + '"')
 
-      self._runTestFiles(filtered, compdir, 'compliance')
+      self._runTestFiles(filtered, compdir, 'compliance', tco_iters=tco_iters)
 
    def _cmd_regression(self, args):
       """Usage: ]regression [<file.log> | <start> [<end>]]
