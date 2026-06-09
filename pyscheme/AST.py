@@ -1002,24 +1002,29 @@ def eqv_atom(a, b):
 # --- Immutability ------------------------------------------------------
 
 def mark_literal_immutable(val):
-    """Recursively mark a literal datum (from quote or the reader) as
-    immutable.  Guards against cycles via the immutable flag itself."""
-    if isinstance(val, ConsCell):
-        if val.immutable:
-            return
-        val.immutable = True
-        mark_literal_immutable(val.car)
-        mark_literal_immutable(val.cdr)
-    elif isinstance(val, SchemeString):
-        val.immutable = True
-    elif isinstance(val, SchemeVector):
-        if val.immutable:
-            return
-        val.immutable = True
-        for item in val.items:
-            mark_literal_immutable(item)
-    elif isinstance(val, SchemeBytevector):
-        val.immutable = True
+    """Mark a literal datum (from quote or the reader) as immutable, iteratively
+    via an explicit worklist so a deeply-nested or very long literal does not
+    overflow the Python stack.  The immutable flag doubles as the visited marker,
+    so the walk terminates on cycles and re-shared structure is not re-walked."""
+    stack = [val]
+    while stack:
+        v = stack.pop()
+        if isinstance(v, ConsCell):
+            if v.immutable:
+                continue
+            v.immutable = True
+            stack.append(v.car)
+            stack.append(v.cdr)
+        elif isinstance(v, SchemeString):
+            v.immutable = True
+        elif isinstance(v, SchemeVector):
+            if v.immutable:
+                continue
+            v.immutable = True
+            for item in v.items:
+                stack.append(item)
+        elif isinstance(v, SchemeBytevector):
+            v.immutable = True
 
 
 def is_immutable(val):

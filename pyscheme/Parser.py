@@ -106,6 +106,9 @@ TOK_LABEL_DEF = 'LABEL_DEF'
 TOK_LABEL_REF = 'LABEL_REF'
 
 
+_MAX_PARSE_DEPTH = 500   # graceful cap on reader nesting (mirrors _MAX_EXPAND_DEPTH)
+
+
 class Token:
     """Lexer token.  POD; no methods except __init__.  src holds the
     SourceInfo for the token's starting position.  The parser uses src
@@ -854,6 +857,7 @@ class Parser:
         self.tokens = tokens
         self.pos = 0
         self.labels = {}   # datum labels: int -> value  (R7RS §2.4)
+        self._depth = 0    # parse_expr nesting depth (capped by _MAX_PARSE_DEPTH)
 
     def _peek(self):
         return self.tokens[self.pos]
@@ -880,6 +884,20 @@ class Parser:
         return forms
 
     def parse_expr(self):
+        # Bound recursion depth so deeply-nested input fails with a graceful
+        # syntax error instead of RecursionError / host-stack overflow (the reader
+        # is recursive-descent).  Caps nesting only; flat lists of any length are
+        # unaffected.  Mirrors the expander's _MAX_EXPAND_DEPTH.
+        self._depth = self._depth + 1
+        if self._depth > _MAX_PARSE_DEPTH:
+            self._depth = self._depth - 1
+            raise SchemeSyntaxError('expression nesting too deep', self._peek().src)
+        try:
+            return self._parse_expr_inner()
+        finally:
+            self._depth = self._depth - 1
+
+    def _parse_expr_inner(self):
         self._skip_datum_comments()
         tok = self._peek()
         kind = tok.kind

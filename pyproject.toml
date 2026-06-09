@@ -23,7 +23,6 @@ Repository = "https://github.com/rprovost11/pyscheme"
 
 [project.scripts]
 pyscheme = "pyscheme.__main__:main"
-cherry   = "pyscheme.cherry.app:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "pyscheme.__version__"}
