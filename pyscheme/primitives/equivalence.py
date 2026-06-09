@@ -46,22 +46,12 @@ def _prim_eqv_p(ctx, env, args, app_node):
     return make_boolean(eqv_atom(args[0], args[1]))
 
 
-def _value_equal(a, b, seen=None):
-    """Structural equality ignoring trailing src on atoms.
-    Walks ConsCell chains and vectors recursively.  The 'seen' set tracks
-    (id(a), id(b)) pairs for mutable structures to bound recursion on cycles."""
-    if seen is None:
-        seen = set()
-    if is_cons(a):
-        if not is_cons(b):
-            return False
-        key = (id(a), id(b))
-        if key in seen:
-            return True
-        seen.add(key)
-        return _value_equal(a.car, b.car, seen) and _value_equal(a.cdr, b.cdr, seen)
-    if is_cons(b):
-        return False
+def _equal_leaf(a, b, seen, work):
+    """Compare two NON-cons values for equal?.  Compound leaves (vectors,
+    exact-complex) enqueue their children onto `work` and return True; atomic
+    leaves compare directly.  Returns False on a definite mismatch.  Caller
+    guarantees neither a nor b is a cons (those are handled by the cdr-spine
+    loop in _value_equal)."""
     if is_vector(a):
         if not is_vector(b):
             return False
@@ -75,8 +65,7 @@ def _value_equal(a, b, seen=None):
         seen.add(key)
         i = 0
         while i < len(va):
-            if not _value_equal(va[i], vb[i], seen):
-                return False
+            work.append((va[i], vb[i]))
             i = i + 1
         return True
     if is_vector(b):
@@ -106,8 +95,9 @@ def _value_equal(a, b, seen=None):
         return (as_complex_real(a) == as_complex_real(b)
                 and as_complex_imag(a) == as_complex_imag(b))
     if is_exact_complex(a) and is_exact_complex(b):
-        return (_value_equal(as_exact_complex_real(a), as_exact_complex_real(b), seen)
-                and _value_equal(as_exact_complex_imag(a), as_exact_complex_imag(b), seen))
+        work.append((as_exact_complex_real(a), as_exact_complex_real(b)))
+        work.append((as_exact_complex_imag(a), as_exact_complex_imag(b)))
+        return True
     if is_boolean(a) and is_boolean(b):
         return as_boolean(a) is as_boolean(b)
     if is_string(a) and is_string(b):
@@ -115,6 +105,45 @@ def _value_equal(a, b, seen=None):
     if is_character(a) and is_character(b):
         return as_character(a) == as_character(b)
     return False
+
+
+def _value_equal(a, b, seen=None):
+    """Structural equality ignoring trailing src on atoms.  Walks ConsCell
+    chains and vectors via an explicit heap worklist instead of recursion:
+    the cdr-spine is iterated in a loop (so a long flat list costs heap, not
+    Python stack), with each car (and vector items / exact-complex parts)
+    pushed for later comparison.  Depth is heap-bounded, so deeply nested or
+    very long structures no longer raise RecursionError.  The 'seen' set tracks
+    (id(a), id(b)) pairs for mutable structures to bound the walk on cycles.
+    equal? is a conjunction over all node-pairs, so comparison order does not
+    affect the result -- we just bail on the first mismatch."""
+    if seen is None:
+        seen = set()
+    work = [(a, b)]
+    while work:
+        x, y = work.pop()
+        # cons cdr-spine: descend cdr in a loop, pushing each car; break early
+        # if this pair was already seen (a cycle -> treat as equal).
+        cycle = False
+        while is_cons(x):
+            if not is_cons(y):
+                return False
+            key = (id(x), id(y))
+            if key in seen:
+                cycle = True
+                break
+            seen.add(key)
+            work.append((x.car, y.car))
+            x = x.cdr
+            y = y.cdr
+        if cycle:
+            continue
+        if is_cons(y):
+            return False
+        # x and y are both non-cons here.
+        if not _equal_leaf(x, y, seen, work):
+            return False
+    return True
 
 
 def _prim_equal_p(ctx, env, args, app_node):

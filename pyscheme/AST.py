@@ -392,6 +392,8 @@ PRIM_VECTOR_MAP = 18
 PRIM_VECTOR_FOR_EACH = 19
 PRIM_STRING_MAP = 20
 PRIM_STRING_FOR_EACH = 21
+PRIM_MEMBER = 22
+PRIM_ASSOC = 23
 
 _PRIMITIVE_KIND_BY_NAME = {
     'call-with-current-continuation': PRIM_CALL_CC,
@@ -416,6 +418,8 @@ _PRIMITIVE_KIND_BY_NAME = {
     'vector-for-each':                PRIM_VECTOR_FOR_EACH,
     'string-map':                     PRIM_STRING_MAP,
     'string-for-each':                PRIM_STRING_FOR_EACH,
+    'member':                         PRIM_MEMBER,
+    'assoc':                          PRIM_ASSOC,
 }
 
 

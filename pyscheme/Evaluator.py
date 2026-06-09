@@ -94,6 +94,7 @@ from pyscheme.AST import (
     PRIM_WITH_PARAMETERS, PRIM_DYNAMIC_WIND, PRIM_ORDINARY,
     PRIM_CONTINUATION_DEPTH, PRIM_MAP, PRIM_FOR_EACH, PRIM_FILTER,
     PRIM_VECTOR_MAP, PRIM_VECTOR_FOR_EACH, PRIM_STRING_MAP, PRIM_STRING_FOR_EACH,
+    PRIM_MEMBER, PRIM_ASSOC,
     as_closure_params, as_closure_body, as_closure_env, as_closure_rest_name,
     as_case_closure_clauses, as_case_closure_env, as_parameter_value,
     as_continuation_k, as_continuation_wind, as_continuation_shadow,
@@ -148,6 +149,7 @@ FRAME_NONCONTIN_RETURN = 25
 FRAME_GUARD = 26
 FRAME_HOF_STEP = 27
 FRAME_HOF_STEP_IDX = 28
+FRAME_SEARCH_STEP = 29
 
 # Sentinel marking the very first FRAME_HOF_STEP entry, where V holds the
 # higher-order call's last argument (not a callback result) and must be
@@ -245,6 +247,7 @@ _MULTI_VALUES_OK_FRAMES = frozenset([
     FRAME_GUARD,
     FRAME_HOF_STEP,
     FRAME_HOF_STEP_IDX,
+    FRAME_SEARCH_STEP,
 ])
 
 _SHADOW_DEPTH_LIMIT = 50
@@ -1744,6 +1747,64 @@ def _cek_loop(expr, env, ctx):
                             K.append((FRAME_SEQ, result[3], E))
                         break
 
+                    if ftag == FRAME_SEARCH_STEP:
+                        # frame = (FRAME_SEARCH_STEP, mode, proc, target,
+                        #          cursor, app_node, started)
+                        # Drives the 3-arg member / assoc comparator search on the
+                        # K stack so a deeply-recursing comparator costs K (heap)
+                        # rather than the Python stack; mirrors FRAME_HOF_STEP.
+                        #   mode    - PRIM_MEMBER / PRIM_ASSOC
+                        #   target  - the object being searched for
+                        #   cursor  - the cons cell currently under test
+                        #   started - False on the first entry, where V is the
+                        #             call's last argument, not a comparator result
+                        s_mode = frame[1]
+                        s_proc = frame[2]
+                        s_target = frame[3]
+                        s_cursor = frame[4]
+                        app_node = frame[5]
+                        s_started = frame[6]
+                        s_name = 'member' if s_mode == PRIM_MEMBER else 'assoc'
+                        if s_started:
+                            # V is the comparator's verdict for the entry at cursor.
+                            if not isFalse(V):
+                                # member returns the matching sublist; assoc the pair.
+                                V = (s_cursor if s_mode == PRIM_MEMBER
+                                     else s_cursor.car)
+                                continue
+                            s_cursor = s_cursor.cdr
+                        if not is_cons(s_cursor):
+                            if not is_nil(s_cursor):
+                                raise SchemeTypeError(
+                                    s_name + ': second argument must be a proper list',
+                                    src_of(app_node) if app_node is not None else None)
+                            V = make_boolean(False)
+                            continue
+                        if s_mode == PRIM_MEMBER:
+                            s_item = s_cursor.car
+                        else:
+                            s_entry = s_cursor.car
+                            if not is_cons(s_entry):
+                                raise SchemeTypeError(
+                                    s_name + ': alist entries must be pairs',
+                                    src_of(app_node) if app_node is not None else None)
+                            s_item = s_entry.car
+                        K.append((FRAME_SEARCH_STEP, s_mode, s_proc, s_target,
+                                  s_cursor, app_node, True))
+                        result = _enter_proc(s_proc, [s_target, s_item], ctx, E, app_node)
+                        if result[0] == 'value':
+                            V = result[1]
+                            continue
+                        if result[0] == 'cont':
+                            K = result[1]
+                            V = result[2]
+                            continue
+                        C = result[1]
+                        E = result[2]
+                        if result[3] is not None:
+                            K.append((FRAME_SEQ, result[3], E))
+                        break
+
                     if ftag == FRAME_POP_HANDLER:
                         # Thunk returned normally; pop the installed handler and let V
                         # flow.  No work needed beyond popping the stack entry.
@@ -2042,6 +2103,22 @@ def _cek_loop(expr, env, ctx):
                                 K.append(
                                     (FRAME_HOF_STEP_IDX, kind, new_collected[0],
                                      tuple(_hof_seqs), 0, _hof_short, NIL_VALUE,
+                                     app_node, False))
+                                continue
+                            # member / assoc with a custom comparator (the 3-arg
+                            # R7RS forms): drive the per-element comparator calls on
+                            # the K stack via FRAME_SEARCH_STEP so a deeply-recursing
+                            # comparator costs K rather than the host stack (the same
+                            # overflow class map/for-each had).  The 2-arg forms use a
+                            # built-in equality predicate and never re-enter the
+                            # evaluator, so they fall through to the normal primitive
+                            # call; _make_*_search bodies also stay as the fallback for
+                            # the rare higher-order path (e.g. (map member ...)).
+                            if ((kind == PRIM_MEMBER or kind == PRIM_ASSOC)
+                                    and len(new_collected) == 3):
+                                K.append(
+                                    (FRAME_SEARCH_STEP, kind, new_collected[2],
+                                     new_collected[0], new_collected[1],
                                      app_node, False))
                                 continue
                             # call-with-values: install consumer frame, tail-call producer.
