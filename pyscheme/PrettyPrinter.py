@@ -102,15 +102,61 @@ def _has_cycle(val):
     return False
 
 
+def _render_structure(val, render_leaf):
+    """Render an acyclic cons/vector structure to a string iteratively, using an
+    explicit task stack so depth is heap-bounded -- no Python recursion on the
+    car-chain or on vector nesting (the cdr-spine is already a loop).  render_leaf(v)
+    renders any NON-cons/non-vector value; write and display differ only in that
+    leaf renderer.  Nested cons/vector are expanded here, so list/vector elements
+    inherit the caller's mode.  The caller guarantees val is acyclic (cyclic values
+    are routed to the datum-label renderer first), so the walk terminates."""
+    out = []
+    # task stack entries: ('v', value) = render a value; ('e', text) = emit literal
+    stack = [('v', val)]
+    while stack:
+        kind, x = stack.pop()
+        if kind == 'e':
+            out.append(x)
+            continue
+        if is_cons(x):
+            elems = []
+            cur = x
+            while is_cons(cur):
+                elems.append(cur.car)
+                cur = cur.cdr
+            # push in reverse so tasks pop in print order: ( e0 e1 ... [. tail] )
+            stack.append(('e', ')'))
+            if not is_nil(cur):
+                stack.append(('v', cur))
+                stack.append(('e', ' . '))
+            i = len(elems) - 1
+            while i >= 0:
+                stack.append(('v', elems[i]))
+                if i > 0:
+                    stack.append(('e', ' '))
+                i = i - 1
+            stack.append(('e', '('))
+        elif is_vector(x):
+            items = as_vector_items(x)
+            stack.append(('e', ')'))
+            i = len(items) - 1
+            while i >= 0:
+                stack.append(('v', items[i]))
+                if i > 0:
+                    stack.append(('e', ' '))
+                i = i - 1
+            stack.append(('e', '#('))
+        else:
+            out.append(render_leaf(x))
+    return ''.join(out)
+
+
 def pretty_print(val):
     """Render a CEK value or quoted datum as Scheme surface syntax."""
-    if is_cons(val):
+    if is_cons(val) or is_vector(val):
         if _has_cycle(val):
             return pretty_print_shared(val)
-        return _print_list(val)
-    if is_vector(val):
-        if _has_cycle(val):
-            return pretty_print_shared(val)
+        return _render_structure(val, pretty_print)
     if is_nil(val):
         return '()'
     if is_void(val):
@@ -246,85 +292,109 @@ def _print_list(pair):
 
 
 def _shared_scan(val, counts):
-    """First pass for write-shared: count how many times each mutable
-    object (cons cell, vector) is reachable.  counts maps id -> [val, n]."""
-    if is_cons(val):
-        k = id(val)
-        if k in counts:
-            counts[k][1] = counts[k][1] + 1
-            return
-        counts[k] = [val, 1]
-        _shared_scan(val.car, counts)
-        _shared_scan(val.cdr, counts)
-        return
-    if is_vector(val):
-        k = id(val)
-        if k in counts:
-            counts[k][1] = counts[k][1] + 1
-            return
-        counts[k] = [val, 1]
-        items = as_vector_items(val)
-        i = 0
-        while i < len(items):
-            _shared_scan(items[i], counts)
-            i = i + 1
+    """First pass for write-shared: count how many times each mutable object
+    (cons cell, vector) is reachable.  counts maps id -> [val, n].  Iterative
+    (explicit stack) so deep or long structures don't overflow the Python stack.
+    Pushes cdr-then-car (and vector items in reverse) so first-encounter order is
+    the same pre-order DFS as the original recursion -- this keeps datum-label
+    numbering (assigned below by counts insertion order) byte-for-byte identical."""
+    stack = [val]
+    while stack:
+        v = stack.pop()
+        if is_cons(v):
+            k = id(v)
+            if k in counts:
+                counts[k][1] = counts[k][1] + 1
+                continue
+            counts[k] = [v, 1]
+            stack.append(v.cdr)
+            stack.append(v.car)
+        elif is_vector(v):
+            k = id(v)
+            if k in counts:
+                counts[k][1] = counts[k][1] + 1
+                continue
+            counts[k] = [v, 1]
+            items = as_vector_items(v)
+            i = len(items) - 1
+            while i >= 0:
+                stack.append(items[i])
+                i = i - 1
 
 
 def _shared_render(val, labels, next_label, seen):
-    """Render val with datum labels for any object that appears more than
-    once in the structure.  labels: id -> int; next_label: [int] (mutable
-    counter); seen: set of ids already printed (emitted with #n=)."""
-    if is_cons(val):
-        k = id(val)
-        if k in labels:
-            n = labels[k]
-            if k in seen:
-                return '#' + str(n) + '#'
-            seen.add(k)
-            prefix = '#' + str(n) + '='
-        else:
-            prefix = ''
-        items = []
-        cur = val
-        tail = NIL_VALUE
-        while is_cons(cur):
-            ck = id(cur)
-            if cur is not val and ck in labels:
+    """Render val with datum labels for any object that appears more than once
+    in the structure.  labels: id -> int; next_label: [int] (mutable counter);
+    seen: set of ids already emitted with #n=.  Iterative (explicit task stack)
+    so depth is heap-bounded.  A node's #n= prefix is emitted and its id added to
+    `seen` when the node is first popped -- BEFORE its children are pushed -- so a
+    back-reference within the children renders as #n#, matching the recursion."""
+    out = []
+    # task stack entries: ('v', value) = render; ('e', text) = emit literal.
+    stack = [('v', val)]
+    while stack:
+        kind, x = stack.pop()
+        if kind == 'e':
+            out.append(x)
+            continue
+        if is_cons(x):
+            k = id(x)
+            if k in labels:
+                n = labels[k]
+                if k in seen:
+                    out.append('#' + str(n) + '#')
+                    continue
+                seen.add(k)
+                out.append('#' + str(n) + '=')
+            # Walk the spine with the same break logic as the original: stop at a
+            # mid-spine labeled cell or a next cell already printed (-> shared tail).
+            items = []
+            cur = x
+            tail = None
+            while is_cons(cur):
+                ck = id(cur)
+                if cur is not x and ck in labels:
+                    tail = cur
+                    break
+                items.append(cur.car)
+                cur = cur.cdr
+                if is_cons(cur) and id(cur) in seen:
+                    tail = cur
+                    break
+            if tail is None and not is_nil(cur):
                 tail = cur
-                break
-            items.append(_shared_render(cur.car, labels, next_label, seen))
-            cur = cur.cdr
-            if is_cons(cur) and id(cur) in seen:
-                tail = cur
-                break
-        if not is_nil(tail):
-            body = '(' + ' '.join(items) + ' . ' + \
-                _shared_render(tail, labels, next_label, seen) + ')'
-        elif is_nil(cur):
-            body = '(' + ' '.join(items) + ')'
+            stack.append(('e', ')'))
+            if tail is not None:
+                stack.append(('v', tail))
+                stack.append(('e', ' . '))
+            i = len(items) - 1
+            while i >= 0:
+                stack.append(('v', items[i]))
+                if i > 0:
+                    stack.append(('e', ' '))
+                i = i - 1
+            stack.append(('e', '('))
+        elif is_vector(x):
+            k = id(x)
+            if k in labels:
+                n = labels[k]
+                if k in seen:
+                    out.append('#' + str(n) + '#')
+                    continue
+                seen.add(k)
+                out.append('#' + str(n) + '=')
+            items_list = as_vector_items(x)
+            stack.append(('e', ')'))
+            i = len(items_list) - 1
+            while i >= 0:
+                stack.append(('v', items_list[i]))
+                if i > 0:
+                    stack.append(('e', ' '))
+                i = i - 1
+            stack.append(('e', '#('))
         else:
-            body = '(' + ' '.join(items) + ' . ' + \
-                _shared_render(cur, labels, next_label, seen) + ')'
-        return prefix + body
-    if is_vector(val):
-        k = id(val)
-        if k in labels:
-            n = labels[k]
-            if k in seen:
-                return '#' + str(n) + '#'
-            seen.add(k)
-            prefix = '#' + str(n) + '='
-        else:
-            prefix = ''
-        items_list = as_vector_items(val)
-        parts = []
-        i = 0
-        while i < len(items_list):
-            parts.append(_shared_render(
-                items_list[i], labels, next_label, seen))
-            i = i + 1
-        return prefix + '#(' + ' '.join(parts) + ')'
-    return pretty_print(val)
+            out.append(pretty_print(x))
+    return ''.join(out)
 
 
 def pretty_print_shared(val):

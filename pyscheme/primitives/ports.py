@@ -745,34 +745,21 @@ def _render_display(val):
         is_string, is_character, is_void, is_cons, is_nil, is_vector,
         as_string, as_character, as_vector_items,
     )
-    from pyscheme.PrettyPrinter import pretty_print, _has_cycle
+    from pyscheme.PrettyPrinter import pretty_print, _has_cycle, _render_structure
     if is_string(val):
         return as_string(val)
     if is_character(val):
         return as_character(val)
     if is_void(val):
         return ''
-    if is_cons(val):
+    if is_cons(val) or is_vector(val):
+        # Cyclic values keep the existing behaviour: route to the write-style
+        # datum-label renderer.  Acyclic ones render iteratively via the shared
+        # task-stack helper, passing _render_display as the leaf renderer so list
+        # and vector elements inherit display semantics (heap-bounded depth).
         if _has_cycle(val):
             return pretty_print(val)
-        items = []
-        cur = val
-        while is_cons(cur):
-            items.append(_render_display(cur.car))
-            cur = cur.cdr
-        if is_nil(cur):
-            return '(' + ' '.join(items) + ')'
-        return '(' + ' '.join(items) + ' . ' + _render_display(cur) + ')'
-    if is_vector(val):
-        if _has_cycle(val):
-            return pretty_print(val)
-        items = as_vector_items(val)
-        parts = []
-        i = 0
-        while i < len(items):
-            parts.append(_render_display(items[i]))
-            i = i + 1
-        return '#(' + ' '.join(parts) + ')'
+        return _render_structure(val, _render_display)
     return pretty_print(val)
 
 
