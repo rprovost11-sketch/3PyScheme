@@ -16,14 +16,14 @@ from pyscheme.rational import _Rat
 
 from pyscheme.primitives import register_primitive
 from pyscheme.AST import (
-   is_integer, is_real, is_rational, is_complex, is_exact_complex,
-   is_string,
-   as_integer, as_real, as_rational_num, as_rational_den,
-   as_complex_real, as_complex_imag,
-   as_exact_complex_real, as_exact_complex_imag,
-   as_string,
-   make_integer, make_real, make_rational, make_complex, make_exact_complex,
-   make_boolean, make_string, make_multi_values,
+    is_integer, is_real, is_rational, is_complex, is_exact_complex,
+    is_string,
+    as_integer, as_real, as_rational_num, as_rational_den,
+    as_complex_real, as_complex_imag,
+    as_exact_complex_real, as_exact_complex_imag,
+    as_string,
+    make_integer, make_real, make_rational, make_complex, make_exact_complex,
+    make_boolean, make_string, make_multi_values,
 )
 from pyscheme.Environment import SchemeTypeError
 
@@ -32,1492 +32,1502 @@ CATEGORY = 'arithmetic'
 
 
 class NumResult:
-   """Return struct for _extract_complex, _check_int_x, _complex_div.
-   re=None signals an error (non-numeric input or division by zero).
-   For _check_int_x callers: re holds the int value; exact=False means
-   the original was an inexact integer-valued real."""
-   def __init__(self, re=None, im=None, exact=True):
-      self.re    = re
-      self.im    = im
-      self.exact = exact
+    """Return struct for _extract_complex, _check_int_x, _complex_div.
+    re=None signals an error (non-numeric input or division by zero).
+    For _check_int_x callers: re holds the int value; exact=False means
+    the original was an inexact integer-valued real."""
+
+    def __init__(self, re=None, im=None, exact=True):
+        self.re = re
+        self.im = im
+        self.exact = exact
 
 
 def _num(v, name, app_node, i):
-   """Extract a Python real-numeric value (int, _Rat, float).
-   Raises for non-numeric or complex (complex not valid for ordering ops)."""
-   if is_integer(v):
-      return as_integer(v)
-   if is_rational(v):
-      return _Rat(as_rational_num(v), as_rational_den(v))
-   if is_real(v):
-      return as_real(v)
-   raise SchemeTypeError(
-      '%s: argument %d is not a number' % (name, i),
-      app_node)
+    """Extract a Python real-numeric value (int, _Rat, float).
+    Raises for non-numeric or complex (complex not valid for ordering ops)."""
+    if is_integer(v):
+        return as_integer(v)
+    if is_rational(v):
+        return _Rat(as_rational_num(v), as_rational_den(v))
+    if is_real(v):
+        return as_real(v)
+    raise SchemeTypeError(
+        '%s: argument %d is not a number' % (name, i),
+        app_node)
 
 
 def _any_num(v, name, app_node, i):
-   """Extract a Python numeric value (int, _Rat, float, or complex).
-   Exact complex falls back to a Python complex approximation so that
-   transcendentals (exp, sin, sqrt, etc.) still work."""
-   if is_integer(v):
-      return as_integer(v)
-   if is_rational(v):
-      return _Rat(as_rational_num(v), as_rational_den(v))
-   if is_real(v):
-      return as_real(v)
-   if is_complex(v):
-      return complex(as_complex_real(v), as_complex_imag(v))
-   if is_exact_complex(v):
-      return complex(float(_as_exact_component(as_exact_complex_real(v))),
-                     float(_as_exact_component(as_exact_complex_imag(v))))
-   raise SchemeTypeError(
-      '%s: argument %d is not a number' % (name, i),
-      app_node)
+    """Extract a Python numeric value (int, _Rat, float, or complex).
+    Exact complex falls back to a Python complex approximation so that
+    transcendentals (exp, sin, sqrt, etc.) still work."""
+    if is_integer(v):
+        return as_integer(v)
+    if is_rational(v):
+        return _Rat(as_rational_num(v), as_rational_den(v))
+    if is_real(v):
+        return as_real(v)
+    if is_complex(v):
+        return complex(as_complex_real(v), as_complex_imag(v))
+    if is_exact_complex(v):
+        return complex(float(_as_exact_component(as_exact_complex_real(v))),
+                       float(_as_exact_component(as_exact_complex_imag(v))))
+    raise SchemeTypeError(
+        '%s: argument %d is not a number' % (name, i),
+        app_node)
 
 
 def _as_exact_component(scheme_val):
-   """Extract an exact complex component (INTEGER or RATIONAL) as Python int or _Rat."""
-   if is_integer(scheme_val):
-      return as_integer(scheme_val)
-   return _Rat(as_rational_num(scheme_val), as_rational_den(scheme_val))
+    """Extract an exact complex component (INTEGER or RATIONAL) as Python int or _Rat."""
+    if is_integer(scheme_val):
+        return as_integer(scheme_val)
+    return _Rat(as_rational_num(scheme_val), as_rational_den(scheme_val))
 
 
 def _wrap_component(py_val):
-   """Wrap a Python int or _Rat back to a Scheme INTEGER or RATIONAL."""
-   if isinstance(py_val, int):
-      return make_integer(py_val)
-   if py_val.denominator == 1:
-      return make_integer(py_val.numerator)
-   return make_rational(py_val.numerator, py_val.denominator)
+    """Wrap a Python int or _Rat back to a Scheme INTEGER or RATIONAL."""
+    if isinstance(py_val, int):
+        return make_integer(py_val)
+    if py_val.denominator == 1:
+        return make_integer(py_val.numerator)
+    return make_rational(py_val.numerator, py_val.denominator)
 
 
 def _extract_complex(v):
-   """Decompose any Scheme number into a NumResult(re, im, exact).
-   re and im are Python int/_Rat for exact, float for inexact.
-   Non-complex numbers get im = 0 (exact) or 0.0 (inexact).
-   Returns NumResult with re=None for non-numeric input."""
-   if is_exact_complex(v):
-      return NumResult(_as_exact_component(as_exact_complex_real(v)),
-                       _as_exact_component(as_exact_complex_imag(v)),
-                       True)
-   if is_complex(v):
-      return NumResult(as_complex_real(v), as_complex_imag(v), False)
-   if is_integer(v):
-      return NumResult(as_integer(v), 0, True)
-   if is_rational(v):
-      return NumResult(_Rat(as_rational_num(v), as_rational_den(v)), 0, True)
-   if is_real(v):
-      return NumResult(as_real(v), 0.0, False)
-   return NumResult()
+    """Decompose any Scheme number into a NumResult(re, im, exact).
+    re and im are Python int/_Rat for exact, float for inexact.
+    Non-complex numbers get im = 0 (exact) or 0.0 (inexact).
+    Returns NumResult with re=None for non-numeric input."""
+    if is_exact_complex(v):
+        return NumResult(_as_exact_component(as_exact_complex_real(v)),
+                         _as_exact_component(as_exact_complex_imag(v)),
+                         True)
+    if is_complex(v):
+        return NumResult(as_complex_real(v), as_complex_imag(v), False)
+    if is_integer(v):
+        return NumResult(as_integer(v), 0, True)
+    if is_rational(v):
+        return NumResult(_Rat(as_rational_num(v), as_rational_den(v)), 0, True)
+    if is_real(v):
+        return NumResult(as_real(v), 0.0, False)
+    return NumResult()
 
 
 def _wrap_complex_result(re, im, exact):
-   """Build a Scheme value from (re, im, exact) components.
-   Collapses to a real/integer when imaginary part is zero."""
-   if exact:
-      if im == 0:
-         return _wrap(re)
-      return make_exact_complex(_wrap_component(re), _wrap_component(im))
-   else:
-      if im == 0.0:
-         return make_real(float(re))
-      return make_complex(float(re), float(im))
+    """Build a Scheme value from (re, im, exact) components.
+    Collapses to a real/integer when imaginary part is zero."""
+    if exact:
+        if im == 0:
+            return _wrap(re)
+        return make_exact_complex(_wrap_component(re), _wrap_component(im))
+    else:
+        if im == 0.0:
+            return make_real(float(re))
+        return make_complex(float(re), float(im))
 
 
 def _check_int(v, name, app_node, i):
-   if is_integer(v):
-      return as_integer(v)
-   raise SchemeTypeError(
-      '%s: argument %d is not an integer' % (name, i),
-      app_node)
+    if is_integer(v):
+        return as_integer(v)
+    raise SchemeTypeError(
+        '%s: argument %d is not an integer' % (name, i),
+        app_node)
 
 
 def _check_int_x(v, name, app_node, i):
-   """Like _check_int but accepts inexact integer-valued reals.
-   Returns NumResult with re=int_value, im=0, exact=(not is_inexact)."""
-   if is_integer(v):
-      return NumResult(as_integer(v), 0, True)
-   if is_real(v):
-      fv = as_real(v)
-      if math.isfinite(fv) and fv == math.trunc(fv):
-         return NumResult(int(fv), 0, False)
-   raise SchemeTypeError(
-      '%s: argument %d is not an integer' % (name, i),
-      app_node)
+    """Like _check_int but accepts inexact integer-valued reals.
+    Returns NumResult with re=int_value, im=0, exact=(not is_inexact)."""
+    if is_integer(v):
+        return NumResult(as_integer(v), 0, True)
+    if is_real(v):
+        fv = as_real(v)
+        if math.isfinite(fv) and fv == math.trunc(fv):
+            return NumResult(int(fv), 0, False)
+    raise SchemeTypeError(
+        '%s: argument %d is not an integer' % (name, i),
+        app_node)
 
 
 def _wrap(n):
-   """Wrap a Python number back into a tagged value."""
-   if isinstance(n, bool):
-      n = int(n)
-   if isinstance(n, int):
-      return make_integer(n)
-   if isinstance(n, _Rat):
-      if n.denominator == 1:
-         return make_integer(n.numerator)
-      return make_rational(n.numerator, n.denominator)
-   if isinstance(n, float):
-      return make_real(n)
-   if isinstance(n, complex):
-      if n.imag == 0.0:
-         return make_real(n.real)
-      return make_complex(n.real, n.imag)
-   raise TypeError('internal: arithmetic result has unexpected type ' + str(type(n)))
+    """Wrap a Python number back into a tagged value."""
+    if isinstance(n, bool):
+        n = int(n)
+    if isinstance(n, int):
+        return make_integer(n)
+    if isinstance(n, _Rat):
+        if n.denominator == 1:
+            return make_integer(n.numerator)
+        return make_rational(n.numerator, n.denominator)
+    if isinstance(n, float):
+        return make_real(n)
+    if isinstance(n, complex):
+        if n.imag == 0.0:
+            return make_real(n.real)
+        return make_complex(n.real, n.imag)
+    raise TypeError(
+        'internal: arithmetic result has unexpected type ' + str(type(n)))
 
 
 def _has_any_complex(args):
-   i = 0
-   while i < len(args):
-      if is_complex(args[i]) or is_exact_complex(args[i]):
-         return True
-      i = i + 1
-   return False
+    i = 0
+    while i < len(args):
+        if is_complex(args[i]) or is_exact_complex(args[i]):
+            return True
+        i = i + 1
+    return False
 
 
 def _prim_add(ctx, env, args, app_node):
-   # Fast path: every argument an exact integer (the overwhelmingly common
-   # case).  Sum the raw Python ints directly, skipping the complex scan, the
-   # per-arg _any_num dispatch, and _wrap.  Bail to the general tower on the
-   # first non-integer (the partial sum is discarded and recomputed below).
-   total = 0
-   n = len(args)
-   i = 0
-   while i < n:
-      a = args[i]
-      if not is_integer(a):
-         break
-      total = total + as_integer(a)
-      i = i + 1
-   if i == n:
-      return make_integer(total)
-   if _has_any_complex(args):
-      acc_re    = 0
-      acc_im    = 0
-      acc_exact = True
-      i = 0
-      while i < len(args):
-         a = _extract_complex(args[i])
-         if a.re is None:
-            raise SchemeTypeError('+: argument %d is not a number' % (i + 1), app_node)
-         if not a.exact:
-            acc_exact = False
-         acc_re = acc_re + a.re
-         acc_im = acc_im + a.im
-         i = i + 1
-      return _wrap_complex_result(acc_re, acc_im, acc_exact)
-   total = 0
-   i = 0
-   while i < len(args):
-      total = total + _any_num(args[i], '+', app_node, i + 1)
-      i = i + 1
-   return _wrap(total)
+    # Fast path: every argument an exact integer (the overwhelmingly common
+    # case).  Sum the raw Python ints directly, skipping the complex scan, the
+    # per-arg _any_num dispatch, and _wrap.  Bail to the general tower on the
+    # first non-integer (the partial sum is discarded and recomputed below).
+    total = 0
+    n = len(args)
+    i = 0
+    while i < n:
+        a = args[i]
+        if not is_integer(a):
+            break
+        total = total + as_integer(a)
+        i = i + 1
+    if i == n:
+        return make_integer(total)
+    if _has_any_complex(args):
+        acc_re = 0
+        acc_im = 0
+        acc_exact = True
+        i = 0
+        while i < len(args):
+            a = _extract_complex(args[i])
+            if a.re is None:
+                raise SchemeTypeError(
+                    '+: argument %d is not a number' % (i + 1), app_node)
+            if not a.exact:
+                acc_exact = False
+            acc_re = acc_re + a.re
+            acc_im = acc_im + a.im
+            i = i + 1
+        return _wrap_complex_result(acc_re, acc_im, acc_exact)
+    total = 0
+    i = 0
+    while i < len(args):
+        total = total + _any_num(args[i], '+', app_node, i + 1)
+        i = i + 1
+    return _wrap(total)
 
 
 def _prim_sub(ctx, env, args, app_node):
-   # Fast path: all exact integers (see _prim_add).  One arg negates; many
-   # args subtract the rest from the first.
-   n = len(args)
-   a0 = args[0]
-   if is_integer(a0):
-      result = as_integer(a0)
-      if n == 1:
-         return make_integer(-result)
-      i = 1
-      while i < n:
-         a = args[i]
-         if not is_integer(a):
-            break
-         result = result - as_integer(a)
-         i = i + 1
-      if i == n:
-         return make_integer(result)
-   if _has_any_complex(args):
-      acc = _extract_complex(args[0])
-      if acc.re is None:
-         raise SchemeTypeError('-: argument 1 is not a number', app_node)
-      if len(args) == 1:
-         return _wrap_complex_result(-acc.re, -acc.im, acc.exact)
-      i = 1
-      while i < len(args):
-         a = _extract_complex(args[i])
-         if a.re is None:
-            raise SchemeTypeError('-: argument %d is not a number' % (i + 1), app_node)
-         if not a.exact:
-            acc.exact = False
-         acc.re = acc.re - a.re
-         acc.im = acc.im - a.im
-         i = i + 1
-      return _wrap_complex_result(acc.re, acc.im, acc.exact)
-   if len(args) == 1:
-      return _wrap(-_any_num(args[0], '-', app_node, 1))
-   result = _any_num(args[0], '-', app_node, 1)
-   i = 1
-   while i < len(args):
-      result = result - _any_num(args[i], '-', app_node, i + 1)
-      i = i + 1
-   return _wrap(result)
+    # Fast path: all exact integers (see _prim_add).  One arg negates; many
+    # args subtract the rest from the first.
+    n = len(args)
+    a0 = args[0]
+    if is_integer(a0):
+        result = as_integer(a0)
+        if n == 1:
+            return make_integer(-result)
+        i = 1
+        while i < n:
+            a = args[i]
+            if not is_integer(a):
+                break
+            result = result - as_integer(a)
+            i = i + 1
+        if i == n:
+            return make_integer(result)
+    if _has_any_complex(args):
+        acc = _extract_complex(args[0])
+        if acc.re is None:
+            raise SchemeTypeError('-: argument 1 is not a number', app_node)
+        if len(args) == 1:
+            return _wrap_complex_result(-acc.re, -acc.im, acc.exact)
+        i = 1
+        while i < len(args):
+            a = _extract_complex(args[i])
+            if a.re is None:
+                raise SchemeTypeError(
+                    '-: argument %d is not a number' % (i + 1), app_node)
+            if not a.exact:
+                acc.exact = False
+            acc.re = acc.re - a.re
+            acc.im = acc.im - a.im
+            i = i + 1
+        return _wrap_complex_result(acc.re, acc.im, acc.exact)
+    if len(args) == 1:
+        return _wrap(-_any_num(args[0], '-', app_node, 1))
+    result = _any_num(args[0], '-', app_node, 1)
+    i = 1
+    while i < len(args):
+        result = result - _any_num(args[i], '-', app_node, i + 1)
+        i = i + 1
+    return _wrap(result)
 
 
 def _prim_mul(ctx, env, args, app_node):
-   # Fast path: all exact integers (see _prim_add).
-   result = 1
-   n = len(args)
-   i = 0
-   while i < n:
-      a = args[i]
-      if not is_integer(a):
-         break
-      result = result * as_integer(a)
-      i = i + 1
-   if i == n:
-      return make_integer(result)
-   if _has_any_complex(args):
-      acc = NumResult(1, 0, True)
-      i = 0
-      while i < len(args):
-         a = _extract_complex(args[i])
-         if a.re is None:
-            raise SchemeTypeError('*: argument %d is not a number' % (i + 1), app_node)
-         if not a.exact:
-            acc.exact = False
-         new_re = acc.re * a.re - acc.im * a.im
-         new_im = acc.re * a.im + acc.im * a.re
-         acc.re = new_re
-         acc.im = new_im
-         i = i + 1
-      return _wrap_complex_result(acc.re, acc.im, acc.exact)
-   result = 1
-   i = 0
-   while i < len(args):
-      result = result * _any_num(args[i], '*', app_node, i + 1)
-      i = i + 1
-   return _wrap(result)
+    # Fast path: all exact integers (see _prim_add).
+    result = 1
+    n = len(args)
+    i = 0
+    while i < n:
+        a = args[i]
+        if not is_integer(a):
+            break
+        result = result * as_integer(a)
+        i = i + 1
+    if i == n:
+        return make_integer(result)
+    if _has_any_complex(args):
+        acc = NumResult(1, 0, True)
+        i = 0
+        while i < len(args):
+            a = _extract_complex(args[i])
+            if a.re is None:
+                raise SchemeTypeError(
+                    '*: argument %d is not a number' % (i + 1), app_node)
+            if not a.exact:
+                acc.exact = False
+            new_re = acc.re * a.re - acc.im * a.im
+            new_im = acc.re * a.im + acc.im * a.re
+            acc.re = new_re
+            acc.im = new_im
+            i = i + 1
+        return _wrap_complex_result(acc.re, acc.im, acc.exact)
+    result = 1
+    i = 0
+    while i < len(args):
+        result = result * _any_num(args[i], '*', app_node, i + 1)
+        i = i + 1
+    return _wrap(result)
 
 
 def _exact_div(a, b):
-   """Divide two numbers.
-   - Complex input: use Python complex division.
-   - Both exact (int or _Rat): return exact result (_Rat or int).
-   - Either inexact (float): return float; float zero divisor -> +-inf.
-   """
-   if isinstance(a, complex) or isinstance(b, complex):
-      ca = a if isinstance(a, complex) else complex(float(a))
-      cb = b if isinstance(b, complex) else complex(float(b))
-      return ca / cb
-   if isinstance(b, float):
-      fb = b
-      fa = float(a)
-      if fb == 0.0:
-         if math.isnan(fa) or fa == 0.0:
-            return float('nan')
-         return math.copysign(float('inf'), fa)
-      return fa / fb
-   if isinstance(a, float):
-      return a / float(b)
-   # Both exact: use _Rat for exact rational arithmetic.
-   return _Rat(a) / _Rat(b)
+    """Divide two numbers.
+    - Complex input: use Python complex division.
+    - Both exact (int or _Rat): return exact result (_Rat or int).
+    - Either inexact (float): return float; float zero divisor -> +-inf.
+    """
+    if isinstance(a, complex) or isinstance(b, complex):
+        ca = a if isinstance(a, complex) else complex(float(a))
+        cb = b if isinstance(b, complex) else complex(float(b))
+        return ca / cb
+    if isinstance(b, float):
+        fb = b
+        fa = float(a)
+        if fb == 0.0:
+            if math.isnan(fa) or fa == 0.0:
+                return float('nan')
+            return math.copysign(float('inf'), fa)
+        return fa / fb
+    if isinstance(a, float):
+        return a / float(b)
+    # Both exact: use _Rat for exact rational arithmetic.
+    return _Rat(a) / _Rat(b)
 
 
 def _complex_div(a, b):
-   """Exact-aware complex division: a / b. Returns NumResult; re=None signals division by zero."""
-   exact = a.exact and b.exact
-   are = a.re
-   aim = a.im
-   bre = b.re
-   bim = b.im
-   if exact:
-      are = _Rat(are)
-      aim = _Rat(aim)
-      bre = _Rat(bre)
-      bim = _Rat(bim)
-   denom = bre * bre + bim * bim
-   if denom == 0:
-      return NumResult()
-   re = (are * bre + aim * bim) / denom
-   im = (aim * bre - are * bim) / denom
-   return NumResult(re, im, exact)
+    """Exact-aware complex division: a / b. Returns NumResult; re=None signals division by zero."""
+    exact = a.exact and b.exact
+    are = a.re
+    aim = a.im
+    bre = b.re
+    bim = b.im
+    if exact:
+        are = _Rat(are)
+        aim = _Rat(aim)
+        bre = _Rat(bre)
+        bim = _Rat(bim)
+    denom = bre * bre + bim * bim
+    if denom == 0:
+        return NumResult()
+    re = (are * bre + aim * bim) / denom
+    im = (aim * bre - are * bim) / denom
+    return NumResult(re, im, exact)
 
 
 def _prim_div(ctx, env, args, app_node):
-   if _has_any_complex(args):
-      acc = _extract_complex(args[0])
-      if acc.re is None:
-         raise SchemeTypeError('/: argument 1 is not a number', app_node)
-      if len(args) == 1:
-         acc = _complex_div(NumResult(1, 0, True), acc)
-         if acc.re is None:
+    if _has_any_complex(args):
+        acc = _extract_complex(args[0])
+        if acc.re is None:
+            raise SchemeTypeError('/: argument 1 is not a number', app_node)
+        if len(args) == 1:
+            acc = _complex_div(NumResult(1, 0, True), acc)
+            if acc.re is None:
+                raise SchemeTypeError('/: division by zero', app_node)
+            return _wrap_complex_result(acc.re, acc.im, acc.exact)
+        i = 1
+        while i < len(args):
+            b = _extract_complex(args[i])
+            if b.re is None:
+                raise SchemeTypeError(
+                    '/: argument %d is not a number' % (i + 1), app_node)
+            acc = _complex_div(acc, b)
+            if acc.re is None:
+                raise SchemeTypeError('/: division by zero', app_node)
+            i = i + 1
+        return _wrap_complex_result(acc.re, acc.im, acc.exact)
+    if len(args) == 1:
+        n = _any_num(args[0], '/', app_node, 1)
+        if isinstance(n, int) and n == 0:
             raise SchemeTypeError('/: division by zero', app_node)
-         return _wrap_complex_result(acc.re, acc.im, acc.exact)
-      i = 1
-      while i < len(args):
-         b = _extract_complex(args[i])
-         if b.re is None:
-            raise SchemeTypeError('/: argument %d is not a number' % (i + 1), app_node)
-         acc = _complex_div(acc, b)
-         if acc.re is None:
+        try:
+            return _wrap(_exact_div(1, n))
+        except ZeroDivisionError:
             raise SchemeTypeError('/: division by zero', app_node)
-         i = i + 1
-      return _wrap_complex_result(acc.re, acc.im, acc.exact)
-   if len(args) == 1:
-      n = _any_num(args[0], '/', app_node, 1)
-      if isinstance(n, int) and n == 0:
-         raise SchemeTypeError('/: division by zero', app_node)
-      try:
-         return _wrap(_exact_div(1, n))
-      except ZeroDivisionError:
-         raise SchemeTypeError('/: division by zero', app_node)
-   result = _any_num(args[0], '/', app_node, 1)
-   i = 1
-   while i < len(args):
-      divisor = _any_num(args[i], '/', app_node, i + 1)
-      if isinstance(divisor, int) and divisor == 0:
-         raise SchemeTypeError('/: division by zero', app_node)
-      try:
-         result = _exact_div(result, divisor)
-      except ZeroDivisionError:
-         raise SchemeTypeError('/: division by zero', app_node)
-      i = i + 1
-   return _wrap(result)
+    result = _any_num(args[0], '/', app_node, 1)
+    i = 1
+    while i < len(args):
+        divisor = _any_num(args[i], '/', app_node, i + 1)
+        if isinstance(divisor, int) and divisor == 0:
+            raise SchemeTypeError('/: division by zero', app_node)
+        try:
+            result = _exact_div(result, divisor)
+        except ZeroDivisionError:
+            raise SchemeTypeError('/: division by zero', app_node)
+        i = i + 1
+    return _wrap(result)
 
 
 def _prim_abs(ctx, env, args, app_node):
-   return _wrap(abs(_any_num(args[0], 'abs', app_node, 1)))
+    return _wrap(abs(_any_num(args[0], 'abs', app_node, 1)))
 
 
 def _trunc_div(n, d):
-   """R7RS quotient truncates toward zero.  Python // rounds toward -inf,
-   so adjust for mixed signs with a non-zero remainder."""
-   if (n < 0) != (d < 0) and n % d != 0:
-      return -(-n // d)
-   return n // d
+    """R7RS quotient truncates toward zero.  Python // rounds toward -inf,
+    so adjust for mixed signs with a non-zero remainder."""
+    if (n < 0) != (d < 0) and n % d != 0:
+        return -(-n // d)
+    return n // d
 
 
 def _prim_quotient(ctx, env, args, app_node):
-   n = _check_int_x(args[0], 'quotient', app_node, 1)
-   d = _check_int_x(args[1], 'quotient', app_node, 2)
-   if d.re == 0:
-      raise SchemeTypeError('quotient: division by zero', app_node)
-   r = _trunc_div(n.re, d.re)
-   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    n = _check_int_x(args[0], 'quotient', app_node, 1)
+    d = _check_int_x(args[1], 'quotient', app_node, 2)
+    if d.re == 0:
+        raise SchemeTypeError('quotient: division by zero', app_node)
+    r = _trunc_div(n.re, d.re)
+    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_remainder(ctx, env, args, app_node):
-   n = _check_int_x(args[0], 'remainder', app_node, 1)
-   d = _check_int_x(args[1], 'remainder', app_node, 2)
-   if d.re == 0:
-      raise SchemeTypeError('remainder: division by zero', app_node)
-   r = n.re - d.re * _trunc_div(n.re, d.re)
-   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    n = _check_int_x(args[0], 'remainder', app_node, 1)
+    d = _check_int_x(args[1], 'remainder', app_node, 2)
+    if d.re == 0:
+        raise SchemeTypeError('remainder: division by zero', app_node)
+    r = n.re - d.re * _trunc_div(n.re, d.re)
+    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_modulo(ctx, env, args, app_node):
-   n = _check_int_x(args[0], 'modulo', app_node, 1)
-   d = _check_int_x(args[1], 'modulo', app_node, 2)
-   if d.re == 0:
-      raise SchemeTypeError('modulo: division by zero', app_node)
-   r = n.re % d.re
-   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    n = _check_int_x(args[0], 'modulo', app_node, 1)
+    d = _check_int_x(args[1], 'modulo', app_node, 2)
+    if d.re == 0:
+        raise SchemeTypeError('modulo: division by zero', app_node)
+    r = n.re % d.re
+    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_min(ctx, env, args, app_node):
-   result = _num(args[0], 'min', app_node, 1)
-   any_real = is_real(args[0])
-   i = 1
-   while i < len(args):
-      v = _num(args[i], 'min', app_node, i + 1)
-      if is_real(args[i]):
-         any_real = True
-      if isinstance(v, float) and math.isnan(v):
-         result = v
-      elif not (isinstance(result, float) and math.isnan(result)):
-         if v < result:
+    result = _num(args[0], 'min', app_node, 1)
+    any_real = is_real(args[0])
+    i = 1
+    while i < len(args):
+        v = _num(args[i], 'min', app_node, i + 1)
+        if is_real(args[i]):
+            any_real = True
+        if isinstance(v, float) and math.isnan(v):
             result = v
-      i = i + 1
-   if any_real and not isinstance(result, float):
-      result = float(result)
-   return _wrap(result)
+        elif not (isinstance(result, float) and math.isnan(result)):
+            if v < result:
+                result = v
+        i = i + 1
+    if any_real and not isinstance(result, float):
+        result = float(result)
+    return _wrap(result)
 
 
 def _prim_max(ctx, env, args, app_node):
-   result = _num(args[0], 'max', app_node, 1)
-   any_real = is_real(args[0])
-   i = 1
-   while i < len(args):
-      v = _num(args[i], 'max', app_node, i + 1)
-      if is_real(args[i]):
-         any_real = True
-      if isinstance(v, float) and math.isnan(v):
-         result = v
-      elif not (isinstance(result, float) and math.isnan(result)):
-         if v > result:
+    result = _num(args[0], 'max', app_node, 1)
+    any_real = is_real(args[0])
+    i = 1
+    while i < len(args):
+        v = _num(args[i], 'max', app_node, i + 1)
+        if is_real(args[i]):
+            any_real = True
+        if isinstance(v, float) and math.isnan(v):
             result = v
-      i = i + 1
-   if any_real and not isinstance(result, float):
-      result = float(result)
-   return _wrap(result)
+        elif not (isinstance(result, float) and math.isnan(result)):
+            if v > result:
+                result = v
+        i = i + 1
+    if any_real and not isinstance(result, float):
+        result = float(result)
+    return _wrap(result)
 
 
 def _prim_gcd(ctx, env, args, app_node):
-   if len(args) == 0:
-      return make_integer(0)
-   a = _check_int_x(args[0], 'gcd', app_node, 1)
-   any_inexact = not a.exact
-   result = abs(a.re)
-   i = 1
-   while i < len(args):
-      v = _check_int_x(args[i], 'gcd', app_node, i + 1)
-      if not v.exact:
-         any_inexact = True
-      result = math.gcd(result, abs(v.re))
-      i = i + 1
-   return make_real(float(result)) if any_inexact else make_integer(result)
+    if len(args) == 0:
+        return make_integer(0)
+    a = _check_int_x(args[0], 'gcd', app_node, 1)
+    any_inexact = not a.exact
+    result = abs(a.re)
+    i = 1
+    while i < len(args):
+        v = _check_int_x(args[i], 'gcd', app_node, i + 1)
+        if not v.exact:
+            any_inexact = True
+        result = math.gcd(result, abs(v.re))
+        i = i + 1
+    return make_real(float(result)) if any_inexact else make_integer(result)
 
 
 def _prim_lcm(ctx, env, args, app_node):
-   if len(args) == 0:
-      return make_integer(1)
-   a = _check_int_x(args[0], 'lcm', app_node, 1)
-   any_inexact = not a.exact
-   result = abs(a.re)
-   i = 1
-   while i < len(args):
-      v = _check_int_x(args[i], 'lcm', app_node, i + 1)
-      if not v.exact:
-         any_inexact = True
-      if result == 0 or v.re == 0:
-         result = 0
-      else:
-         result = result * abs(v.re) // math.gcd(result, abs(v.re))
-      i = i + 1
-   return make_real(float(result)) if any_inexact else make_integer(result)
+    if len(args) == 0:
+        return make_integer(1)
+    a = _check_int_x(args[0], 'lcm', app_node, 1)
+    any_inexact = not a.exact
+    result = abs(a.re)
+    i = 1
+    while i < len(args):
+        v = _check_int_x(args[i], 'lcm', app_node, i + 1)
+        if not v.exact:
+            any_inexact = True
+        if result == 0 or v.re == 0:
+            result = 0
+        else:
+            result = result * abs(v.re) // math.gcd(result, abs(v.re))
+        i = i + 1
+    return make_real(float(result)) if any_inexact else make_integer(result)
 
 
 _MACH_EPS = 2.2204460492503131e-16
 
 
 def _clean_complex(c):
-   """Snap near-zero real part when imaginary part is exactly ±1.0."""
-   if abs(c.imag) == 1.0 and abs(c.real) <= _MACH_EPS:
-      return complex(0.0, c.imag)
-   return c
+    """Snap near-zero real part when imaginary part is exactly ±1.0."""
+    if abs(c.imag) == 1.0 and abs(c.real) <= _MACH_EPS:
+        return complex(0.0, c.imag)
+    return c
 
 
 def _prim_expt(ctx, env, args, app_node):
-   base = _any_num(args[0], 'expt', app_node, 1)
-   exp  = _any_num(args[1], 'expt', app_node, 2)
-   if isinstance(base, complex) or isinstance(exp, complex):
-      cb = base if isinstance(base, complex) else complex(float(base))
-      if isinstance(exp, int):
-         return _wrap(cb ** exp)
-      ce = exp if isinstance(exp, complex) else complex(float(exp))
-      return _wrap(_clean_complex(cb ** ce))
-   if isinstance(exp, int) and isinstance(base, (int, _Rat)):
-      if exp >= 0:
-         return _wrap(_Rat(base) ** exp)
-      # Negative exact exponent: 1 / base^(-exp)
-      pos = _Rat(base) ** (-exp)
-      if pos == 0:
-         raise SchemeTypeError('expt: division by zero', args[1])
-      return _wrap(_Rat(1) / pos)
-   fb = float(base)
-   fe = float(exp)
-   try:
-      result = fb ** fe
-      if isinstance(result, complex):
-         result = _clean_complex(result)
-      return _wrap(result)
-   except ValueError:
-      return _wrap(_clean_complex(complex(fb, 0.0) ** complex(fe, 0.0)))
+    base = _any_num(args[0], 'expt', app_node, 1)
+    exp = _any_num(args[1], 'expt', app_node, 2)
+    if isinstance(base, complex) or isinstance(exp, complex):
+        cb = base if isinstance(base, complex) else complex(float(base))
+        if isinstance(exp, int):
+            return _wrap(cb ** exp)
+        ce = exp if isinstance(exp, complex) else complex(float(exp))
+        return _wrap(_clean_complex(cb ** ce))
+    if isinstance(exp, int) and isinstance(base, (int, _Rat)):
+        if exp >= 0:
+            return _wrap(_Rat(base) ** exp)
+        # Negative exact exponent: 1 / base^(-exp)
+        pos = _Rat(base) ** (-exp)
+        if pos == 0:
+            raise SchemeTypeError('expt: division by zero', args[1])
+        return _wrap(_Rat(1) / pos)
+    fb = float(base)
+    fe = float(exp)
+    try:
+        result = fb ** fe
+        if isinstance(result, complex):
+            result = _clean_complex(result)
+        return _wrap(result)
+    except ValueError:
+        return _wrap(_clean_complex(complex(fb, 0.0) ** complex(fe, 0.0)))
 
 
 def _prim_sqrt(ctx, env, args, app_node):
-   v = _any_num(args[0], 'sqrt', app_node, 1)
-   if isinstance(v, complex):
-      return _wrap(cmath.sqrt(v))
-   if isinstance(v, int) and v >= 0:
-      r = math.isqrt(v)
-      if r * r == v:
-         return make_integer(r)
-   if isinstance(v, _Rat) and v >= 0:
-      rn = math.isqrt(v.numerator)
-      rd = math.isqrt(v.denominator)
-      if rn * rn == v.numerator and rd * rd == v.denominator:
-         return _wrap(_Rat(rn, rd))
-   fv = float(v)
-   if fv == 0.0:
-      return make_real(0.0)
-   if fv < 0.0:
-      return _wrap(cmath.sqrt(complex(fv, 0.0)))
-   return make_real(math.sqrt(fv))
+    v = _any_num(args[0], 'sqrt', app_node, 1)
+    if isinstance(v, complex):
+        return _wrap(cmath.sqrt(v))
+    if isinstance(v, int) and v >= 0:
+        r = math.isqrt(v)
+        if r * r == v:
+            return make_integer(r)
+    if isinstance(v, _Rat) and v >= 0:
+        rn = math.isqrt(v.numerator)
+        rd = math.isqrt(v.denominator)
+        if rn * rn == v.numerator and rd * rd == v.denominator:
+            return _wrap(_Rat(rn, rd))
+    fv = float(v)
+    if fv == 0.0:
+        return make_real(0.0)
+    if fv < 0.0:
+        return _wrap(cmath.sqrt(complex(fv, 0.0)))
+    return make_real(math.sqrt(fv))
 
 
 def _prim_square(ctx, env, args, app_node):
-   v = _any_num(args[0], 'square', app_node, 1)
-   return _wrap(v * v)
+    v = _any_num(args[0], 'square', app_node, 1)
+    return _wrap(v * v)
 
 
 def _prim_floor(ctx, env, args, app_node):
-   v = _num(args[0], 'floor', app_node, 1)
-   if isinstance(v, int):
-      return make_integer(v)
-   if isinstance(v, _Rat):
-      return make_integer(math.floor(v))
-   if not math.isfinite(v):
-      return make_real(v)
-   return make_real(float(math.floor(v)))
+    v = _num(args[0], 'floor', app_node, 1)
+    if isinstance(v, int):
+        return make_integer(v)
+    if isinstance(v, _Rat):
+        return make_integer(math.floor(v))
+    if not math.isfinite(v):
+        return make_real(v)
+    return make_real(float(math.floor(v)))
 
 
 def _prim_ceiling(ctx, env, args, app_node):
-   v = _num(args[0], 'ceiling', app_node, 1)
-   if isinstance(v, int):
-      return make_integer(v)
-   if isinstance(v, _Rat):
-      return make_integer(math.ceil(v))
-   if not math.isfinite(v):
-      return make_real(v)
-   return make_real(float(math.ceil(v)))
+    v = _num(args[0], 'ceiling', app_node, 1)
+    if isinstance(v, int):
+        return make_integer(v)
+    if isinstance(v, _Rat):
+        return make_integer(math.ceil(v))
+    if not math.isfinite(v):
+        return make_real(v)
+    return make_real(float(math.ceil(v)))
 
 
 def _prim_truncate(ctx, env, args, app_node):
-   v = _num(args[0], 'truncate', app_node, 1)
-   if isinstance(v, int):
-      return make_integer(v)
-   if isinstance(v, _Rat):
-      return make_integer(math.trunc(v))
-   if not math.isfinite(v):
-      return make_real(v)
-   return make_real(float(math.trunc(v)))
+    v = _num(args[0], 'truncate', app_node, 1)
+    if isinstance(v, int):
+        return make_integer(v)
+    if isinstance(v, _Rat):
+        return make_integer(math.trunc(v))
+    if not math.isfinite(v):
+        return make_real(v)
+    return make_real(float(math.trunc(v)))
 
 
 def _prim_round(ctx, env, args, app_node):
-   v = _num(args[0], 'round', app_node, 1)
-   if isinstance(v, int):
-      return make_integer(v)
-   if isinstance(v, _Rat):
-      return make_integer(round(v))
-   if not math.isfinite(v):
-      return make_real(v)
-   # R7RS specifies banker's rounding (round half to even); Python's round() does this.
-   return make_real(float(round(v)))
+    v = _num(args[0], 'round', app_node, 1)
+    if isinstance(v, int):
+        return make_integer(v)
+    if isinstance(v, _Rat):
+        return make_integer(round(v))
+    if not math.isfinite(v):
+        return make_real(v)
+    # R7RS specifies banker's rounding (round half to even); Python's round() does this.
+    return make_real(float(round(v)))
 
 
 def _prim_exact_p(ctx, env, args, app_node):
-   v = args[0]
-   return make_boolean(is_integer(v) or is_rational(v) or is_exact_complex(v))
+    v = args[0]
+    return make_boolean(is_integer(v) or is_rational(v) or is_exact_complex(v))
 
 
 def _prim_inexact_p(ctx, env, args, app_node):
-   v = args[0]
-   return make_boolean(is_real(v) or is_complex(v))
+    v = args[0]
+    return make_boolean(is_real(v) or is_complex(v))
 
 
 def _float_to_exact(f, name, app_node):
-   """Convert a Python float to an exact Scheme integer or rational."""
-   if not math.isfinite(f):
-      raise SchemeTypeError(
-         '%s: no exact representation for non-finite real' % name, app_node)
-   if f.is_integer():
-      return make_integer(int(f))
-   frac = _Rat.from_float(f)
-   return make_rational(frac.numerator, frac.denominator)
+    """Convert a Python float to an exact Scheme integer or rational."""
+    if not math.isfinite(f):
+        raise SchemeTypeError(
+            '%s: no exact representation for non-finite real' % name, app_node)
+    if f.is_integer():
+        return make_integer(int(f))
+    frac = _Rat.from_float(f)
+    return make_rational(frac.numerator, frac.denominator)
 
 
 def _prim_exact(ctx, env, args, app_node):
-   v = args[0]
-   if is_integer(v) or is_rational(v) or is_exact_complex(v):
-      return v
-   if is_real(v):
-      return _float_to_exact(as_real(v), 'exact', app_node)
-   if is_complex(v):
-      re = _float_to_exact(as_complex_real(v), 'exact', app_node)
-      im_f = as_complex_imag(v)
-      if im_f == 0.0:
-         return re
-      im = _float_to_exact(im_f, 'exact', app_node)
-      return make_exact_complex(re, im)
-   raise SchemeTypeError(
-      'exact: argument must be a number', app_node)
+    v = args[0]
+    if is_integer(v) or is_rational(v) or is_exact_complex(v):
+        return v
+    if is_real(v):
+        return _float_to_exact(as_real(v), 'exact', app_node)
+    if is_complex(v):
+        re = _float_to_exact(as_complex_real(v), 'exact', app_node)
+        im_f = as_complex_imag(v)
+        if im_f == 0.0:
+            return re
+        im = _float_to_exact(im_f, 'exact', app_node)
+        return make_exact_complex(re, im)
+    raise SchemeTypeError(
+        'exact: argument must be a number', app_node)
 
 
 def _prim_inexact(ctx, env, args, app_node):
-   v = args[0]
-   if is_real(v) or is_complex(v):
-      return v
-   if is_integer(v):
-      return make_real(float(as_integer(v)))
-   if is_rational(v):
-      return make_real(as_rational_num(v) / as_rational_den(v))
-   if is_exact_complex(v):
-      re = float(_as_exact_component(as_exact_complex_real(v)))
-      im = float(_as_exact_component(as_exact_complex_imag(v)))
-      return make_complex(re, im)
-   raise SchemeTypeError(
-      'inexact: argument must be a number', app_node)
+    v = args[0]
+    if is_real(v) or is_complex(v):
+        return v
+    if is_integer(v):
+        return make_real(float(as_integer(v)))
+    if is_rational(v):
+        return make_real(as_rational_num(v) / as_rational_den(v))
+    if is_exact_complex(v):
+        re = float(_as_exact_component(as_exact_complex_real(v)))
+        im = float(_as_exact_component(as_exact_complex_imag(v)))
+        return make_complex(re, im)
+    raise SchemeTypeError(
+        'inexact: argument must be a number', app_node)
 
 
 def _prim_exact_integer_p(ctx, env, args, app_node):
-   return make_boolean(is_integer(args[0]))
+    return make_boolean(is_integer(args[0]))
 
 
 def _prim_numerator(ctx, env, args, app_node):
-   v = args[0]
-   if is_integer(v):
-      return v
-   if is_rational(v):
-      return make_integer(as_rational_num(v))
-   if is_real(v):
-      f = as_real(v)
-      if not math.isfinite(f):
-         return make_real(f)
-      if f.is_integer():
-         return make_real(f)
-      return make_real(float(_Rat.from_float(f).numerator))
-   raise SchemeTypeError('numerator: argument must be a real number', app_node)
+    v = args[0]
+    if is_integer(v):
+        return v
+    if is_rational(v):
+        return make_integer(as_rational_num(v))
+    if is_real(v):
+        f = as_real(v)
+        if not math.isfinite(f):
+            return make_real(f)
+        if f.is_integer():
+            return make_real(f)
+        return make_real(float(_Rat.from_float(f).numerator))
+    raise SchemeTypeError(
+        'numerator: argument must be a real number', app_node)
 
 
 def _prim_denominator(ctx, env, args, app_node):
-   v = args[0]
-   if is_integer(v):
-      return make_integer(1)
-   if is_rational(v):
-      return make_integer(as_rational_den(v))
-   if is_real(v):
-      f = as_real(v)
-      if not math.isfinite(f):
-         return make_real(1.0)
-      if f.is_integer():
-         return make_real(1.0)
-      return make_real(float(_Rat.from_float(f).denominator))
-   raise SchemeTypeError('denominator: argument must be a real number', app_node)
+    v = args[0]
+    if is_integer(v):
+        return make_integer(1)
+    if is_rational(v):
+        return make_integer(as_rational_den(v))
+    if is_real(v):
+        f = as_real(v)
+        if not math.isfinite(f):
+            return make_real(1.0)
+        if f.is_integer():
+            return make_real(1.0)
+        return make_real(float(_Rat.from_float(f).denominator))
+    raise SchemeTypeError(
+        'denominator: argument must be a real number', app_node)
 
 
 def _format_num_str(f):
-   """Format a float as R7RS surface syntax (used by number->string for complex)."""
-   if math.isnan(f):
-      return '+nan.0'
-   if f == float('inf'):
-      return '+inf.0'
-   if f == float('-inf'):
-      return '-inf.0'
-   s = repr(f)
-   if '.' not in s and 'e' not in s:
-      s = s + '.0'
-   return s
+    """Format a float as R7RS surface syntax (used by number->string for complex)."""
+    if math.isnan(f):
+        return '+nan.0'
+    if f == float('inf'):
+        return '+inf.0'
+    if f == float('-inf'):
+        return '-inf.0'
+    s = repr(f)
+    if '.' not in s and 'e' not in s:
+        s = s + '.0'
+    return s
 
 
 def _exact_component_str(scheme_val):
-   """Format an exact complex component (INTEGER or RATIONAL) as a string."""
-   if is_integer(scheme_val):
-      return str(as_integer(scheme_val))
-   return str(as_rational_num(scheme_val)) + '/' + str(as_rational_den(scheme_val))
+    """Format an exact complex component (INTEGER or RATIONAL) as a string."""
+    if is_integer(scheme_val):
+        return str(as_integer(scheme_val))
+    return str(as_rational_num(scheme_val)) + '/' + str(as_rational_den(scheme_val))
 
 
 def _parse_number_for_stn(s):
-   """Parse a real-number string for string->number complex parsing."""
-   if s == '+inf.0':
-      return float('inf')
-   if s == '-inf.0':
-      return float('-inf')
-   if s == '+nan.0':
-      return float('nan')
-   if s == '-nan.0':
-      return float('nan')
-   try:
-      return float(s)
-   except ValueError:
-      pass
-   return None
+    """Parse a real-number string for string->number complex parsing."""
+    if s == '+inf.0':
+        return float('inf')
+    if s == '-inf.0':
+        return float('-inf')
+    if s == '+nan.0':
+        return float('nan')
+    if s == '-nan.0':
+        return float('nan')
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    return None
 
 
 def _parse_complex_for_stn(s):
-   """Parse a+bi style string into (re_float, im_float) or None."""
-   body = s[:-1]   # strip 'i'
-   if not body:
-      return None
-   split = -1
-   j = len(body) - 1
-   while j >= 0:
-      c = body[j]
-      if c == '+' or c == '-':
-         if j > 0 and body[j - 1].lower() == 'e':
-            j = j - 1
-            continue
-         split = j
-         break
-      j = j - 1
-   if split == -1:
-      return None
-   real_str  = body[:split]
-   sign_imag = body[split:]
-   if real_str == '':
-      re_val = 0.0
-   else:
-      re_val = _parse_number_for_stn(real_str)
-      if re_val is None:
-         return None
-   if sign_imag == '+':
-      im_val = 1.0
-   elif sign_imag == '-':
-      im_val = -1.0
-   else:
-      im_val = _parse_number_for_stn(sign_imag)
-      if im_val is None:
-         return None
-   return (float(re_val), float(im_val))
+    """Parse a+bi style string into (re_float, im_float) or None."""
+    body = s[:-1]   # strip 'i'
+    if not body:
+        return None
+    split = -1
+    j = len(body) - 1
+    while j >= 0:
+        c = body[j]
+        if c == '+' or c == '-':
+            if j > 0 and body[j - 1].lower() == 'e':
+                j = j - 1
+                continue
+            split = j
+            break
+        j = j - 1
+    if split == -1:
+        return None
+    real_str = body[:split]
+    sign_imag = body[split:]
+    if real_str == '':
+        re_val = 0.0
+    else:
+        re_val = _parse_number_for_stn(real_str)
+        if re_val is None:
+            return None
+    if sign_imag == '+':
+        im_val = 1.0
+    elif sign_imag == '-':
+        im_val = -1.0
+    else:
+        im_val = _parse_number_for_stn(sign_imag)
+        if im_val is None:
+            return None
+    return (float(re_val), float(im_val))
 
 
 def _prim_number_to_string(ctx, env, args, app_node):
-   v = args[0]
-   radix = 10
-   if len(args) >= 2:
-      r = args[1]
-      if not is_integer(r):
-         raise SchemeTypeError(
-            'number->string: radix must be an integer', app_node)
-      radix = as_integer(r)
-   if is_integer(v):
-      n = as_integer(v)
-      if radix == 10:
-         return make_string(str(n))
-      if radix == 2:
-         return make_string(bin(n)[2:] if n >= 0 else '-' + bin(-n)[2:])
-      if radix == 8:
-         return make_string(oct(n)[2:] if n >= 0 else '-' + oct(-n)[2:])
-      if radix == 16:
-         return make_string(hex(n)[2:] if n >= 0 else '-' + hex(-n)[2:])
-      raise SchemeTypeError(
-         'number->string: radix must be 2, 8, 10, or 16', app_node)
-   if is_real(v):
-      if radix != 10:
-         raise SchemeTypeError(
-            'number->string: only radix 10 is supported for inexact numbers',
+    v = args[0]
+    radix = 10
+    if len(args) >= 2:
+        r = args[1]
+        if not is_integer(r):
+            raise SchemeTypeError(
+                'number->string: radix must be an integer', app_node)
+        radix = as_integer(r)
+    if is_integer(v):
+        n = as_integer(v)
+        if radix == 10:
+            return make_string(str(n))
+        if radix == 2:
+            return make_string(bin(n)[2:] if n >= 0 else '-' + bin(-n)[2:])
+        if radix == 8:
+            return make_string(oct(n)[2:] if n >= 0 else '-' + oct(-n)[2:])
+        if radix == 16:
+            return make_string(hex(n)[2:] if n >= 0 else '-' + hex(-n)[2:])
+        raise SchemeTypeError(
+            'number->string: radix must be 2, 8, 10, or 16', app_node)
+    if is_real(v):
+        if radix != 10:
+            raise SchemeTypeError(
+                'number->string: only radix 10 is supported for inexact numbers',
+                app_node)
+        f = as_real(v)
+        if f != f:
+            return make_string('+nan.0')
+        if f == float('inf'):
+            return make_string('+inf.0')
+        if f == float('-inf'):
+            return make_string('-inf.0')
+        s = repr(f)
+        if '.' not in s and 'e' not in s:
+            s = s + '.0'
+        return make_string(s)
+    if is_rational(v):
+        n = as_rational_num(v)
+        d = as_rational_den(v)
+        if radix == 10:
+            return make_string(str(n) + '/' + str(d))
+        raise SchemeTypeError(
+            'number->string: only radix 10 supported for rational numbers',
             app_node)
-      f = as_real(v)
-      if f != f:
-         return make_string('+nan.0')
-      if f == float('inf'):
-         return make_string('+inf.0')
-      if f == float('-inf'):
-         return make_string('-inf.0')
-      s = repr(f)
-      if '.' not in s and 'e' not in s:
-         s = s + '.0'
-      return make_string(s)
-   if is_rational(v):
-      n = as_rational_num(v)
-      d = as_rational_den(v)
-      if radix == 10:
-         return make_string(str(n) + '/' + str(d))
-      raise SchemeTypeError(
-         'number->string: only radix 10 supported for rational numbers',
-         app_node)
-   if is_complex(v):
-      if radix != 10:
-         raise SchemeTypeError(
-            'number->string: only radix 10 supported for complex numbers',
-            app_node)
-      re = as_complex_real(v)
-      im = as_complex_imag(v)
-      re_s = _format_num_str(re)
-      im_s = _format_num_str(im)
-      if math.isnan(im) or im >= 0:
-         return make_string(re_s + '+' + im_s + 'i')
-      return make_string(re_s + im_s + 'i')
-   if is_exact_complex(v):
-      if radix != 10:
-         raise SchemeTypeError(
-            'number->string: only radix 10 supported for complex numbers',
-            app_node)
-      re_v = as_exact_complex_real(v)
-      im_v = as_exact_complex_imag(v)
-      re_s = _exact_component_str(re_v)
-      im_s = _exact_component_str(im_v)
-      im_py = _as_exact_component(im_v)
-      if im_py >= 0:
-         return make_string(re_s + '+' + im_s + 'i')
-      return make_string(re_s + im_s + 'i')
-   raise SchemeTypeError(
-      'number->string: argument must be a number', app_node)
+    if is_complex(v):
+        if radix != 10:
+            raise SchemeTypeError(
+                'number->string: only radix 10 supported for complex numbers',
+                app_node)
+        re = as_complex_real(v)
+        im = as_complex_imag(v)
+        re_s = _format_num_str(re)
+        im_s = _format_num_str(im)
+        if math.isnan(im) or im >= 0:
+            return make_string(re_s + '+' + im_s + 'i')
+        return make_string(re_s + im_s + 'i')
+    if is_exact_complex(v):
+        if radix != 10:
+            raise SchemeTypeError(
+                'number->string: only radix 10 supported for complex numbers',
+                app_node)
+        re_v = as_exact_complex_real(v)
+        im_v = as_exact_complex_imag(v)
+        re_s = _exact_component_str(re_v)
+        im_s = _exact_component_str(im_v)
+        im_py = _as_exact_component(im_v)
+        if im_py >= 0:
+            return make_string(re_s + '+' + im_s + 'i')
+        return make_string(re_s + im_s + 'i')
+    raise SchemeTypeError(
+        'number->string: argument must be a number', app_node)
 
 
 def _floor_div(n, d):
-   """Floor division with R7RS sign convention: result has the sign of d.
-   Python's // is floor division for ints, matching Scheme floor/."""
-   if d == 0:
-      return None
-   return n // d
+    """Floor division with R7RS sign convention: result has the sign of d.
+    Python's // is floor division for ints, matching Scheme floor/."""
+    if d == 0:
+        return None
+    return n // d
 
 
 def _floor_mod(n, d):
-   if d == 0:
-      return None
-   return n % d
+    if d == 0:
+        return None
+    return n % d
 
 
 def _prim_floor_quotient(ctx, env, args, app_node):
-   n = _check_int_x(args[0], 'floor-quotient', app_node, 1)
-   d = _check_int_x(args[1], 'floor-quotient', app_node, 2)
-   if d.re == 0:
-      raise SchemeTypeError('floor-quotient: divide by zero', app_node)
-   r = n.re // d.re
-   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    n = _check_int_x(args[0], 'floor-quotient', app_node, 1)
+    d = _check_int_x(args[1], 'floor-quotient', app_node, 2)
+    if d.re == 0:
+        raise SchemeTypeError('floor-quotient: divide by zero', app_node)
+    r = n.re // d.re
+    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_floor_remainder(ctx, env, args, app_node):
-   n = _check_int_x(args[0], 'floor-remainder', app_node, 1)
-   d = _check_int_x(args[1], 'floor-remainder', app_node, 2)
-   if d.re == 0:
-      raise SchemeTypeError('floor-remainder: divide by zero', app_node)
-   r = n.re % d.re
-   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    n = _check_int_x(args[0], 'floor-remainder', app_node, 1)
+    d = _check_int_x(args[1], 'floor-remainder', app_node, 2)
+    if d.re == 0:
+        raise SchemeTypeError('floor-remainder: divide by zero', app_node)
+    r = n.re % d.re
+    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_floor_div(ctx, env, args, app_node):
-   n = _check_int_x(args[0], 'floor/', app_node, 1)
-   d = _check_int_x(args[1], 'floor/', app_node, 2)
-   if d.re == 0:
-      raise SchemeTypeError('floor/: divide by zero', app_node)
-   q = n.re // d.re
-   r = n.re % d.re
-   if not n.exact or not d.exact:
-      return make_multi_values([make_real(float(q)), make_real(float(r))])
-   return make_multi_values([make_integer(q), make_integer(r)])
+    n = _check_int_x(args[0], 'floor/', app_node, 1)
+    d = _check_int_x(args[1], 'floor/', app_node, 2)
+    if d.re == 0:
+        raise SchemeTypeError('floor/: divide by zero', app_node)
+    q = n.re // d.re
+    r = n.re % d.re
+    if not n.exact or not d.exact:
+        return make_multi_values([make_real(float(q)), make_real(float(r))])
+    return make_multi_values([make_integer(q), make_integer(r)])
 
 
 def _prim_truncate_quotient(ctx, env, args, app_node):
-   n = _check_int_x(args[0], 'truncate-quotient', app_node, 1)
-   d = _check_int_x(args[1], 'truncate-quotient', app_node, 2)
-   if d.re == 0:
-      raise SchemeTypeError('truncate-quotient: divide by zero', app_node)
-   r = _trunc_div(n.re, d.re)
-   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    n = _check_int_x(args[0], 'truncate-quotient', app_node, 1)
+    d = _check_int_x(args[1], 'truncate-quotient', app_node, 2)
+    if d.re == 0:
+        raise SchemeTypeError('truncate-quotient: divide by zero', app_node)
+    r = _trunc_div(n.re, d.re)
+    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_truncate_remainder(ctx, env, args, app_node):
-   n = _check_int_x(args[0], 'truncate-remainder', app_node, 1)
-   d = _check_int_x(args[1], 'truncate-remainder', app_node, 2)
-   if d.re == 0:
-      raise SchemeTypeError('truncate-remainder: divide by zero', app_node)
-   r = n.re - _trunc_div(n.re, d.re) * d.re
-   return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    n = _check_int_x(args[0], 'truncate-remainder', app_node, 1)
+    d = _check_int_x(args[1], 'truncate-remainder', app_node, 2)
+    if d.re == 0:
+        raise SchemeTypeError('truncate-remainder: divide by zero', app_node)
+    r = n.re - _trunc_div(n.re, d.re) * d.re
+    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
 
 
 def _prim_truncate_div(ctx, env, args, app_node):
-   n = _check_int_x(args[0], 'truncate/', app_node, 1)
-   d = _check_int_x(args[1], 'truncate/', app_node, 2)
-   if d.re == 0:
-      raise SchemeTypeError('truncate/: divide by zero', app_node)
-   q = _trunc_div(n.re, d.re)
-   r = n.re - q * d.re
-   if not n.exact or not d.exact:
-      return make_multi_values([make_real(float(q)), make_real(float(r))])
-   return make_multi_values([make_integer(q), make_integer(r)])
+    n = _check_int_x(args[0], 'truncate/', app_node, 1)
+    d = _check_int_x(args[1], 'truncate/', app_node, 2)
+    if d.re == 0:
+        raise SchemeTypeError('truncate/: divide by zero', app_node)
+    q = _trunc_div(n.re, d.re)
+    r = n.re - q * d.re
+    if not n.exact or not d.exact:
+        return make_multi_values([make_real(float(q)), make_real(float(r))])
+    return make_multi_values([make_integer(q), make_integer(r)])
 
 
 def _prim_exact_integer_sqrt(ctx, env, args, app_node):
-   n = _check_int(args[0], 'exact-integer-sqrt', app_node, 1)
-   if n < 0:
-      raise SchemeTypeError(
-         'exact-integer-sqrt: argument must be non-negative', app_node)
-   r = math.isqrt(n)
-   return make_multi_values([make_integer(r), make_integer(n - r * r)])
+    n = _check_int(args[0], 'exact-integer-sqrt', app_node, 1)
+    if n < 0:
+        raise SchemeTypeError(
+            'exact-integer-sqrt: argument must be non-negative', app_node)
+    r = math.isqrt(n)
+    return make_multi_values([make_integer(r), make_integer(n - r * r)])
 
 
 def _prim_features(ctx, env, args, app_node):
-   from pyscheme.AST import alloc_cons, NIL_VALUE, make_symbol
-   from pyscheme.Expander import _FEATURES
-   names = list(_FEATURES.keys())
-   result = NIL_VALUE
-   i = len(names) - 1
-   while i >= 0:
-      result = alloc_cons(make_symbol(names[i]), result, None)
-      i = i - 1
-   return result
+    from pyscheme.AST import alloc_cons, NIL_VALUE, make_symbol
+    from pyscheme.Expander import _FEATURES
+    names = list(_FEATURES.keys())
+    result = NIL_VALUE
+    i = len(names) - 1
+    while i >= 0:
+        result = alloc_cons(make_symbol(names[i]), result, None)
+        i = i - 1
+    return result
 
 
 def _prim_string_to_number(ctx, env, args, app_node):
-   v = args[0]
-   if not is_string(v):
-      raise SchemeTypeError(
-         'string->number: first argument must be a string', app_node)
-   s = as_string(v).strip()
-   radix = 10
-   if len(args) >= 2:
-      r = args[1]
-      if not is_integer(r):
-         raise SchemeTypeError(
-            'string->number: radix must be an integer', app_node)
-      radix = as_integer(r)
-   # Strip #b/#o/#d/#x/#e/#i prefix(es) from the string.
-   explicit_radix = False
-   exact = -1   # -1 = unspecified; 1 = exact; 0 = inexact
-   while len(s) >= 2 and s[0] == '#':
-      ch = s[1].lower()
-      if ch == 'b':
-         if explicit_radix:
+    v = args[0]
+    if not is_string(v):
+        raise SchemeTypeError(
+            'string->number: first argument must be a string', app_node)
+    s = as_string(v).strip()
+    radix = 10
+    if len(args) >= 2:
+        r = args[1]
+        if not is_integer(r):
+            raise SchemeTypeError(
+                'string->number: radix must be an integer', app_node)
+        radix = as_integer(r)
+    # Strip #b/#o/#d/#x/#e/#i prefix(es) from the string.
+    explicit_radix = False
+    exact = -1   # -1 = unspecified; 1 = exact; 0 = inexact
+    while len(s) >= 2 and s[0] == '#':
+        ch = s[1].lower()
+        if ch == 'b':
+            if explicit_radix:
+                return make_boolean(False)
+            radix = 2
+            explicit_radix = True
+            s = s[2:]
+        elif ch == 'o':
+            if explicit_radix:
+                return make_boolean(False)
+            radix = 8
+            explicit_radix = True
+            s = s[2:]
+        elif ch == 'd':
+            if explicit_radix:
+                return make_boolean(False)
+            radix = 10
+            explicit_radix = True
+            s = s[2:]
+        elif ch == 'x':
+            if explicit_radix:
+                return make_boolean(False)
+            radix = 16
+            explicit_radix = True
+            s = s[2:]
+        elif ch == 'e':
+            if exact != -1:
+                return make_boolean(False)
+            exact = 1
+            s = s[2:]
+        elif ch == 'i':
+            if exact != -1:
+                return make_boolean(False)
+            exact = 0
+            s = s[2:]
+        else:
             return make_boolean(False)
-         radix = 2
-         explicit_radix = True
-         s = s[2:]
-      elif ch == 'o':
-         if explicit_radix:
-            return make_boolean(False)
-         radix = 8
-         explicit_radix = True
-         s = s[2:]
-      elif ch == 'd':
-         if explicit_radix:
-            return make_boolean(False)
-         radix = 10
-         explicit_radix = True
-         s = s[2:]
-      elif ch == 'x':
-         if explicit_radix:
-            return make_boolean(False)
-         radix = 16
-         explicit_radix = True
-         s = s[2:]
-      elif ch == 'e':
-         if exact != -1:
-            return make_boolean(False)
-         exact = 1
-         s = s[2:]
-      elif ch == 'i':
-         if exact != -1:
-            return make_boolean(False)
-         exact = 0
-         s = s[2:]
-      else:
-         return make_boolean(False)
-   if not s:
-      return make_boolean(False)
-   # Try polar literal (radix 10 only, contains '@').
-   if radix == 10 and '@' in s:
-      at = s.index('@')
-      r_str     = s[:at]
-      theta_str = s[at + 1:]
-      if r_str and theta_str:
-         r_val     = _parse_number_for_stn(r_str)
-         theta_val = _parse_number_for_stn(theta_str)
-         if r_val is not None and theta_val is not None:
+    if not s:
+        return make_boolean(False)
+    # Try polar literal (radix 10 only, contains '@').
+    if radix == 10 and '@' in s:
+        at = s.index('@')
+        r_str = s[:at]
+        theta_str = s[at + 1:]
+        if r_str and theta_str:
+            r_val = _parse_number_for_stn(r_str)
+            theta_val = _parse_number_for_stn(theta_str)
+            if r_val is not None and theta_val is not None:
+                if exact == 1:
+                    return make_boolean(False)
+                re_val = r_val * math.cos(theta_val)
+                im_val = r_val * math.sin(theta_val)
+                return make_complex(float(re_val), float(im_val))
+    # Try complex literal (radix 10 only, ends in 'i').
+    if radix == 10 and s.endswith('i') and len(s) >= 2:
+        tup = _parse_complex_for_stn(s)
+        if tup is not None:
+            re_f = tup[0]
+            im_f = tup[1]
             if exact == 1:
-               return make_boolean(False)
-            re_val = r_val * math.cos(theta_val)
-            im_val = r_val * math.sin(theta_val)
-            return make_complex(float(re_val), float(im_val))
-   # Try complex literal (radix 10 only, ends in 'i').
-   if radix == 10 and s.endswith('i') and len(s) >= 2:
-      tup = _parse_complex_for_stn(s)
-      if tup is not None:
-         re_f = tup[0]
-         im_f = tup[1]
-         if exact == 1:
-            re_v = _float_to_exact(re_f, 'string->number', None)
-            im_v = _float_to_exact(im_f, 'string->number', None)
-            if im_v == make_integer(0) or (is_integer(im_v) and as_integer(im_v) == 0):
-               return re_v
-            return make_exact_complex(re_v, im_v)
-         return make_complex(re_f, im_f)
-   # Try integer.
-   try:
-      n = int(s, radix)
-      if exact == 0:
-         return make_real(float(n))
-      return make_integer(n)
-   except (ValueError, TypeError):
-      pass
-   # Try rational n/d.
-   if '/' in s:
-      slash = s.index('/')
-      num_str = s[:slash]
-      den_str = s[slash + 1:]
-      try:
-         num = int(num_str, radix)
-         den = int(den_str, radix)
-         if den != 0:
-            frac = _Rat(num, den)
-            if exact == 0:
-               return make_real(float(frac))
-            if frac.denominator == 1:
-               return make_integer(frac.numerator)
-            return make_rational(frac.numerator, frac.denominator)
-      except (ValueError, TypeError):
-         pass
-   # Try real (radix 10 only).
-   if radix == 10:
-      if s == '+inf.0':
-         if exact == 1:
-            return make_boolean(False)
-         return make_real(float('inf'))
-      if s == '-inf.0':
-         if exact == 1:
-            return make_boolean(False)
-         return make_real(float('-inf'))
-      if s == '+nan.0':
-         if exact == 1:
-            return make_boolean(False)
-         return make_real(float('nan'))
-      if s == '-nan.0':
-         if exact == 1:
-            return make_boolean(False)
-         return make_real(float('nan'))
-      try:
-         f = float(s)
-         if exact == 1:
-            if not math.isfinite(f):
-               return make_boolean(False)
-            if f.is_integer():
-               return make_integer(int(f))
-            frac = _Rat.from_float(f)
-            return make_rational(frac.numerator, frac.denominator)
-         return make_real(f)
-      except (ValueError, TypeError):
-         pass
-   return make_boolean(False)
+                re_v = _float_to_exact(re_f, 'string->number', None)
+                im_v = _float_to_exact(im_f, 'string->number', None)
+                if im_v == make_integer(0) or (is_integer(im_v) and as_integer(im_v) == 0):
+                    return re_v
+                return make_exact_complex(re_v, im_v)
+            return make_complex(re_f, im_f)
+    # Try integer.
+    try:
+        n = int(s, radix)
+        if exact == 0:
+            return make_real(float(n))
+        return make_integer(n)
+    except (ValueError, TypeError):
+        pass
+    # Try rational n/d.
+    if '/' in s:
+        slash = s.index('/')
+        num_str = s[:slash]
+        den_str = s[slash + 1:]
+        try:
+            num = int(num_str, radix)
+            den = int(den_str, radix)
+            if den != 0:
+                frac = _Rat(num, den)
+                if exact == 0:
+                    return make_real(float(frac))
+                if frac.denominator == 1:
+                    return make_integer(frac.numerator)
+                return make_rational(frac.numerator, frac.denominator)
+        except (ValueError, TypeError):
+            pass
+    # Try real (radix 10 only).
+    if radix == 10:
+        if s == '+inf.0':
+            if exact == 1:
+                return make_boolean(False)
+            return make_real(float('inf'))
+        if s == '-inf.0':
+            if exact == 1:
+                return make_boolean(False)
+            return make_real(float('-inf'))
+        if s == '+nan.0':
+            if exact == 1:
+                return make_boolean(False)
+            return make_real(float('nan'))
+        if s == '-nan.0':
+            if exact == 1:
+                return make_boolean(False)
+            return make_real(float('nan'))
+        try:
+            f = float(s)
+            if exact == 1:
+                if not math.isfinite(f):
+                    return make_boolean(False)
+                if f.is_integer():
+                    return make_integer(int(f))
+                frac = _Rat.from_float(f)
+                return make_rational(frac.numerator, frac.denominator)
+            return make_real(f)
+        except (ValueError, TypeError):
+            pass
+    return make_boolean(False)
 
 
 def _prim_exp(ctx, env, args, app_node):
-   v = _any_num(args[0], 'exp', app_node, 1)
-   if isinstance(v, complex):
-      return _wrap(cmath.exp(v))
-   try:
-      return make_real(math.exp(float(v)))
-   except OverflowError:
-      return make_real(float('inf'))
+    v = _any_num(args[0], 'exp', app_node, 1)
+    if isinstance(v, complex):
+        return _wrap(cmath.exp(v))
+    try:
+        return make_real(math.exp(float(v)))
+    except OverflowError:
+        return make_real(float('inf'))
 
 
 def _prim_log(ctx, env, args, app_node):
-   v = _any_num(args[0], 'log', app_node, 1)
-   if isinstance(v, complex):
-      result = cmath.log(v)
-      if len(args) >= 2:
-         base = _any_num(args[1], 'log', app_node, 2)
-         b = base if isinstance(base, complex) else complex(float(base))
-         result = result / cmath.log(b)
-      return _wrap(result)
-   f = float(v)
-   if f == 0.0:
-      r = float('-inf')
-   elif f < 0.0:
-      result = cmath.log(complex(f, 0.0))
-      if len(args) >= 2:
-         base = _any_num(args[1], 'log', app_node, 2)
-         b = base if isinstance(base, complex) else complex(float(base))
-         result = result / cmath.log(b)
-      return _wrap(result)
-   else:
-      r = math.log(f)
-   if len(args) >= 2:
-      base = _any_num(args[1], 'log', app_node, 2)
-      b = float(base)
-      if b == 0.0 or b < 0.0:
-         r = float('nan')
-      else:
-         r = r / math.log(b)
-   return make_real(r)
+    v = _any_num(args[0], 'log', app_node, 1)
+    if isinstance(v, complex):
+        result = cmath.log(v)
+        if len(args) >= 2:
+            base = _any_num(args[1], 'log', app_node, 2)
+            b = base if isinstance(base, complex) else complex(float(base))
+            result = result / cmath.log(b)
+        return _wrap(result)
+    f = float(v)
+    if f == 0.0:
+        r = float('-inf')
+    elif f < 0.0:
+        result = cmath.log(complex(f, 0.0))
+        if len(args) >= 2:
+            base = _any_num(args[1], 'log', app_node, 2)
+            b = base if isinstance(base, complex) else complex(float(base))
+            result = result / cmath.log(b)
+        return _wrap(result)
+    else:
+        r = math.log(f)
+    if len(args) >= 2:
+        base = _any_num(args[1], 'log', app_node, 2)
+        b = float(base)
+        if b == 0.0 or b < 0.0:
+            r = float('nan')
+        else:
+            r = r / math.log(b)
+    return make_real(r)
 
 
 def _prim_sin(ctx, env, args, app_node):
-   v = _any_num(args[0], 'sin', app_node, 1)
-   if isinstance(v, complex):
-      return _wrap(cmath.sin(v))
-   return make_real(math.sin(float(v)))
+    v = _any_num(args[0], 'sin', app_node, 1)
+    if isinstance(v, complex):
+        return _wrap(cmath.sin(v))
+    return make_real(math.sin(float(v)))
 
 
 def _prim_cos(ctx, env, args, app_node):
-   v = _any_num(args[0], 'cos', app_node, 1)
-   if isinstance(v, complex):
-      return _wrap(cmath.cos(v))
-   return make_real(math.cos(float(v)))
+    v = _any_num(args[0], 'cos', app_node, 1)
+    if isinstance(v, complex):
+        return _wrap(cmath.cos(v))
+    return make_real(math.cos(float(v)))
 
 
 def _prim_tan(ctx, env, args, app_node):
-   v = _any_num(args[0], 'tan', app_node, 1)
-   if isinstance(v, complex):
-      return _wrap(cmath.tan(v))
-   return make_real(math.tan(float(v)))
+    v = _any_num(args[0], 'tan', app_node, 1)
+    if isinstance(v, complex):
+        return _wrap(cmath.tan(v))
+    return make_real(math.tan(float(v)))
 
 
 def _prim_asin(ctx, env, args, app_node):
-   v = _any_num(args[0], 'asin', app_node, 1)
-   if isinstance(v, complex):
-      return _wrap(cmath.asin(v))
-   f = float(v)
-   if f < -1.0 or f > 1.0:
-      return _wrap(cmath.asin(complex(f, 0.0)))
-   return make_real(math.asin(f))
+    v = _any_num(args[0], 'asin', app_node, 1)
+    if isinstance(v, complex):
+        return _wrap(cmath.asin(v))
+    f = float(v)
+    if f < -1.0 or f > 1.0:
+        return _wrap(cmath.asin(complex(f, 0.0)))
+    return make_real(math.asin(f))
 
 
 def _prim_acos(ctx, env, args, app_node):
-   v = _any_num(args[0], 'acos', app_node, 1)
-   if isinstance(v, complex):
-      return _wrap(cmath.acos(v))
-   f = float(v)
-   if f < -1.0 or f > 1.0:
-      return _wrap(cmath.acos(complex(f, 0.0)))
-   return make_real(math.acos(f))
+    v = _any_num(args[0], 'acos', app_node, 1)
+    if isinstance(v, complex):
+        return _wrap(cmath.acos(v))
+    f = float(v)
+    if f < -1.0 or f > 1.0:
+        return _wrap(cmath.acos(complex(f, 0.0)))
+    return make_real(math.acos(f))
 
 
 def _prim_atan(ctx, env, args, app_node):
-   v = _any_num(args[0], 'atan', app_node, 1)
-   if isinstance(v, complex):
-      if len(args) >= 2:
-         raise SchemeTypeError(
-            'atan: two-argument form requires real numbers', app_node)
-      return _wrap(cmath.atan(v))
-   if len(args) >= 2:
-      v2 = _any_num(args[1], 'atan', app_node, 2)
-      return make_real(math.atan2(float(v), float(v2)))
-   return make_real(math.atan(float(v)))
+    v = _any_num(args[0], 'atan', app_node, 1)
+    if isinstance(v, complex):
+        if len(args) >= 2:
+            raise SchemeTypeError(
+                'atan: two-argument form requires real numbers', app_node)
+        return _wrap(cmath.atan(v))
+    if len(args) >= 2:
+        v2 = _any_num(args[1], 'atan', app_node, 2)
+        return make_real(math.atan2(float(v), float(v2)))
+    return make_real(math.atan(float(v)))
 
 
 def _as_real_val(v, name, app_node, idx):
-   """Extract v as a Python float for complex construction."""
-   if is_integer(v):
-      return float(as_integer(v))
-   if is_rational(v):
-      return as_rational_num(v) / as_rational_den(v)
-   if is_real(v):
-      return as_real(v)
-   raise SchemeTypeError(
-      '%s: argument %d is not a real number' % (name, idx), app_node)
+    """Extract v as a Python float for complex construction."""
+    if is_integer(v):
+        return float(as_integer(v))
+    if is_rational(v):
+        return as_rational_num(v) / as_rational_den(v)
+    if is_real(v):
+        return as_real(v)
+    raise SchemeTypeError(
+        '%s: argument %d is not a real number' % (name, idx), app_node)
 
 
 def _is_exact_real(v):
-   return is_integer(v) or is_rational(v)
+    return is_integer(v) or is_rational(v)
 
 
 def _prim_make_rectangular(ctx, env, args, app_node):
-   re = args[0]
-   im = args[1]
-   if _is_exact_real(re) and _is_exact_real(im):
-      im_py = _as_exact_component(im)
-      if im_py == 0:
-         return re
-      return make_exact_complex(re, im)
-   re_f = _as_real_val(re, 'make-rectangular', app_node, 1)
-   im_f = _as_real_val(im, 'make-rectangular', app_node, 2)
-   return make_complex(re_f, im_f)
+    re = args[0]
+    im = args[1]
+    if _is_exact_real(re) and _is_exact_real(im):
+        im_py = _as_exact_component(im)
+        if im_py == 0:
+            return re
+        return make_exact_complex(re, im)
+    re_f = _as_real_val(re, 'make-rectangular', app_node, 1)
+    im_f = _as_real_val(im, 'make-rectangular', app_node, 2)
+    return make_complex(re_f, im_f)
 
 
 def _prim_make_polar(ctx, env, args, app_node):
-   r     = _as_real_val(args[0], 'make-polar', app_node, 1)
-   theta = _as_real_val(args[1], 'make-polar', app_node, 2)
-   return make_complex(r * math.cos(theta), r * math.sin(theta))
+    r = _as_real_val(args[0], 'make-polar', app_node, 1)
+    theta = _as_real_val(args[1], 'make-polar', app_node, 2)
+    return make_complex(r * math.cos(theta), r * math.sin(theta))
 
 
 def _prim_real_part(ctx, env, args, app_node):
-   v = args[0]
-   if is_exact_complex(v):
-      return as_exact_complex_real(v)
-   if is_complex(v):
-      return make_real(as_complex_real(v))
-   if is_integer(v) or is_rational(v) or is_real(v):
-      return v
-   raise SchemeTypeError('real-part: argument must be a number', app_node)
+    v = args[0]
+    if is_exact_complex(v):
+        return as_exact_complex_real(v)
+    if is_complex(v):
+        return make_real(as_complex_real(v))
+    if is_integer(v) or is_rational(v) or is_real(v):
+        return v
+    raise SchemeTypeError('real-part: argument must be a number', app_node)
 
 
 def _prim_imag_part(ctx, env, args, app_node):
-   v = args[0]
-   if is_exact_complex(v):
-      return as_exact_complex_imag(v)
-   if is_complex(v):
-      return make_real(as_complex_imag(v))
-   if is_integer(v) or is_rational(v):
-      return make_integer(0)
-   if is_real(v):
-      return make_real(0.0)
-   raise SchemeTypeError('imag-part: argument must be a number', app_node)
+    v = args[0]
+    if is_exact_complex(v):
+        return as_exact_complex_imag(v)
+    if is_complex(v):
+        return make_real(as_complex_imag(v))
+    if is_integer(v) or is_rational(v):
+        return make_integer(0)
+    if is_real(v):
+        return make_real(0.0)
+    raise SchemeTypeError('imag-part: argument must be a number', app_node)
 
 
 def _prim_magnitude(ctx, env, args, app_node):
-   v = args[0]
-   if is_exact_complex(v):
-      re = float(_as_exact_component(as_exact_complex_real(v)))
-      im = float(_as_exact_component(as_exact_complex_imag(v)))
-      return make_real(math.hypot(re, im))
-   if is_complex(v):
-      return make_real(math.hypot(as_complex_real(v), as_complex_imag(v)))
-   return _prim_abs(ctx, env, args, app_node)
+    v = args[0]
+    if is_exact_complex(v):
+        re = float(_as_exact_component(as_exact_complex_real(v)))
+        im = float(_as_exact_component(as_exact_complex_imag(v)))
+        return make_real(math.hypot(re, im))
+    if is_complex(v):
+        return make_real(math.hypot(as_complex_real(v), as_complex_imag(v)))
+    return _prim_abs(ctx, env, args, app_node)
 
 
 def _prim_angle(ctx, env, args, app_node):
-   v = args[0]
-   if is_exact_complex(v):
-      re = float(_as_exact_component(as_exact_complex_real(v)))
-      im = float(_as_exact_component(as_exact_complex_imag(v)))
-      return make_real(math.atan2(im, re))
-   if is_complex(v):
-      return make_real(math.atan2(as_complex_imag(v), as_complex_real(v)))
-   n = _num(v, 'angle', app_node, 1)
-   if isinstance(n, float) and math.isnan(n):
-      return make_real(float('nan'))
-   if n >= 0:
-      return make_real(0.0)
-   return make_real(math.pi)
+    v = args[0]
+    if is_exact_complex(v):
+        re = float(_as_exact_component(as_exact_complex_real(v)))
+        im = float(_as_exact_component(as_exact_complex_imag(v)))
+        return make_real(math.atan2(im, re))
+    if is_complex(v):
+        return make_real(math.atan2(as_complex_imag(v), as_complex_real(v)))
+    n = _num(v, 'angle', app_node, 1)
+    if isinstance(n, float) and math.isnan(n):
+        return make_real(float('nan'))
+    if n >= 0:
+        return make_real(0.0)
+    return make_real(math.pi)
 
 
 def _simplest_rational(lo, hi):
-   """Return simplest rational in [lo, hi] (lo, hi _Rats, 0 < lo <= hi)."""
-   if lo == hi:
-      return lo
-   n = math.ceil(lo)
-   if _Rat(n) <= hi:
-      return _Rat(n)
-   return _Rat(1) / _simplest_rational(_Rat(1) / hi, _Rat(1) / lo)
+    """Return simplest rational in [lo, hi] (lo, hi _Rats, 0 < lo <= hi)."""
+    if lo == hi:
+        return lo
+    n = math.ceil(lo)
+    if _Rat(n) <= hi:
+        return _Rat(n)
+    return _Rat(1) / _simplest_rational(_Rat(1) / hi, _Rat(1) / lo)
 
 
 def _rationalize_exact(x, delta):
-   """Return simplest rational y s.t. |x - y| <= delta (_Rats)."""
-   lo = x - delta
-   hi = x + delta
-   if lo <= 0 and hi >= 0:
-      return _Rat(0)
-   if lo > 0:
-      return _simplest_rational(lo, hi)
-   return -_simplest_rational(-hi, -lo)
+    """Return simplest rational y s.t. |x - y| <= delta (_Rats)."""
+    lo = x - delta
+    hi = x + delta
+    if lo <= 0 and hi >= 0:
+        return _Rat(0)
+    if lo > 0:
+        return _simplest_rational(lo, hi)
+    return -_simplest_rational(-hi, -lo)
 
 
 def _to_rat(x):
-   """Convert int, _Rat, or finite float to _Rat."""
-   if isinstance(x, _Rat):
-      return x
-   if isinstance(x, int):
-      return _Rat(x)
-   return _Rat.from_float(x)
+    """Convert int, _Rat, or finite float to _Rat."""
+    if isinstance(x, _Rat):
+        return x
+    if isinstance(x, int):
+        return _Rat(x)
+    return _Rat.from_float(x)
 
 
 def _prim_rationalize(ctx, env, args, app_node):
-   x     = _num(args[0], 'rationalize', app_node, 1)
-   delta = _num(args[1], 'rationalize', app_node, 2)
-   inexact = isinstance(x, float) or isinstance(delta, float)
-   if isinstance(x, float) and not math.isfinite(x):
-      return make_real(x)
-   if isinstance(delta, float):
-      if math.isinf(delta):
-         return make_real(0.0) if inexact else make_integer(0)
-      if math.isnan(delta):
-         return make_real(float('nan'))
-   fx = _to_rat(x)
-   fd = abs(_to_rat(delta))
-   r = _rationalize_exact(fx, fd)
-   if inexact:
-      return _wrap(float(r))
-   return _wrap(r)
+    x = _num(args[0], 'rationalize', app_node, 1)
+    delta = _num(args[1], 'rationalize', app_node, 2)
+    inexact = isinstance(x, float) or isinstance(delta, float)
+    if isinstance(x, float) and not math.isfinite(x):
+        return make_real(x)
+    if isinstance(delta, float):
+        if math.isinf(delta):
+            return make_real(0.0) if inexact else make_integer(0)
+        if math.isnan(delta):
+            return make_real(float('nan'))
+    fx = _to_rat(x)
+    fd = abs(_to_rat(delta))
+    r = _rationalize_exact(fx, fd)
+    if inexact:
+        return _wrap(float(r))
+    return _wrap(r)
 
 
 def _prim_random(ctx, env, args, app_node):
-   import random as _random
-   n = args[0]
-   if is_integer(n):
-      v = as_integer(n)
-      if v <= 0:
-         raise SchemeTypeError('random: argument must be positive', app_node)
-      return make_integer(_random.randrange(v))
-   if is_real(n):
-      v = as_real(n)
-      if v <= 0.0:
-         raise SchemeTypeError('random: argument must be positive', app_node)
-      return make_real(_random.uniform(0.0, v))
-   raise SchemeTypeError('random: argument must be a number', app_node)
+    import random as _random
+    n = args[0]
+    if is_integer(n):
+        v = as_integer(n)
+        if v <= 0:
+            raise SchemeTypeError(
+                'random: argument must be positive', app_node)
+        return make_integer(_random.randrange(v))
+    if is_real(n):
+        v = as_real(n)
+        if v <= 0.0:
+            raise SchemeTypeError(
+                'random: argument must be positive', app_node)
+        return make_real(_random.uniform(0.0, v))
+    raise SchemeTypeError('random: argument must be a number', app_node)
 
 
 def register():
-   register_primitive('+', (0, None), _prim_add,
-      doc=(
-         "Return the sum of the arguments.  With no arguments, returns 0.\n"
-         "Integer addition produces INTEGER; any real-valued argument produces REAL."),
-      category=CATEGORY)
-   register_primitive('-', (1, None), _prim_sub,
-      doc=(
-         "With one argument, return its additive inverse.\n"
-         "With multiple arguments, return the first argument minus the sum of the rest."),
-      category=CATEGORY)
-   register_primitive('*', (0, None), _prim_mul,
-      doc='Return the product of the arguments.  With no arguments, returns 1.',
-      category=CATEGORY)
-   register_primitive('/', (1, None), _prim_div,
-      doc=(
-         "With one argument, return its multiplicative inverse.\n"
-         "With multiple arguments, return the first argument divided by the product of\n"
-         "the rest.  Integer-by-integer division returns an INTEGER when the quotient\n"
-         "is exact, otherwise a REAL."),
-      category=CATEGORY)
-   register_primitive('abs', (1, 1), _prim_abs,
-      doc='Return the absolute value of a.',
-      category=CATEGORY)
-   register_primitive('quotient', (2, 2), _prim_quotient,
-      doc=(
-         "Integer division of a by b truncated toward zero.  Both args must\n"
-         "be integers; result is an integer."),
-      category=CATEGORY)
-   register_primitive('remainder', (2, 2), _prim_remainder,
-      doc=(
-         "Integer remainder with the sign of the dividend (a).  Satisfies\n"
-         "(= a (+ (* b (quotient a b)) (remainder a b)))."),
-      category=CATEGORY)
-   register_primitive('modulo', (2, 2), _prim_modulo,
-      doc='Integer modulo with the sign of the divisor (b).',
-      category=CATEGORY)
-   register_primitive('min', (1, None), _prim_min,
-      doc=(
-         "Return the smallest of its numeric arguments.  If any argument is\n"
-         "inexact (a REAL), the result is inexact."),
-      category=CATEGORY)
-   register_primitive('max', (1, None), _prim_max,
-      doc=(
-         "Return the largest of its numeric arguments.  If any argument is\n"
-         "inexact (a REAL), the result is inexact."),
-      category=CATEGORY)
-   register_primitive('gcd', (0, None), _prim_gcd,
-      doc=('Return the greatest common divisor of the integer arguments.  '
-           'With zero arguments, returns 0.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('lcm', (0, None), _prim_lcm,
-      doc=('Return the least common multiple of the integer arguments.  '
-           'With zero arguments, returns 1.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('expt', (2, 2), _prim_expt,
-      doc=('Return base raised to the exponent.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('sqrt', (1, 1), _prim_sqrt,
-      doc=('Return the principal square root of the argument.  Returns an '
-           'exact integer when the argument is a perfect square; otherwise '
-           'a real.  Negative real input returns a complex result.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('square', (1, 1), _prim_square,
-      doc='Return (* x x).  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('floor', (1, 1), _prim_floor,
-      doc='Return the largest integer not greater than x.  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('ceiling', (1, 1), _prim_ceiling,
-      doc='Return the smallest integer not less than x.  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('truncate', (1, 1), _prim_truncate,
-      doc='Return the integer part of x (toward zero).  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('round', (1, 1), _prim_round,
-      doc=('Return the integer closest to x; ties go to the nearest even '
-           'integer (banker\'s rounding).  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('exact?', (1, 1), _prim_exact_p,
-      doc='Return #t if obj is an exact number (an integer in our impl).',
-      category=CATEGORY)
-   register_primitive('inexact?', (1, 1), _prim_inexact_p,
-      doc='Return #t if obj is an inexact number (real or complex).',
-      category=CATEGORY)
-   register_primitive('exact', (1, 1), _prim_exact,
-      doc=('Convert a number to its exact form.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('inexact', (1, 1), _prim_inexact,
-      doc=('Convert a number to its inexact form.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('exact-integer?', (1, 1), _prim_exact_integer_p,
-      doc='Return #t if obj is an exact integer.  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('numerator', (1, 1), _prim_numerator,
-      doc='Return the numerator of a rational number.  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('denominator', (1, 1), _prim_denominator,
-      doc='Return the denominator of a rational number.  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('number->string', (1, 2), _prim_number_to_string,
-      doc=('(number->string number [radix]) returns a string representation. '
-           'Radix may be 2, 8, 10, or 16; default 10.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('string->number', (1, 2), _prim_string_to_number,
-      doc=('(string->number string [radix]) parses a string; returns the '
-           'number on success, #f on failure.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('floor-quotient', (2, 2), _prim_floor_quotient,
-      doc=('Integer floor division.  Result has the sign of the divisor.  '
-           'R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('floor-remainder', (2, 2), _prim_floor_remainder,
-      doc=('Integer floor remainder.  Result has the sign of the divisor.  '
-           'R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('floor/', (2, 2), _prim_floor_div,
-      doc=('(floor/ n d) returns two values: the floor quotient and '
-           'remainder.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('truncate-quotient', (2, 2), _prim_truncate_quotient,
-      doc=('Integer truncate division (toward zero).  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('truncate-remainder', (2, 2), _prim_truncate_remainder,
-      doc=('Integer truncate remainder.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('truncate/', (2, 2), _prim_truncate_div,
-      doc=('(truncate/ n d) returns two values: the truncate quotient '
-           'and remainder.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('exact-integer-sqrt', (1, 1), _prim_exact_integer_sqrt,
-      doc=('(exact-integer-sqrt n) returns two values: the integer floor '
-           'of sqrt(n) and the difference n - r*r.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('features', (0, 0), _prim_features,
-      doc=('Return a list of feature identifiers supported by this '
-           'implementation.  R7RS 5.6.2.'),
-      category=CATEGORY)
-   register_primitive('exp', (1, 1), _prim_exp,
-      doc='Return e raised to the power z.  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('log', (1, 2), _prim_log,
-      doc=('(log z) returns the natural log.  (log z w) returns log base w.\n'
-           '(log 0) returns -inf.0.  Negative real inputs return +nan.0 in '
-           'the real-only tower.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('sin', (1, 1), _prim_sin,
-      doc='Return the sine of z (radians).  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('cos', (1, 1), _prim_cos,
-      doc='Return the cosine of z (radians).  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('tan', (1, 1), _prim_tan,
-      doc='Return the tangent of z (radians).  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('asin', (1, 1), _prim_asin,
-      doc='Return the arcsine of z in radians.  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('acos', (1, 1), _prim_acos,
-      doc='Return the arccosine of z in radians.  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('atan', (1, 2), _prim_atan,
-      doc=('(atan z) returns the arctangent.  (atan y x) returns atan2(y,x).\n'
-           'R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('make-rectangular', (2, 2), _prim_make_rectangular,
-      doc='(make-rectangular x y) constructs a complex number x+yi.  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('make-polar', (2, 2), _prim_make_polar,
-      doc='(make-polar r theta) constructs a complex from polar form r*e^(i*theta).',
-      category=CATEGORY)
-   register_primitive('real-part', (1, 1), _prim_real_part,
-      doc='Return the real part of z.  For real z, returns z itself.',
-      category=CATEGORY)
-   register_primitive('imag-part', (1, 1), _prim_imag_part,
-      doc='Return the imaginary part of z.  For real z, returns 0 (exact) or 0.0.',
-      category=CATEGORY)
-   register_primitive('magnitude', (1, 1), _prim_magnitude,
-      doc='Return the magnitude (absolute value) of z.  R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('angle', (1, 1), _prim_angle,
-      doc='Return the angle of z in radians.  For positive real: 0.0; negative: pi.',
-      category=CATEGORY)
-   register_primitive('rationalize', (2, 2), _prim_rationalize,
-      doc=('(rationalize x delta) returns the simplest rational y such that '
-           '|x - y| <= delta.  R7RS 6.2.6.'),
-      category=CATEGORY)
-   register_primitive('exact->inexact', (1, 1), _prim_inexact,
-      doc='Alias for inexact.  R6RS / R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('inexact->exact', (1, 1), _prim_exact,
-      doc='Alias for exact.  R6RS / R7RS 6.2.6.',
-      category=CATEGORY)
-   register_primitive('random', (1, 1), _prim_random,
-      doc=('(random n) returns a random non-negative integer less than n when '
-           'n is an exact integer, or a random real in [0.0, n) when n is a '
-           'real.  MIT Scheme compatibility for SICP.'),
-      category=CATEGORY)
+    register_primitive('+', (0, None), _prim_add,
+                       doc=(
+        "Return the sum of the arguments.  With no arguments, returns 0.\n"
+        "Integer addition produces INTEGER; any real-valued argument produces REAL."),
+        category=CATEGORY)
+    register_primitive('-', (1, None), _prim_sub,
+                       doc=(
+        "With one argument, return its additive inverse.\n"
+        "With multiple arguments, return the first argument minus the sum of the rest."),
+        category=CATEGORY)
+    register_primitive('*', (0, None), _prim_mul,
+                       doc='Return the product of the arguments.  With no arguments, returns 1.',
+                       category=CATEGORY)
+    register_primitive('/', (1, None), _prim_div,
+                       doc=(
+        "With one argument, return its multiplicative inverse.\n"
+        "With multiple arguments, return the first argument divided by the product of\n"
+        "the rest.  Integer-by-integer division returns an INTEGER when the quotient\n"
+        "is exact, otherwise a REAL."),
+        category=CATEGORY)
+    register_primitive('abs', (1, 1), _prim_abs,
+                       doc='Return the absolute value of a.',
+                       category=CATEGORY)
+    register_primitive('quotient', (2, 2), _prim_quotient,
+                       doc=(
+        "Integer division of a by b truncated toward zero.  Both args must\n"
+        "be integers; result is an integer."),
+        category=CATEGORY)
+    register_primitive('remainder', (2, 2), _prim_remainder,
+                       doc=(
+        "Integer remainder with the sign of the dividend (a).  Satisfies\n"
+        "(= a (+ (* b (quotient a b)) (remainder a b)))."),
+        category=CATEGORY)
+    register_primitive('modulo', (2, 2), _prim_modulo,
+                       doc='Integer modulo with the sign of the divisor (b).',
+                       category=CATEGORY)
+    register_primitive('min', (1, None), _prim_min,
+                       doc=(
+        "Return the smallest of its numeric arguments.  If any argument is\n"
+        "inexact (a REAL), the result is inexact."),
+        category=CATEGORY)
+    register_primitive('max', (1, None), _prim_max,
+                       doc=(
+        "Return the largest of its numeric arguments.  If any argument is\n"
+        "inexact (a REAL), the result is inexact."),
+        category=CATEGORY)
+    register_primitive('gcd', (0, None), _prim_gcd,
+                       doc=('Return the greatest common divisor of the integer arguments.  '
+                            'With zero arguments, returns 0.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('lcm', (0, None), _prim_lcm,
+                       doc=('Return the least common multiple of the integer arguments.  '
+                            'With zero arguments, returns 1.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('expt', (2, 2), _prim_expt,
+                       doc=('Return base raised to the exponent.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('sqrt', (1, 1), _prim_sqrt,
+                       doc=('Return the principal square root of the argument.  Returns an '
+                            'exact integer when the argument is a perfect square; otherwise '
+                            'a real.  Negative real input returns a complex result.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('square', (1, 1), _prim_square,
+                       doc='Return (* x x).  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('floor', (1, 1), _prim_floor,
+                       doc='Return the largest integer not greater than x.  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('ceiling', (1, 1), _prim_ceiling,
+                       doc='Return the smallest integer not less than x.  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('truncate', (1, 1), _prim_truncate,
+                       doc='Return the integer part of x (toward zero).  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('round', (1, 1), _prim_round,
+                       doc=('Return the integer closest to x; ties go to the nearest even '
+                            'integer (banker\'s rounding).  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('exact?', (1, 1), _prim_exact_p,
+                       doc='Return #t if obj is an exact number (an integer in our impl).',
+                       category=CATEGORY)
+    register_primitive('inexact?', (1, 1), _prim_inexact_p,
+                       doc='Return #t if obj is an inexact number (real or complex).',
+                       category=CATEGORY)
+    register_primitive('exact', (1, 1), _prim_exact,
+                       doc=('Convert a number to its exact form.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('inexact', (1, 1), _prim_inexact,
+                       doc=('Convert a number to its inexact form.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('exact-integer?', (1, 1), _prim_exact_integer_p,
+                       doc='Return #t if obj is an exact integer.  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('numerator', (1, 1), _prim_numerator,
+                       doc='Return the numerator of a rational number.  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('denominator', (1, 1), _prim_denominator,
+                       doc='Return the denominator of a rational number.  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('number->string', (1, 2), _prim_number_to_string,
+                       doc=('(number->string number [radix]) returns a string representation. '
+                            'Radix may be 2, 8, 10, or 16; default 10.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('string->number', (1, 2), _prim_string_to_number,
+                       doc=('(string->number string [radix]) parses a string; returns the '
+                            'number on success, #f on failure.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('floor-quotient', (2, 2), _prim_floor_quotient,
+                       doc=('Integer floor division.  Result has the sign of the divisor.  '
+                            'R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('floor-remainder', (2, 2), _prim_floor_remainder,
+                       doc=('Integer floor remainder.  Result has the sign of the divisor.  '
+                            'R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('floor/', (2, 2), _prim_floor_div,
+                       doc=('(floor/ n d) returns two values: the floor quotient and '
+                            'remainder.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('truncate-quotient', (2, 2), _prim_truncate_quotient,
+                       doc=('Integer truncate division (toward zero).  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('truncate-remainder', (2, 2), _prim_truncate_remainder,
+                       doc=('Integer truncate remainder.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('truncate/', (2, 2), _prim_truncate_div,
+                       doc=('(truncate/ n d) returns two values: the truncate quotient '
+                            'and remainder.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('exact-integer-sqrt', (1, 1), _prim_exact_integer_sqrt,
+                       doc=('(exact-integer-sqrt n) returns two values: the integer floor '
+                            'of sqrt(n) and the difference n - r*r.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('features', (0, 0), _prim_features,
+                       doc=('Return a list of feature identifiers supported by this '
+                            'implementation.  R7RS 5.6.2.'),
+                       category=CATEGORY)
+    register_primitive('exp', (1, 1), _prim_exp,
+                       doc='Return e raised to the power z.  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('log', (1, 2), _prim_log,
+                       doc=('(log z) returns the natural log.  (log z w) returns log base w.\n'
+                            '(log 0) returns -inf.0.  Negative real inputs return +nan.0 in '
+                            'the real-only tower.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('sin', (1, 1), _prim_sin,
+                       doc='Return the sine of z (radians).  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('cos', (1, 1), _prim_cos,
+                       doc='Return the cosine of z (radians).  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('tan', (1, 1), _prim_tan,
+                       doc='Return the tangent of z (radians).  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('asin', (1, 1), _prim_asin,
+                       doc='Return the arcsine of z in radians.  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('acos', (1, 1), _prim_acos,
+                       doc='Return the arccosine of z in radians.  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('atan', (1, 2), _prim_atan,
+                       doc=('(atan z) returns the arctangent.  (atan y x) returns atan2(y,x).\n'
+                            'R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('make-rectangular', (2, 2), _prim_make_rectangular,
+                       doc='(make-rectangular x y) constructs a complex number x+yi.  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('make-polar', (2, 2), _prim_make_polar,
+                       doc='(make-polar r theta) constructs a complex from polar form r*e^(i*theta).',
+                       category=CATEGORY)
+    register_primitive('real-part', (1, 1), _prim_real_part,
+                       doc='Return the real part of z.  For real z, returns z itself.',
+                       category=CATEGORY)
+    register_primitive('imag-part', (1, 1), _prim_imag_part,
+                       doc='Return the imaginary part of z.  For real z, returns 0 (exact) or 0.0.',
+                       category=CATEGORY)
+    register_primitive('magnitude', (1, 1), _prim_magnitude,
+                       doc='Return the magnitude (absolute value) of z.  R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('angle', (1, 1), _prim_angle,
+                       doc='Return the angle of z in radians.  For positive real: 0.0; negative: pi.',
+                       category=CATEGORY)
+    register_primitive('rationalize', (2, 2), _prim_rationalize,
+                       doc=('(rationalize x delta) returns the simplest rational y such that '
+                            '|x - y| <= delta.  R7RS 6.2.6.'),
+                       category=CATEGORY)
+    register_primitive('exact->inexact', (1, 1), _prim_inexact,
+                       doc='Alias for inexact.  R6RS / R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('inexact->exact', (1, 1), _prim_exact,
+                       doc='Alias for exact.  R6RS / R7RS 6.2.6.',
+                       category=CATEGORY)
+    register_primitive('random', (1, 1), _prim_random,
+                       doc=('(random n) returns a random non-negative integer less than n when '
+                            'n is an exact integer, or a random real in [0.0, n) when n is a '
+                            'real.  MIT Scheme compatibility for SICP.'),
+                       category=CATEGORY)

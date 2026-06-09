@@ -26,83 +26,85 @@ from pyscheme.PrettyPrinter import pretty_print
 
 
 class Tracer:
-   def __init__(self):
-      self._fns_to_trace = set()
-      self._depth        = 0
-      self._active       = False
-      self._ctx          = None   # back-reference; set by Interpreter after construction
+    def __init__(self):
+        self._fns_to_trace = set()
+        self._depth = 0
+        self._active = False
+        self._ctx = None   # back-reference; set by Interpreter after construction
 
-   def reset(self):
-      """Clear all tracing state.  Called on interpreter reboot."""
-      self._fns_to_trace = set()
-      self._depth        = 0
-      self._active       = False
+    def reset(self):
+        """Clear all tracing state.  Called on interpreter reboot."""
+        self._fns_to_trace = set()
+        self._depth = 0
+        self._active = False
 
-   # ---- Named function tracing ----------------------------------------
+    # ---- Named function tracing ----------------------------------------
 
-   def add_fn(self, name):
-      """Register a function name for tracing.  Called by (trace fn)."""
-      self._fns_to_trace.add(name)
-      self._active = True
-      if self._ctx is not None:
-         self._ctx._update_instrumented()
+    def add_fn(self, name):
+        """Register a function name for tracing.  Called by (trace fn)."""
+        self._fns_to_trace.add(name)
+        self._active = True
+        if self._ctx is not None:
+            self._ctx._update_instrumented()
 
-   def remove_fn(self, name):
-      """Unregister a function name.  Called by (untrace fn)."""
-      self._fns_to_trace.discard(name)
-      self._active = bool(self._fns_to_trace)
-      if self._ctx is not None:
-         self._ctx._update_instrumented()
+    def remove_fn(self, name):
+        """Unregister a function name.  Called by (untrace fn)."""
+        self._fns_to_trace.discard(name)
+        self._active = bool(self._fns_to_trace)
+        if self._ctx is not None:
+            self._ctx._update_instrumented()
 
-   def remove_all(self):
-      """Unregister all names.  Called by (untrace) with no args."""
-      self._fns_to_trace.clear()
-      self._active = False
-      if self._ctx is not None:
-         self._ctx._update_instrumented()
+    def remove_all(self):
+        """Unregister all names.  Called by (untrace) with no args."""
+        self._fns_to_trace.clear()
+        self._active = False
+        if self._ctx is not None:
+            self._ctx._update_instrumented()
 
-   def get_fns(self):
-      """Return a frozenset of currently traced function names."""
-      return frozenset(self._fns_to_trace)
+    def get_fns(self):
+        """Return a frozenset of currently traced function names."""
+        return frozenset(self._fns_to_trace)
 
-   # ---- Hooks ---------------------------------------------------------
+    # ---- Hooks ---------------------------------------------------------
 
-   def trace_enter(self, name, args, depth, outStrm):
-      """Print an entry line if name is in the traced set.
-      Returns True if printed (caller uses this to decide whether to
-      increment depth and push FRAME_TRACE_EXIT)."""
-      if name not in self._fns_to_trace:
-         return False
-      indent = ''
-      i = 0
-      while i < depth:
-         indent = indent + '  '
-         i = i + 1
-      arg_parts = []
-      i = 0
-      while i < len(args):
-         arg_parts.append(pretty_print(args[i]))
-         i = i + 1
-      if arg_parts:
-         arg_str = ''
-         i = 0
-         while i < len(arg_parts):
-            if i > 0:
-               arg_str = arg_str + ' '
-            arg_str = arg_str + arg_parts[i]
+    def trace_enter(self, name, args, depth, outStrm):
+        """Print an entry line if name is in the traced set.
+        Returns True if printed (caller uses this to decide whether to
+        increment depth and push FRAME_TRACE_EXIT)."""
+        if name not in self._fns_to_trace:
+            return False
+        indent = ''
+        i = 0
+        while i < depth:
+            indent = indent + '  '
             i = i + 1
-         line = str(depth).rjust(2) + ': ' + indent + '(' + name + ' ' + arg_str + ')'
-      else:
-         line = str(depth).rjust(2) + ': ' + indent + '(' + name + ')'
-      print(line, file=outStrm)
-      return True
+        arg_parts = []
+        i = 0
+        while i < len(args):
+            arg_parts.append(pretty_print(args[i]))
+            i = i + 1
+        if arg_parts:
+            arg_str = ''
+            i = 0
+            while i < len(arg_parts):
+                if i > 0:
+                    arg_str = arg_str + ' '
+                arg_str = arg_str + arg_parts[i]
+                i = i + 1
+            line = str(depth).rjust(2) + ': ' + indent + \
+                '(' + name + ' ' + arg_str + ')'
+        else:
+            line = str(depth).rjust(2) + ': ' + indent + '(' + name + ')'
+        print(line, file=outStrm)
+        return True
 
-   def trace_exit(self, name, val, depth, outStrm):
-      """Print an exit line."""
-      indent = ''
-      i = 0
-      while i < depth:
-         indent = indent + '  '
-         i = i + 1
-      line = str(depth).rjust(2) + ': ' + indent + name + ' returned ' + pretty_print(val)
-      print(line, file=outStrm)
+    def trace_exit(self, name, val, depth, outStrm):
+        """Print an exit line."""
+        indent = ''
+        i = 0
+        while i < depth:
+            indent = indent + '  '
+            i = i + 1
+        line = str(depth).rjust(2) + ': ' + indent + \
+            name + ' returned ' + pretty_print(val)
+        print(line, file=outStrm)

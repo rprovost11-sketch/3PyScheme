@@ -9,62 +9,63 @@ import os
 import signal
 import sys
 
-from pyscheme            import __version__
+from pyscheme import __version__
 from pyscheme.Interpreter import Interpreter
-from pyscheme.Listener    import Listener
+from pyscheme.Listener import Listener
 
 
 def main():
-   if hasattr(signal, 'SIGBREAK'):
-      signal.signal(signal.SIGBREAK, signal.default_int_handler)
-   argc = len(sys.argv)
-   if argc > 2:
-      print('Usage: python -m pyscheme [<directory> | <scheme-source-file>]',
-            file=sys.stderr)
-      sys.exit(2)
+    if hasattr(signal, 'SIGBREAK'):
+        signal.signal(signal.SIGBREAK, signal.default_int_handler)
+    argc = len(sys.argv)
+    if argc > 2:
+        print('Usage: python -m pyscheme [<directory> | <scheme-source-file>]',
+              file=sys.stderr)
+        sys.exit(2)
 
-   interp = Interpreter()
+    interp = Interpreter()
 
-   if argc == 2:
-      target = sys.argv[1]
-      # A directory: chdir there and drop to the REPL.
-      if os.path.isdir(target):
-         os.chdir(target)
-         # fall through to the REPL block below
-      elif os.path.isfile(target):
-         try:
-            interp.evalFile(target)
-         except KeyboardInterrupt:
-            print('pyscheme: interrupted', file=sys.stderr)
+    if argc == 2:
+        target = sys.argv[1]
+        # A directory: chdir there and drop to the REPL.
+        if os.path.isdir(target):
+            os.chdir(target)
+            # fall through to the REPL block below
+        elif os.path.isfile(target):
+            try:
+                interp.evalFile(target)
+            except KeyboardInterrupt:
+                print('pyscheme: interrupted', file=sys.stderr)
+                sys.exit(1)
+            except Exception as e:
+                print('pyscheme: ' + str(e), file=sys.stderr)
+                sys.exit(1)
+            return
+        else:
+            print('pyscheme: no such file or directory: ' + target,
+                  file=sys.stderr)
             sys.exit(1)
-         except Exception as e:
-            print('pyscheme: ' + str(e), file=sys.stderr)
-            sys.exit(1)
-         return
-      else:
-         print('pyscheme: no such file or directory: ' + target,
-               file=sys.stderr)
-         sys.exit(1)
 
-   _scheme_tests = os.path.join(
-      os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-      'scheme-tests')
-   listener = Listener(
-      interp,
-      testdir=os.path.join(_scheme_tests, 'feature-tests'),
-      language='pyscheme',
-      version=__version__,
-      author='Ron Provost/Longo',
-      project='https://github.com/rprovost11/pyscheme',
-      compliancedir=os.path.join(_scheme_tests, 'R7RS-Compliance-Tests'),
-      regressiondir=os.path.join(_scheme_tests, 'regression-tests'),
-      runsdir=os.path.join(_scheme_tests, 'runs'),
-   )
-   try:
-      listener.readEvalPrintLoop()
-   except StopIteration:
-      pass
+    _scheme_tests = os.path.join(
+        os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))),
+        'scheme-tests')
+    listener = Listener(
+        interp,
+        testdir=os.path.join(_scheme_tests, 'feature-tests'),
+        language='pyscheme',
+        version=__version__,
+        author='Ron Provost/Longo',
+        project='https://github.com/rprovost11/pyscheme',
+        compliancedir=os.path.join(_scheme_tests, 'R7RS-Compliance-Tests'),
+        regressiondir=os.path.join(_scheme_tests, 'regression-tests'),
+        runsdir=os.path.join(_scheme_tests, 'runs'),
+    )
+    try:
+        listener.readEvalPrintLoop()
+    except StopIteration:
+        pass
 
 
 if __name__ == '__main__':
-   main()
+    main()

@@ -63,63 +63,63 @@ import math as _math
 from pyscheme.rational import _Rat
 
 from pyscheme.AST import (
-   alloc_cons, NIL_VALUE, SourceInfo, ConsCell, is_cons, is_nil,
-   is_integer, is_real, is_rational, is_string, is_character,
-   is_boolean, is_symbol,
-   as_integer, as_real, as_string, as_character, as_boolean, as_symbol,
-   as_rational_num, as_rational_den,
-   make_integer, make_real, make_rational, make_complex, make_exact_complex,
-   make_string, make_character,
-   make_boolean, make_symbol, make_vector, make_bytevector, as_vector_items,
-   mark_literal_immutable,
-   src_of,
-   REAL, RATIONAL, INTEGER, CHARACTER, BOOLEAN, STRING, SYMBOL, NIL,
+    alloc_cons, NIL_VALUE, SourceInfo, ConsCell, is_cons, is_nil,
+    is_integer, is_real, is_rational, is_string, is_character,
+    is_boolean, is_symbol,
+    as_integer, as_real, as_string, as_character, as_boolean, as_symbol,
+    as_rational_num, as_rational_den,
+    make_integer, make_real, make_rational, make_complex, make_exact_complex,
+    make_string, make_character,
+    make_boolean, make_symbol, make_vector, make_bytevector, as_vector_items,
+    mark_literal_immutable,
+    src_of,
+    REAL, RATIONAL, INTEGER, CHARACTER, BOOLEAN, STRING, SYMBOL, NIL,
 )
 from pyscheme.Environment import _PositionedSchemeError
 
 
 # -------- Tokens --------
 
-TOK_LPAREN            = 'LPAREN'
-TOK_RPAREN            = 'RPAREN'
-TOK_LBRACKET          = 'LBRACKET'
-TOK_RBRACKET          = 'RBRACKET'
-TOK_VECTOR_LPAREN     = 'VECTOR_LPAREN'
+TOK_LPAREN = 'LPAREN'
+TOK_RPAREN = 'RPAREN'
+TOK_LBRACKET = 'LBRACKET'
+TOK_RBRACKET = 'RBRACKET'
+TOK_VECTOR_LPAREN = 'VECTOR_LPAREN'
 TOK_BYTEVECTOR_LPAREN = 'BYTEVECTOR_LPAREN'
-TOK_QUOTE             = 'QUOTE'
-TOK_QUASIQUOTE        = 'QUASIQUOTE'
-TOK_UNQUOTE           = 'UNQUOTE'
-TOK_UNQUOTE_SPLICING  = 'UNQUOTE_SPLICING'
-TOK_DOT               = 'DOT'
-TOK_INT               = 'INT'
-TOK_REAL              = 'REAL'
-TOK_RATIONAL          = 'RATIONAL'
-TOK_COMPLEX           = 'COMPLEX'
-TOK_EXACT_COMPLEX     = 'EXACT_COMPLEX'
-TOK_STRING            = 'STRING'
-TOK_CHAR              = 'CHAR'
-TOK_BOOL              = 'BOOL'
-TOK_IDENT             = 'IDENT'
-TOK_EOF               = 'EOF'
-TOK_DATUM_COMMENT     = 'DATUM_COMMENT'
-TOK_LABEL_DEF         = 'LABEL_DEF'
-TOK_LABEL_REF         = 'LABEL_REF'
+TOK_QUOTE = 'QUOTE'
+TOK_QUASIQUOTE = 'QUASIQUOTE'
+TOK_UNQUOTE = 'UNQUOTE'
+TOK_UNQUOTE_SPLICING = 'UNQUOTE_SPLICING'
+TOK_DOT = 'DOT'
+TOK_INT = 'INT'
+TOK_REAL = 'REAL'
+TOK_RATIONAL = 'RATIONAL'
+TOK_COMPLEX = 'COMPLEX'
+TOK_EXACT_COMPLEX = 'EXACT_COMPLEX'
+TOK_STRING = 'STRING'
+TOK_CHAR = 'CHAR'
+TOK_BOOL = 'BOOL'
+TOK_IDENT = 'IDENT'
+TOK_EOF = 'EOF'
+TOK_DATUM_COMMENT = 'DATUM_COMMENT'
+TOK_LABEL_DEF = 'LABEL_DEF'
+TOK_LABEL_REF = 'LABEL_REF'
 
 
 class Token:
-   """Lexer token.  POD; no methods except __init__.  src holds the
-   SourceInfo for the token's starting position.  The parser uses src
-   when building atom tuples and cons cells."""
+    """Lexer token.  POD; no methods except __init__.  src holds the
+    SourceInfo for the token's starting position.  The parser uses src
+    when building atom tuples and cons cells."""
 
-   def __init__(self, kind, value, src):
-      self.kind  = kind
-      self.value = value
-      self.src   = src
+    def __init__(self, kind, value, src):
+        self.kind = kind
+        self.value = value
+        self.src = src
 
 
 class SchemeSyntaxError(_PositionedSchemeError):
-   """Raised on any lex/read error."""
-   pass
+    """Raised on any lex/read error."""
+    pass
 
 
 # -------- Lexer --------
@@ -158,1132 +158,1158 @@ _TOKEN_RE = re.compile(r'''
 
 
 _STRING_ESCAPES = {
-   'n':  '\n',
-   't':  '\t',
-   'r':  '\r',
-   '\\': '\\',
-   '"':  '"',
-   '|':  '|',
-   'a':  '\a',
-   'b':  '\b',
+    'n':  '\n',
+    't':  '\t',
+    'r':  '\r',
+    '\\': '\\',
+    '"':  '"',
+    '|':  '|',
+    'a':  '\a',
+    'b':  '\b',
 }
 
 _SYMBOL_ESCAPES = {
-   'a':  '\a',
-   'b':  '\b',
-   't':  '\t',
-   'n':  '\n',
-   'r':  '\r',
-   '\\': '\\',
-   '|':  '|',
-   '"':  '"',
+    'a':  '\a',
+    'b':  '\b',
+    't':  '\t',
+    'n':  '\n',
+    'r':  '\r',
+    '\\': '\\',
+    '|':  '|',
+    '"':  '"',
 }
 
 _HEX_DIGITS = '0123456789abcdefABCDEF'
 
 _CHAR_NAMES = {
-   'space':     ' ',
-   'newline':   '\n',
-   'tab':       '\t',
-   'return':    '\r',
-   'null':      '\0',
-   'alarm':     '\a',
-   'backspace': '\b',
-   'delete':    '\x7f',
-   'escape':    '\x1b',
+    'space':     ' ',
+    'newline':   '\n',
+    'tab':       '\t',
+    'return':    '\r',
+    'null':      '\0',
+    'alarm':     '\a',
+    'backspace': '\b',
+    'delete':    '\x7f',
+    'escape':    '\x1b',
 }
 
 
 def _make_src(line, col, source_lines, filename):
-   if 1 <= line and line <= len(source_lines):
-      source_line = source_lines[line - 1]
-   else:
-      source_line = ''
-   return SourceInfo(line, col, source_line, filename)
+    if 1 <= line and line <= len(source_lines):
+        source_line = source_lines[line - 1]
+    else:
+        source_line = ''
+    return SourceInfo(line, col, source_line, filename)
 
 
 def _char_repr(c):
-   """Render one character the way Python's repr() does (quote it, escape
-   backslash/quote, \\xHH for non-printables).  Factored into a helper so
-   the cppscheme2 port can mirror it line-for-line: C++ has no repr(), so
-   its char_repr() reproduces this behavior by hand."""
-   return repr(c)
+    """Render one character the way Python's repr() does (quote it, escape
+    backslash/quote, \\xHH for non-printables).  Factored into a helper so
+    the cppscheme2 port can mirror it line-for-line: C++ has no repr(), so
+    its char_repr() reproduces this behavior by hand."""
+    return repr(c)
 
 
 def _substring(s, start, end):
-   """Return s[start:end] as an explicit character-by-character copy.
-   Ports to strncpy + null terminator in C."""
-   result = ''
-   i = start
-   while i < end:
-      result = result + s[i]
-      i = i + 1
-   return result
+    """Return s[start:end] as an explicit character-by-character copy.
+    Clamps to len(s) so an over-long end (e.g. a short #!-directive at the
+    end of input) cannot index past the string -- matches Python slicing and
+    C strncpy, which stops at the null terminator.
+    Ports to strncpy + null terminator in C."""
+    result = ''
+    i = start
+    n = len(s)
+    while i < end and i < n:
+        result = result + s[i]
+        i = i + 1
+    return result
 
 
 def tokenize(source, filename=None):
-   source_lines = source.expandtabs().splitlines()
+    source_lines = source.expandtabs().splitlines()
 
-   tokens    = []
-   fold_case = False
-   pos  = 0
-   line = 1
-   col  = 1
-   n    = len(source)
-   while pos < n:
-      # Block comment: #| ... |# (possibly nested).  R7RS §2.2.
-      if pos + 1 < n and source[pos] == '#' and source[pos + 1] == '|':
-         depth  = 1
-         pos    = pos + 2
-         col    = col + 2
-         while pos < n and depth > 0:
-            if pos + 1 < n and source[pos] == '#' and source[pos + 1] == '|':
-               depth = depth + 1
-               col   = col + 2
-               pos   = pos + 2
-            elif pos + 1 < n and source[pos] == '|' and source[pos + 1] == '#':
-               depth = depth - 1
-               col   = col + 2
-               pos   = pos + 2
-            else:
-               if source[pos] == '\n':
-                  line = line + 1
-                  col  = 1
-               else:
-                  col  = col + 1
-               pos = pos + 1
-         if depth != 0:
-            raise SchemeSyntaxError(
-               'unterminated block comment',
-               _make_src(line, col, source_lines, filename))
-         continue
-      # Datum comment: #; — skip the following datum.  R7RS §2.2.
-      if pos + 1 < n and source[pos] == '#' and source[pos + 1] == ';':
-         src = _make_src(line, col, source_lines, filename)
-         tokens.append(Token(TOK_DATUM_COMMENT, None, src))
-         col = col + 2
-         pos = pos + 2
-         continue
-      # Datum label definition #n= and reference #n#.  R7RS §2.4.
-      if pos < n and source[pos] == '#':
-         j = pos + 1
-         while j < n and source[j].isdigit():
-            j = j + 1
-         if j > pos + 1 and j < n and source[j] in ('=', '#'):
-            src     = _make_src(line, col, source_lines, filename)
-            label_n = int(source[pos + 1 : j])
-            if source[j] == '=':
-               tokens.append(Token(TOK_LABEL_DEF, label_n, src))
-            else:
-               tokens.append(Token(TOK_LABEL_REF, label_n, src))
-            col = col + (j - pos + 1)
-            pos = j + 1
-            continue
-      # Directive: #!fold-case / #!no-fold-case  R7RS §2.1.
-      if pos + 1 < n and source[pos] == '#' and source[pos + 1] == '!':
-         if _substring(source, pos + 2, pos + 11) == 'fold-case':
-            fold_case = True
-            col = col + 11
-            pos = pos + 11
-            continue
-         if _substring(source, pos + 2, pos + 14) == 'no-fold-case':
-            fold_case = False
-            col = col + 14
-            pos = pos + 14
-            continue
-         raise SchemeSyntaxError(
-            "unknown #!-directive",
-            _make_src(line, col, source_lines, filename))
-      # Vertical-bar symbol: |...| with escape sequences.  R7RS §2.1.
-      if pos < n and source[pos] == '|':
-         src = _make_src(line, col, source_lines, filename)
-         pos = pos + 1
-         col = col + 1
-         raw_chars = []
-         while pos < n and source[pos] != '|':
-            c = source[pos]
-            if c == '\\':
-               raw_chars.append(c)
-               pos = pos + 1
-               col = col + 1
-               if pos < n:
-                  ec = source[pos]
-                  raw_chars.append(ec)
-                  if ec == '\n':
-                     line = line + 1
-                     col  = 1
-                  else:
-                     col = col + 1
-                  pos = pos + 1
-                  if ec == 'x':
-                     while pos < n and source[pos] in _HEX_DIGITS:
-                        raw_chars.append(source[pos])
+    tokens = []
+    fold_case = False
+    pos = 0
+    line = 1
+    col = 1
+    n = len(source)
+    while pos < n:
+        # Block comment: #| ... |# (possibly nested).  R7RS §2.2.
+        if pos + 1 < n and source[pos] == '#' and source[pos + 1] == '|':
+            depth = 1
+            pos = pos + 2
+            col = col + 2
+            while pos < n and depth > 0:
+                if pos + 1 < n and source[pos] == '#' and source[pos + 1] == '|':
+                    depth = depth + 1
+                    col = col + 2
+                    pos = pos + 2
+                elif pos + 1 < n and source[pos] == '|' and source[pos + 1] == '#':
+                    depth = depth - 1
+                    col = col + 2
+                    pos = pos + 2
+                else:
+                    if source[pos] == '\n':
+                        line = line + 1
+                        col = 1
+                    else:
                         col = col + 1
-                        pos = pos + 1
-                     if pos < n and source[pos] == ';':
-                        raw_chars.append(';')
-                        col = col + 1
-                        pos = pos + 1
-            else:
-               if c == '\n':
-                  line = line + 1
-                  col  = 1
-               else:
-                  col = col + 1
-               raw_chars.append(c)
-               pos = pos + 1
-         if pos >= n:
+                    pos = pos + 1
+            if depth != 0:
+                raise SchemeSyntaxError(
+                    'unterminated block comment',
+                    _make_src(line, col, source_lines, filename))
+            continue
+        # Datum comment: #; — skip the following datum.  R7RS §2.2.
+        if pos + 1 < n and source[pos] == '#' and source[pos + 1] == ';':
+            src = _make_src(line, col, source_lines, filename)
+            tokens.append(Token(TOK_DATUM_COMMENT, None, src))
+            col = col + 2
+            pos = pos + 2
+            continue
+        # Datum label definition #n= and reference #n#.  R7RS §2.4.
+        if pos < n and source[pos] == '#':
+            j = pos + 1
+            while j < n and source[j].isdigit():
+                j = j + 1
+            if j > pos + 1 and j < n and source[j] in ('=', '#'):
+                src = _make_src(line, col, source_lines, filename)
+                label_n = int(source[pos + 1: j])
+                if source[j] == '=':
+                    tokens.append(Token(TOK_LABEL_DEF, label_n, src))
+                else:
+                    tokens.append(Token(TOK_LABEL_REF, label_n, src))
+                col = col + (j - pos + 1)
+                pos = j + 1
+                continue
+        # Directive: #!fold-case / #!no-fold-case  R7RS §2.1.
+        if pos + 1 < n and source[pos] == '#' and source[pos + 1] == '!':
+            if _substring(source, pos + 2, pos + 11) == 'fold-case':
+                fold_case = True
+                col = col + 11
+                pos = pos + 11
+                continue
+            if _substring(source, pos + 2, pos + 14) == 'no-fold-case':
+                fold_case = False
+                col = col + 14
+                pos = pos + 14
+                continue
             raise SchemeSyntaxError(
-               'unterminated |...| symbol',
-               _make_src(line, col, source_lines, filename))
-         pos = pos + 1
-         col = col + 1
-         name = _decode_symbol_escapes(''.join(raw_chars), src)
-         if fold_case:
-            name = name.lower()
-         tokens.append(Token(TOK_IDENT, name, src))
-         continue
-      match = _TOKEN_RE.match(source, pos)
-      if not match:
-         raise SchemeSyntaxError(
-            "unexpected character %s" % _char_repr(source[pos]),
-            _make_src(line, col, source_lines, filename))
-      text = match.group(0)
-      kind = match.lastgroup
-      if kind is not None:
-         src = _make_src(line, col, source_lines, filename)
-         tokens.append(_build_token(kind, text, src, fold_case))
-      newlines = text.count('\n')
-      if newlines > 0:
-         line = line + newlines
-         col  = len(text) - text.rfind('\n')
-      else:
-         col  = col + len(text)
-      pos = match.end()
-   tokens.append(Token(TOK_EOF, None, _make_src(line, col, source_lines, filename)))
-   return tokens
+                "unknown #!-directive",
+                _make_src(line, col, source_lines, filename))
+        # Vertical-bar symbol: |...| with escape sequences.  R7RS §2.1.
+        if pos < n and source[pos] == '|':
+            src = _make_src(line, col, source_lines, filename)
+            pos = pos + 1
+            col = col + 1
+            raw_chars = []
+            while pos < n and source[pos] != '|':
+                c = source[pos]
+                if c == '\\':
+                    raw_chars.append(c)
+                    pos = pos + 1
+                    col = col + 1
+                    if pos < n:
+                        ec = source[pos]
+                        raw_chars.append(ec)
+                        if ec == '\n':
+                            line = line + 1
+                            col = 1
+                        else:
+                            col = col + 1
+                        pos = pos + 1
+                        if ec == 'x':
+                            while pos < n and source[pos] in _HEX_DIGITS:
+                                raw_chars.append(source[pos])
+                                col = col + 1
+                                pos = pos + 1
+                            if pos < n and source[pos] == ';':
+                                raw_chars.append(';')
+                                col = col + 1
+                                pos = pos + 1
+                else:
+                    if c == '\n':
+                        line = line + 1
+                        col = 1
+                    else:
+                        col = col + 1
+                    raw_chars.append(c)
+                    pos = pos + 1
+            if pos >= n:
+                raise SchemeSyntaxError(
+                    'unterminated |...| symbol',
+                    _make_src(line, col, source_lines, filename))
+            pos = pos + 1
+            col = col + 1
+            name = _decode_symbol_escapes(''.join(raw_chars), src)
+            if fold_case:
+                name = name.lower()
+            tokens.append(Token(TOK_IDENT, name, src))
+            continue
+        match = _TOKEN_RE.match(source, pos)
+        if not match:
+            raise SchemeSyntaxError(
+                "unexpected character %s" % _char_repr(source[pos]),
+                _make_src(line, col, source_lines, filename))
+        text = match.group(0)
+        kind = match.lastgroup
+        if kind is not None:
+            src = _make_src(line, col, source_lines, filename)
+            tokens.append(_build_token(kind, text, src, fold_case))
+        newlines = text.count('\n')
+        if newlines > 0:
+            line = line + newlines
+            col = len(text) - text.rfind('\n')
+        else:
+            col = col + len(text)
+        pos = match.end()
+    tokens.append(Token(TOK_EOF, None, _make_src(
+        line, col, source_lines, filename)))
+    return tokens
 
 
 def _build_token(kind, text, src, fold_case=False):
-   if kind == 'LPAREN':
-      return Token(TOK_LPAREN, '(', src)
-   if kind == 'RPAREN':
-      return Token(TOK_RPAREN, ')', src)
-   if kind == 'LBRACKET':
-      return Token(TOK_LBRACKET, '[', src)
-   if kind == 'RBRACKET':
-      return Token(TOK_RBRACKET, ']', src)
-   if kind == 'BYTEVECTOR_LPAREN':
-      return Token(TOK_BYTEVECTOR_LPAREN, text, src)
-   if kind == 'VECTOR_LPAREN':
-      return Token(TOK_VECTOR_LPAREN, '#(', src)
-   if kind == 'QUOTE':
-      return Token(TOK_QUOTE, "'", src)
-   if kind == 'QUASIQUOTE':
-      return Token(TOK_QUASIQUOTE, '`', src)
-   if kind == 'UNQUOTE':
-      return Token(TOK_UNQUOTE, ',', src)
-   if kind == 'UNQUOTE_SPLICING':
-      return Token(TOK_UNQUOTE_SPLICING, ',@', src)
-   if kind == 'DOT':
-      return Token(TOK_DOT, '.', src)
-   if kind == 'STRING':
-      return Token(TOK_STRING,
-                   _decode_string_escapes(_substring(text, 1, len(text) - 1), src),
-                   src)
-   if kind == 'CHAR':
-      return Token(TOK_CHAR, _decode_char_literal(text, src), src)
-   if kind == 'TRUE':
-      return Token(TOK_BOOL, True, src)
-   if kind == 'FALSE':
-      return Token(TOK_BOOL, False, src)
-   if kind == 'INT':
-      return Token(TOK_INT, int(text), src)
-   if kind == 'REAL':
-      return Token(TOK_REAL, float(text), src)
-   if kind == 'RATIONAL':
-      parts = text.split('/')
-      return Token(TOK_RATIONAL, (int(parts[0]), int(parts[1])), src)
-   if kind == 'HASH_IDENT':
-      tok = _try_parse_prefixed_number(text, src)
-      if tok is not None:
-         return tok
-      raise SchemeSyntaxError("unknown #-syntax: %r" % text, src)
-   if kind == 'IDENT':
-      if fold_case:
-         text = text.lower()
-      if text == '+inf.0':
-         return Token(TOK_REAL, float('inf'), src)
-      if text == '-inf.0':
-         return Token(TOK_REAL, float('-inf'), src)
-      if text == '+nan.0':
-         return Token(TOK_REAL, float('nan'), src)
-      if text == '-nan.0':
-         return Token(TOK_REAL, float('nan'), src)
-      if text.endswith('i') and len(text) >= 2:
-         tok = _try_parse_complex_literal(text, src)
-         if tok is not None:
+    if kind == 'LPAREN':
+        return Token(TOK_LPAREN, '(', src)
+    if kind == 'RPAREN':
+        return Token(TOK_RPAREN, ')', src)
+    if kind == 'LBRACKET':
+        return Token(TOK_LBRACKET, '[', src)
+    if kind == 'RBRACKET':
+        return Token(TOK_RBRACKET, ']', src)
+    if kind == 'BYTEVECTOR_LPAREN':
+        return Token(TOK_BYTEVECTOR_LPAREN, text, src)
+    if kind == 'VECTOR_LPAREN':
+        return Token(TOK_VECTOR_LPAREN, '#(', src)
+    if kind == 'QUOTE':
+        return Token(TOK_QUOTE, "'", src)
+    if kind == 'QUASIQUOTE':
+        return Token(TOK_QUASIQUOTE, '`', src)
+    if kind == 'UNQUOTE':
+        return Token(TOK_UNQUOTE, ',', src)
+    if kind == 'UNQUOTE_SPLICING':
+        return Token(TOK_UNQUOTE_SPLICING, ',@', src)
+    if kind == 'DOT':
+        return Token(TOK_DOT, '.', src)
+    if kind == 'STRING':
+        return Token(TOK_STRING,
+                     _decode_string_escapes(_substring(
+                         text, 1, len(text) - 1), src),
+                     src)
+    if kind == 'CHAR':
+        return Token(TOK_CHAR, _decode_char_literal(text, src), src)
+    if kind == 'TRUE':
+        return Token(TOK_BOOL, True, src)
+    if kind == 'FALSE':
+        return Token(TOK_BOOL, False, src)
+    if kind == 'INT':
+        return Token(TOK_INT, int(text), src)
+    if kind == 'REAL':
+        return Token(TOK_REAL, float(text), src)
+    if kind == 'RATIONAL':
+        parts = text.split('/')
+        return Token(TOK_RATIONAL, (int(parts[0]), int(parts[1])), src)
+    if kind == 'HASH_IDENT':
+        tok = _try_parse_prefixed_number(text, src)
+        if tok is not None:
             return tok
-      if '@' in text:
-         tok = _try_parse_polar_literal(text, src)
-         if tok is not None:
-            return tok
-      if len(text) > 0 and text[0] == '@':
-         raise SchemeSyntaxError(
-            "'@' is not a valid identifier initial: %r" % text, src)
-      if _starts_like_number(text):
-         raise SchemeSyntaxError(
-            "malformed number or identifier: %r" % text, src)
-      return Token(TOK_IDENT, text, src)
-   raise RuntimeError("internal: unhandled token kind %r" % kind)
+        raise SchemeSyntaxError("unknown #-syntax: %r" % text, src)
+    if kind == 'IDENT':
+        if fold_case:
+            text = text.lower()
+        if text == '+inf.0':
+            return Token(TOK_REAL, float('inf'), src)
+        if text == '-inf.0':
+            return Token(TOK_REAL, float('-inf'), src)
+        if text == '+nan.0':
+            return Token(TOK_REAL, float('nan'), src)
+        if text == '-nan.0':
+            return Token(TOK_REAL, float('nan'), src)
+        if text.endswith('i') and len(text) >= 2:
+            tok = _try_parse_complex_literal(text, src)
+            if tok is not None:
+                return tok
+        if '@' in text:
+            tok = _try_parse_polar_literal(text, src)
+            if tok is not None:
+                return tok
+        if len(text) > 0 and text[0] == '@':
+            raise SchemeSyntaxError(
+                "'@' is not a valid identifier initial: %r" % text, src)
+        if _starts_like_number(text):
+            raise SchemeSyntaxError(
+                "malformed number or identifier: %r" % text, src)
+        return Token(TOK_IDENT, text, src)
+    raise RuntimeError("internal: unhandled token kind %r" % kind)
 
 
 def _starts_like_number(s):
-   if not s:
-      return False
-   if s[0].isdigit():
-      return True
-   if s[0] in '+-' and len(s) > 1 and (s[1].isdigit() or (s[1] == '.' and len(s) > 2 and s[2].isdigit())):
-      return True
-   if s[0] == '.' and len(s) > 1 and s[1].isdigit():
-      return True
-   return False
+    if not s:
+        return False
+    if s[0].isdigit():
+        return True
+    if s[0] in '+-' and len(s) > 1 and (s[1].isdigit() or (s[1] == '.' and len(s) > 2 and s[2].isdigit())):
+        return True
+    if s[0] == '.' and len(s) > 1 and s[1].isdigit():
+        return True
+    return False
 
 
 def _decimal_str_to_rat(s):
-   """Parse a decimal string to _Rat without going through float.
-   Port of C++ decimal_str_to_rat.  Handles sign, '.', and e/E exponent."""
-   sign = 1
-   i = 0
-   if s and s[0] == '-':
-      sign = -1
-      i = 1
-   elif s and s[0] == '+':
-      i = 1
-   e_idx = -1
-   j = i
-   while j < len(s):
-      if s[j] == 'e' or s[j] == 'E':
-         e_idx = j
-         break
-      j = j + 1
-   exp = 0
-   if e_idx >= 0:
-      exp = int(_substring(s, e_idx + 1, len(s)))
-      mantissa = _substring(s, i, e_idx)
-   else:
-      mantissa = _substring(s, i, len(s))
-   dot_idx = -1
-   k = 0
-   while k < len(mantissa):
-      if mantissa[k] == '.':
-         dot_idx = k
-         break
-      k = k + 1
-   if dot_idx >= 0:
-      int_str = _substring(mantissa, 0, dot_idx) + _substring(mantissa, dot_idx + 1, len(mantissa))
-      frac_digits = len(mantissa) - dot_idx - 1
-   else:
-      int_str = mantissa
-      frac_digits = 0
-   if not int_str:
-      int_str = '0'
-   num = int(int_str)
-   den = 10 ** frac_digits
-   if exp > 0:
-      num = num * (10 ** exp)
-   elif exp < 0:
-      den = den * (10 ** (-exp))
-   return _Rat(sign * num, den)
+    """Parse a decimal string to _Rat without going through float.
+    Port of C++ decimal_str_to_rat.  Handles sign, '.', and e/E exponent."""
+    sign = 1
+    i = 0
+    if s and s[0] == '-':
+        sign = -1
+        i = 1
+    elif s and s[0] == '+':
+        i = 1
+    e_idx = -1
+    j = i
+    while j < len(s):
+        if s[j] == 'e' or s[j] == 'E':
+            e_idx = j
+            break
+        j = j + 1
+    exp = 0
+    if e_idx >= 0:
+        exp = int(_substring(s, e_idx + 1, len(s)))
+        mantissa = _substring(s, i, e_idx)
+    else:
+        mantissa = _substring(s, i, len(s))
+    dot_idx = -1
+    k = 0
+    while k < len(mantissa):
+        if mantissa[k] == '.':
+            dot_idx = k
+            break
+        k = k + 1
+    if dot_idx >= 0:
+        int_str = _substring(mantissa, 0, dot_idx) + \
+            _substring(mantissa, dot_idx + 1, len(mantissa))
+        frac_digits = len(mantissa) - dot_idx - 1
+    else:
+        int_str = mantissa
+        frac_digits = 0
+    if not int_str:
+        int_str = '0'
+    num = int(int_str)
+    den = 10 ** frac_digits
+    if exp > 0:
+        num = num * (10 ** exp)
+    elif exp < 0:
+        den = den * (10 ** (-exp))
+    return _Rat(sign * num, den)
 
 
 def _try_parse_prefixed_number(text, src):
-   """Parse #b/#o/#d/#x/#e/#i prefix forms.
-   Returns a Token or raises SchemeSyntaxError.  Returns None only when
-   the second character is not a recognised prefix letter (so the caller
-   can report 'unknown #-syntax')."""
-   radix = -1   # -1 = not yet specified
-   exact = -1   # -1 = unspecified; 1 = exact; 0 = inexact
-   i = 0
-   while i < len(text) and text[i] == '#':
-      if i + 1 >= len(text):
-         return None
-      ch = text[i + 1].lower()
-      if ch == 'b':
-         if radix != -1:
-            raise SchemeSyntaxError("duplicate radix prefix: %r" % text, src)
-         radix = 2
-         i = i + 2
-      elif ch == 'o':
-         if radix != -1:
-            raise SchemeSyntaxError("duplicate radix prefix: %r" % text, src)
-         radix = 8
-         i = i + 2
-      elif ch == 'd':
-         if radix != -1:
-            raise SchemeSyntaxError("duplicate radix prefix: %r" % text, src)
-         radix = 10
-         i = i + 2
-      elif ch == 'x':
-         if radix != -1:
-            raise SchemeSyntaxError("duplicate radix prefix: %r" % text, src)
-         radix = 16
-         i = i + 2
-      elif ch == 'e':
-         if exact != -1:
-            raise SchemeSyntaxError("duplicate exactness prefix: %r" % text, src)
-         exact = 1
-         i = i + 2
-      elif ch == 'i':
-         if exact != -1:
-            raise SchemeSyntaxError("duplicate exactness prefix: %r" % text, src)
-         exact = 0
-         i = i + 2
-      else:
-         return None
-   if radix == -1:
-      radix = 10
-   rest = _substring(text, i, len(text))
-   if not rest:
-      raise SchemeSyntaxError("number prefix with no digits: %r" % text, src)
-   # Try integer with given radix.
-   try:
-      n = int(rest, radix)
-      if exact == 0:
-         return Token(TOK_REAL, float(n), src)
-      return Token(TOK_INT, n, src)
-   except ValueError:
-      pass
-   # Try rational numerator/denominator with given radix.
-   if '/' in rest:
-      slash = rest.index('/')
-      num_str = _substring(rest, 0, slash)
-      den_str = _substring(rest, slash + 1, len(rest))
-      try:
-         num = int(num_str, radix)
-         den = int(den_str, radix)
-         if den != 0:
-            frac = _Rat(num, den)
-            if exact == 0:
-               return Token(TOK_REAL, float(frac), src)
-            return Token(TOK_RATIONAL, (frac.numerator, frac.denominator), src)
-      except ValueError:
-         pass
-   # Try real (radix 10 only).
-   if radix == 10:
-      if rest == '+inf.0':
-         if exact == 1:
-            raise SchemeSyntaxError("#e cannot be applied to +inf.0", src)
-         return Token(TOK_REAL, float('inf'), src)
-      if rest == '-inf.0':
-         if exact == 1:
-            raise SchemeSyntaxError("#e cannot be applied to -inf.0", src)
-         return Token(TOK_REAL, float('-inf'), src)
-      if rest == '+nan.0':
-         if exact == 1:
-            raise SchemeSyntaxError("#e cannot be applied to +nan.0", src)
-         return Token(TOK_REAL, float('nan'), src)
-      if rest == '-nan.0':
-         if exact == 1:
-            raise SchemeSyntaxError("#e cannot be applied to -nan.0", src)
-         return Token(TOK_REAL, float('nan'), src)
-      try:
-         f = float(rest)
-         if exact == 1:
-            if not _math.isfinite(f):
-               raise SchemeSyntaxError(
-                  "#e applied to non-finite real %r" % rest, src)
-            if f.is_integer():
-               return Token(TOK_INT, int(f), src)
-            frac = _decimal_str_to_rat(rest)
-            return Token(TOK_RATIONAL, (frac.numerator, frac.denominator), src)
-         return Token(TOK_REAL, f, src)
-      except ValueError:
-         pass
-   raise SchemeSyntaxError("invalid prefixed number: %r" % text, src)
+    """Parse #b/#o/#d/#x/#e/#i prefix forms.
+    Returns a Token or raises SchemeSyntaxError.  Returns None only when
+    the second character is not a recognised prefix letter (so the caller
+    can report 'unknown #-syntax')."""
+    radix = -1   # -1 = not yet specified
+    exact = -1   # -1 = unspecified; 1 = exact; 0 = inexact
+    i = 0
+    while i < len(text) and text[i] == '#':
+        if i + 1 >= len(text):
+            return None
+        ch = text[i + 1].lower()
+        if ch == 'b':
+            if radix != -1:
+                raise SchemeSyntaxError(
+                    "duplicate radix prefix: %r" % text, src)
+            radix = 2
+            i = i + 2
+        elif ch == 'o':
+            if radix != -1:
+                raise SchemeSyntaxError(
+                    "duplicate radix prefix: %r" % text, src)
+            radix = 8
+            i = i + 2
+        elif ch == 'd':
+            if radix != -1:
+                raise SchemeSyntaxError(
+                    "duplicate radix prefix: %r" % text, src)
+            radix = 10
+            i = i + 2
+        elif ch == 'x':
+            if radix != -1:
+                raise SchemeSyntaxError(
+                    "duplicate radix prefix: %r" % text, src)
+            radix = 16
+            i = i + 2
+        elif ch == 'e':
+            if exact != -1:
+                raise SchemeSyntaxError(
+                    "duplicate exactness prefix: %r" % text, src)
+            exact = 1
+            i = i + 2
+        elif ch == 'i':
+            if exact != -1:
+                raise SchemeSyntaxError(
+                    "duplicate exactness prefix: %r" % text, src)
+            exact = 0
+            i = i + 2
+        else:
+            return None
+    if radix == -1:
+        radix = 10
+    rest = _substring(text, i, len(text))
+    if not rest:
+        raise SchemeSyntaxError("number prefix with no digits: %r" % text, src)
+    # Try integer with given radix.
+    try:
+        n = int(rest, radix)
+        if exact == 0:
+            return Token(TOK_REAL, float(n), src)
+        return Token(TOK_INT, n, src)
+    except ValueError:
+        pass
+    # Try rational numerator/denominator with given radix.
+    if '/' in rest:
+        slash = rest.index('/')
+        num_str = _substring(rest, 0, slash)
+        den_str = _substring(rest, slash + 1, len(rest))
+        try:
+            num = int(num_str, radix)
+            den = int(den_str, radix)
+            if den != 0:
+                frac = _Rat(num, den)
+                if exact == 0:
+                    return Token(TOK_REAL, float(frac), src)
+                return Token(TOK_RATIONAL, (frac.numerator, frac.denominator), src)
+        except ValueError:
+            pass
+    # Try real (radix 10 only).
+    if radix == 10:
+        if rest == '+inf.0':
+            if exact == 1:
+                raise SchemeSyntaxError("#e cannot be applied to +inf.0", src)
+            return Token(TOK_REAL, float('inf'), src)
+        if rest == '-inf.0':
+            if exact == 1:
+                raise SchemeSyntaxError("#e cannot be applied to -inf.0", src)
+            return Token(TOK_REAL, float('-inf'), src)
+        if rest == '+nan.0':
+            if exact == 1:
+                raise SchemeSyntaxError("#e cannot be applied to +nan.0", src)
+            return Token(TOK_REAL, float('nan'), src)
+        if rest == '-nan.0':
+            if exact == 1:
+                raise SchemeSyntaxError("#e cannot be applied to -nan.0", src)
+            return Token(TOK_REAL, float('nan'), src)
+        try:
+            f = float(rest)
+            if exact == 1:
+                if not _math.isfinite(f):
+                    raise SchemeSyntaxError(
+                        "#e applied to non-finite real %r" % rest, src)
+                if f.is_integer():
+                    return Token(TOK_INT, int(f), src)
+                frac = _decimal_str_to_rat(rest)
+                return Token(TOK_RATIONAL, (frac.numerator, frac.denominator), src)
+            return Token(TOK_REAL, f, src)
+        except ValueError:
+            pass
+    raise SchemeSyntaxError("invalid prefixed number: %r" % text, src)
 
 
 def _parse_number_for_complex(s):
-   """Parse a complex component string.  Returns int, _Rat, or float.
-   Returns None if the string is not a valid number."""
-   if s == '+inf.0':
-      return float('inf')
-   if s == '-inf.0':
-      return float('-inf')
-   if s == '+nan.0':
-      return float('nan')
-   try:
-      return int(s)
-   except ValueError:
-      pass
-   if '/' in s:
-      slash = s.index('/')
-      try:
-         num = int(_substring(s, 0, slash))
-         den = int(_substring(s, slash + 1, len(s)))
-         if den != 0:
-            return _Rat(num, den)
-      except ValueError:
-         pass
-   try:
-      return float(s)
-   except ValueError:
-      pass
-   return None
+    """Parse a complex component string.  Returns int, _Rat, or float.
+    Returns None if the string is not a valid number."""
+    if s == '+inf.0':
+        return float('inf')
+    if s == '-inf.0':
+        return float('-inf')
+    if s == '+nan.0':
+        return float('nan')
+    try:
+        return int(s)
+    except ValueError:
+        pass
+    if '/' in s:
+        slash = s.index('/')
+        try:
+            num = int(_substring(s, 0, slash))
+            den = int(_substring(s, slash + 1, len(s)))
+            if den != 0:
+                return _Rat(num, den)
+        except ValueError:
+            pass
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    return None
 
 
 def _is_exact_component(v):
-   """True if v (returned by _parse_number_for_complex) is exact (int or _Rat)."""
-   return isinstance(v, int) or isinstance(v, _Rat)
+    """True if v (returned by _parse_number_for_complex) is exact (int or _Rat)."""
+    return isinstance(v, int) or isinstance(v, _Rat)
 
 
 def _component_to_scheme(v, src):
-   """Wrap an exact complex component (int or _Rat) into a Scheme value."""
-   if isinstance(v, int):
-      return make_integer(v, src)
-   if v.denominator == 1:
-      return make_integer(v.numerator, src)
-   return make_rational(v.numerator, v.denominator, src)
+    """Wrap an exact complex component (int or _Rat) into a Scheme value."""
+    if isinstance(v, int):
+        return make_integer(v, src)
+    if v.denominator == 1:
+        return make_integer(v.numerator, src)
+    return make_rational(v.numerator, v.denominator, src)
 
 
 def _try_parse_complex_literal(text, src):
-   """Parse a+bi / a-bi / +bi / -bi / +i / -i complex literals.
-   text ends in 'i' and has length >= 2.
-   Produces an exact complex token when both components are exact."""
-   body = _substring(text, 0, len(text) - 1)
-   if not body:
-      return None   # bare 'i' is an identifier
+    """Parse a+bi / a-bi / +bi / -bi / +i / -i complex literals.
+    text ends in 'i' and has length >= 2.
+    Produces an exact complex token when both components are exact."""
+    body = _substring(text, 0, len(text) - 1)
+    if not body:
+        return None   # bare 'i' is an identifier
 
-   # Find the rightmost +/- that is not an exponent sign
-   # (i.e. not preceded by 'e' or 'E').
-   split = -1
-   j = len(body) - 1
-   while j >= 0:
-      c = body[j]
-      if c == '+' or c == '-':
-         if j > 0 and body[j - 1].lower() == 'e':
-            j = j - 1
-            continue
-         split = j
-         break
-      j = j - 1
+    # Find the rightmost +/- that is not an exponent sign
+    # (i.e. not preceded by 'e' or 'E').
+    split = -1
+    j = len(body) - 1
+    while j >= 0:
+        c = body[j]
+        if c == '+' or c == '-':
+            if j > 0 and body[j - 1].lower() == 'e':
+                j = j - 1
+                continue
+            split = j
+            break
+        j = j - 1
 
-   if split == -1:
-      return None   # no sign separator found
+    if split == -1:
+        return None   # no sign separator found
 
-   real_str  = _substring(body, 0, split)
-   sign_imag = _substring(body, split, len(body))
+    real_str = _substring(body, 0, split)
+    sign_imag = _substring(body, split, len(body))
 
-   if real_str == '':
-      re_val = 0
-   else:
-      re_val = _parse_number_for_complex(real_str)
-      if re_val is None:
-         return None
+    if real_str == '':
+        re_val = 0
+    else:
+        re_val = _parse_number_for_complex(real_str)
+        if re_val is None:
+            return None
 
-   if sign_imag == '+':
-      im_val = 1
-   elif sign_imag == '-':
-      im_val = -1
-   else:
-      im_val = _parse_number_for_complex(sign_imag)
-      if im_val is None:
-         return None
+    if sign_imag == '+':
+        im_val = 1
+    elif sign_imag == '-':
+        im_val = -1
+    else:
+        im_val = _parse_number_for_complex(sign_imag)
+        if im_val is None:
+            return None
 
-   if _is_exact_component(re_val) and _is_exact_component(im_val):
-      re_scheme = _component_to_scheme(re_val, src)
-      im_scheme = _component_to_scheme(im_val, src)
-      return Token(TOK_EXACT_COMPLEX, (re_scheme, im_scheme), src)
-   # An exact zero imaginary part makes the number real, even when the real
-   # part is inexact (R7RS 6.2.6: (real? -2.5+0i) => #t, whereas
-   # (real? -2.5+0.0i) => #f, because 0.0 is an inexact imaginary part).
-   if _is_exact_component(im_val) and im_val == 0:
-      return Token(TOK_REAL, float(re_val), src)
-   return Token(TOK_COMPLEX, (float(re_val), float(im_val)), src)
+    if _is_exact_component(re_val) and _is_exact_component(im_val):
+        re_scheme = _component_to_scheme(re_val, src)
+        im_scheme = _component_to_scheme(im_val, src)
+        return Token(TOK_EXACT_COMPLEX, (re_scheme, im_scheme), src)
+    # An exact zero imaginary part makes the number real, even when the real
+    # part is inexact (R7RS 6.2.6: (real? -2.5+0i) => #t, whereas
+    # (real? -2.5+0.0i) => #f, because 0.0 is an inexact imaginary part).
+    if _is_exact_component(im_val) and im_val == 0:
+        return Token(TOK_REAL, float(re_val), src)
+    return Token(TOK_COMPLEX, (float(re_val), float(im_val)), src)
 
 
 def _try_parse_polar_literal(text, src):
-   """Parse r@theta polar complex literal."""
-   at = text.index('@')
-   r_str     = text[:at]
-   theta_str = text[at + 1:]
-   if not r_str or not theta_str:
-      return None
-   r     = _parse_number_for_complex(r_str)
-   theta = _parse_number_for_complex(theta_str)
-   if r is None or theta is None:
-      return None
-   re_val = r * _math.cos(theta)
-   im_val = r * _math.sin(theta)
-   return Token(TOK_COMPLEX, (float(re_val), float(im_val)), src)
+    """Parse r@theta polar complex literal."""
+    at = text.index('@')
+    r_str = text[:at]
+    theta_str = text[at + 1:]
+    if not r_str or not theta_str:
+        return None
+    r = _parse_number_for_complex(r_str)
+    theta = _parse_number_for_complex(theta_str)
+    if r is None or theta is None:
+        return None
+    re_val = r * _math.cos(theta)
+    im_val = r * _math.sin(theta)
+    return Token(TOK_COMPLEX, (float(re_val), float(im_val)), src)
 
 
 def _decode_string_escapes(raw, src):
-   result = []
-   i = 0
-   n = len(raw)
-   while i < n:
-      c = raw[i]
-      if c == '\\':
-         if i + 1 >= n:
-            raise SchemeSyntaxError("unterminated string escape", src)
-         esc = raw[i + 1]
-         if esc in _STRING_ESCAPES:
-            result.append(_STRING_ESCAPES[esc])
-            i = i + 2
-         elif esc == 'x':
-            j = i + 2
-            while j < n and raw[j] in _HEX_DIGITS:
-               j = j + 1
-            if j == i + 2:
-               raise SchemeSyntaxError("malformed \\x escape: no hex digits", src)
-            if j >= n or raw[j] != ';':
-               raise SchemeSyntaxError("malformed \\x escape: missing semicolon", src)
-            result.append(chr(int(raw[i + 2 : j], 16)))
-            i = j + 1
-         else:
-            j = i + 1
-            while j < n and raw[j] in ' \t':
-               j = j + 1
-            if j < n and raw[j] in '\r\n':
-               if raw[j] == '\r':
-                  j = j + 1
-               if j < n and raw[j] == '\n':
-                  j = j + 1
-               while j < n and raw[j] in ' \t':
-                  j = j + 1
-               i = j
+    result = []
+    i = 0
+    n = len(raw)
+    while i < n:
+        c = raw[i]
+        if c == '\\':
+            if i + 1 >= n:
+                raise SchemeSyntaxError("unterminated string escape", src)
+            esc = raw[i + 1]
+            if esc in _STRING_ESCAPES:
+                result.append(_STRING_ESCAPES[esc])
+                i = i + 2
+            elif esc == 'x':
+                j = i + 2
+                while j < n and raw[j] in _HEX_DIGITS:
+                    j = j + 1
+                if j == i + 2:
+                    raise SchemeSyntaxError(
+                        "malformed \\x escape: no hex digits", src)
+                if j >= n or raw[j] != ';':
+                    raise SchemeSyntaxError(
+                        "malformed \\x escape: missing semicolon", src)
+                result.append(chr(int(raw[i + 2: j], 16)))
+                i = j + 1
             else:
-               raise SchemeSyntaxError("unknown string escape \\%s" % esc, src)
-      else:
-         result.append(c)
-         i = i + 1
-   return ''.join(result)
+                j = i + 1
+                while j < n and raw[j] in ' \t':
+                    j = j + 1
+                if j < n and raw[j] in '\r\n':
+                    if raw[j] == '\r':
+                        j = j + 1
+                    if j < n and raw[j] == '\n':
+                        j = j + 1
+                    while j < n and raw[j] in ' \t':
+                        j = j + 1
+                    i = j
+                else:
+                    raise SchemeSyntaxError(
+                        "unknown string escape \\%s" % esc, src)
+        else:
+            result.append(c)
+            i = i + 1
+    return ''.join(result)
 
 
 def _decode_symbol_escapes(raw, src):
-   result = []
-   i = 0
-   n = len(raw)
-   while i < n:
-      c = raw[i]
-      if c == '\\':
-         if i + 1 >= n:
-            raise SchemeSyntaxError("unterminated symbol escape", src)
-         esc = raw[i + 1]
-         if esc in _SYMBOL_ESCAPES:
-            result.append(_SYMBOL_ESCAPES[esc])
-            i = i + 2
-         elif esc == 'x':
-            j = i + 2
-            while j < n and raw[j] in _HEX_DIGITS:
-               j = j + 1
-            if j == i + 2:
-               raise SchemeSyntaxError("malformed \\x escape: no hex digits", src)
-            if j >= n or raw[j] != ';':
-               raise SchemeSyntaxError("malformed \\x escape: missing semicolon", src)
-            result.append(chr(int(raw[i + 2 : j], 16)))
-            i = j + 1
-         else:
-            raise SchemeSyntaxError("unknown symbol escape \\%s" % esc, src)
-      else:
-         result.append(c)
-         i = i + 1
-   return ''.join(result)
+    result = []
+    i = 0
+    n = len(raw)
+    while i < n:
+        c = raw[i]
+        if c == '\\':
+            if i + 1 >= n:
+                raise SchemeSyntaxError("unterminated symbol escape", src)
+            esc = raw[i + 1]
+            if esc in _SYMBOL_ESCAPES:
+                result.append(_SYMBOL_ESCAPES[esc])
+                i = i + 2
+            elif esc == 'x':
+                j = i + 2
+                while j < n and raw[j] in _HEX_DIGITS:
+                    j = j + 1
+                if j == i + 2:
+                    raise SchemeSyntaxError(
+                        "malformed \\x escape: no hex digits", src)
+                if j >= n or raw[j] != ';':
+                    raise SchemeSyntaxError(
+                        "malformed \\x escape: missing semicolon", src)
+                result.append(chr(int(raw[i + 2: j], 16)))
+                i = j + 1
+            else:
+                raise SchemeSyntaxError(
+                    "unknown symbol escape \\%s" % esc, src)
+        else:
+            result.append(c)
+            i = i + 1
+    return ''.join(result)
 
 
 def _decode_char_literal(text, src):
-   rest = _substring(text, 2, len(text))
-   if len(rest) == 1:
-      return rest
-   if len(rest) >= 2 and rest[0] == 'x':
-      hex_str = _substring(rest, 1, len(rest))
-      all_hex = len(hex_str) > 0
-      i = 0
-      while i < len(hex_str):
-         if hex_str[i] not in _HEX_DIGITS:
-            all_hex = False
-            break
-         i = i + 1
-      if all_hex:
-         return chr(int(hex_str, 16))
-   name = rest.lower()
-   if name in _CHAR_NAMES:
-      return _CHAR_NAMES[name]
-   raise SchemeSyntaxError("unknown character name: #\\%s" % rest, src)
+    rest = _substring(text, 2, len(text))
+    if len(rest) == 1:
+        return rest
+    if len(rest) >= 2 and rest[0] == 'x':
+        hex_str = _substring(rest, 1, len(rest))
+        all_hex = len(hex_str) > 0
+        i = 0
+        while i < len(hex_str):
+            if hex_str[i] not in _HEX_DIGITS:
+                all_hex = False
+                break
+            i = i + 1
+        if all_hex:
+            return chr(int(hex_str, 16))
+    name = rest.lower()
+    if name in _CHAR_NAMES:
+        return _CHAR_NAMES[name]
+    raise SchemeSyntaxError("unknown character name: #\\%s" % rest, src)
 
 
 # -------- S-expression reader --------
 
 class Parser:
 
-   @staticmethod
-   def _build_list(items, dotted_tail, list_src):
-      if dotted_tail is None:
-         if not items:
-            return (NIL, list_src)
-         result = NIL_VALUE
-      else:
-         result = dotted_tail
-      i = len(items) - 1
-      while i >= 0:
-         result = alloc_cons(items[i], result, list_src)
-         i = i - 1
-      return result
+    @staticmethod
+    def _build_list(items, dotted_tail, list_src):
+        if dotted_tail is None:
+            if not items:
+                return (NIL, list_src)
+            result = NIL_VALUE
+        else:
+            result = dotted_tail
+        i = len(items) - 1
+        while i >= 0:
+            result = alloc_cons(items[i], result, list_src)
+            i = i - 1
+        return result
 
-   def __init__(self, tokens):
-      self.tokens = tokens
-      self.pos    = 0
-      self.labels = {}   # datum labels: int -> value  (R7RS §2.4)
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.pos = 0
+        self.labels = {}   # datum labels: int -> value  (R7RS §2.4)
 
-   def _peek(self):
-      return self.tokens[self.pos]
+    def _peek(self):
+        return self.tokens[self.pos]
 
-   def _advance(self):
-      tok = self.tokens[self.pos]
-      if tok.kind != TOK_EOF:
-         self.pos = self.pos + 1
-      return tok
+    def _advance(self):
+        tok = self.tokens[self.pos]
+        if tok.kind != TOK_EOF:
+            self.pos = self.pos + 1
+        return tok
 
-   def _skip_datum_comments(self):
-      """Consume any leading #; tokens, discarding the datum each precedes."""
-      while self._peek().kind == TOK_DATUM_COMMENT:
-         self._advance()
-         self.parse_expr()
+    def _skip_datum_comments(self):
+        """Consume any leading #; tokens, discarding the datum each precedes."""
+        while self._peek().kind == TOK_DATUM_COMMENT:
+            self._advance()
+            self.parse_expr()
 
-   def parse_program(self):
-      forms = []
-      while True:
-         self._skip_datum_comments()
-         if self._peek().kind == TOK_EOF:
-            break
-         forms.append(self.parse_expr())
-      return forms
+    def parse_program(self):
+        forms = []
+        while True:
+            self._skip_datum_comments()
+            if self._peek().kind == TOK_EOF:
+                break
+            forms.append(self.parse_expr())
+        return forms
 
-   def parse_expr(self):
-      self._skip_datum_comments()
-      tok  = self._peek()
-      kind = tok.kind
-      # Datum label definition: #n= <datum>  (R7RS §2.4)
-      if kind == TOK_LABEL_DEF:
-         self._advance()
-         label_n = tok.value
-         if label_n in self.labels:
-            raise SchemeSyntaxError(
-               'duplicate datum label #%d=' % label_n, tok.src)
-         nxt = self._peek()
-         # Pre-allocate a stub so forward #n# refs inside the datum work.
-         if nxt.kind == TOK_LPAREN or nxt.kind == TOK_LBRACKET:
-            # Lists: stub is a ConsCell mutated in-place after parsing.
-            stub = alloc_cons(NIL_VALUE, NIL_VALUE, nxt.src)
-            self.labels[label_n] = stub
+    def parse_expr(self):
+        self._skip_datum_comments()
+        tok = self._peek()
+        kind = tok.kind
+        # Datum label definition: #n= <datum>  (R7RS §2.4)
+        if kind == TOK_LABEL_DEF:
+            self._advance()
+            label_n = tok.value
+            if label_n in self.labels:
+                raise SchemeSyntaxError(
+                    'duplicate datum label #%d=' % label_n, tok.src)
+            nxt = self._peek()
+            # Pre-allocate a stub so forward #n# refs inside the datum work.
+            if nxt.kind == TOK_LPAREN or nxt.kind == TOK_LBRACKET:
+                # Lists: stub is a ConsCell mutated in-place after parsing.
+                stub = alloc_cons(NIL_VALUE, NIL_VALUE, nxt.src)
+                self.labels[label_n] = stub
+                datum = self.parse_expr()
+                if is_cons(datum):
+                    stub.car = datum.car
+                    stub.cdr = datum.cdr
+                    return stub
+                self.labels[label_n] = datum
+                return datum
+            if nxt.kind == TOK_VECTOR_LPAREN:
+                # Vectors: pre-create the vector with a mutable items list so
+                # any #n# references inside the vector resolve to the final object.
+                pre_items = []
+                pre_vector = make_vector(pre_items)
+                self.labels[label_n] = pre_vector
+                datum = self.parse_expr()
+                parsed_items = as_vector_items(datum)
+                i = 0
+                while i < len(parsed_items):
+                    pre_items.append(parsed_items[i])
+                    i = i + 1
+                return pre_vector
             datum = self.parse_expr()
-            if is_cons(datum):
-               stub.car = datum.car
-               stub.cdr = datum.cdr
-               return stub
             self.labels[label_n] = datum
             return datum
-         if nxt.kind == TOK_VECTOR_LPAREN:
-            # Vectors: pre-create the vector with a mutable items list so
-            # any #n# references inside the vector resolve to the final object.
-            pre_items = []
-            pre_vector = make_vector(pre_items)
-            self.labels[label_n] = pre_vector
+        # Datum label reference: #n#  (R7RS §2.4)
+        if kind == TOK_LABEL_REF:
+            self._advance()
+            label_n = tok.value
+            if label_n not in self.labels:
+                raise SchemeSyntaxError(
+                    'undefined datum label #%d#' % label_n, tok.src)
+            return self.labels[label_n]
+        if kind == TOK_INT:
+            self._advance()
+            return make_integer(tok.value, tok.src)
+        if kind == TOK_REAL:
+            self._advance()
+            return make_real(tok.value, tok.src)
+        if kind == TOK_RATIONAL:
+            self._advance()
+            return make_rational(tok.value[0], tok.value[1], tok.src)
+        if kind == TOK_COMPLEX:
+            self._advance()
+            return make_complex(tok.value[0], tok.value[1], tok.src)
+        if kind == TOK_EXACT_COMPLEX:
+            self._advance()
+            re_s = tok.value[0]
+            im_s = tok.value[1]
+            if is_integer(im_s) and as_integer(im_s) == 0:
+                return re_s
+            return make_exact_complex(re_s, im_s, tok.src)
+        if kind == TOK_STRING:
+            self._advance()
+            s = make_string(tok.value, tok.src)
+            s.immutable = True
+            return s
+        if kind == TOK_CHAR:
+            self._advance()
+            return make_character(tok.value, tok.src)
+        if kind == TOK_BOOL:
+            self._advance()
+            return make_boolean(tok.value, tok.src)
+        if kind == TOK_IDENT:
+            self._advance()
+            return make_symbol(tok.value, tok.src)
+        if kind == TOK_LPAREN or kind == TOK_LBRACKET:
+            return self._read_list()
+        if kind == TOK_BYTEVECTOR_LPAREN:
+            return self._read_bytevector()
+        if kind == TOK_VECTOR_LPAREN:
+            return self._read_vector()
+        if kind == TOK_QUOTE:
+            quote_tok = self._advance()
             datum = self.parse_expr()
-            parsed_items = as_vector_items(datum)
-            i = 0
-            while i < len(parsed_items):
-               pre_items.append(parsed_items[i])
-               i = i + 1
-            return pre_vector
-         datum = self.parse_expr()
-         self.labels[label_n] = datum
-         return datum
-      # Datum label reference: #n#  (R7RS §2.4)
-      if kind == TOK_LABEL_REF:
-         self._advance()
-         label_n = tok.value
-         if label_n not in self.labels:
+            quote_sym = make_symbol('quote', quote_tok.src)
+            inner = alloc_cons(datum, NIL_VALUE, quote_tok.src)
+            return alloc_cons(quote_sym, inner, quote_tok.src)
+        if kind == TOK_QUASIQUOTE:
+            qq_tok = self._advance()
+            datum = self.parse_expr()
+            qq_sym = make_symbol('quasiquote', qq_tok.src)
+            inner = alloc_cons(datum, NIL_VALUE, qq_tok.src)
+            return alloc_cons(qq_sym, inner, qq_tok.src)
+        if kind == TOK_UNQUOTE:
+            uq_tok = self._advance()
+            datum = self.parse_expr()
+            uq_sym = make_symbol('unquote', uq_tok.src)
+            inner = alloc_cons(datum, NIL_VALUE, uq_tok.src)
+            return alloc_cons(uq_sym, inner, uq_tok.src)
+        if kind == TOK_UNQUOTE_SPLICING:
+            us_tok = self._advance()
+            datum = self.parse_expr()
+            us_sym = make_symbol('unquote-splicing', us_tok.src)
+            inner = alloc_cons(datum, NIL_VALUE, us_tok.src)
+            return alloc_cons(us_sym, inner, us_tok.src)
+        if kind == TOK_RPAREN:
+            raise SchemeSyntaxError("unexpected ')'", tok.src)
+        if kind == TOK_RBRACKET:
+            raise SchemeSyntaxError("unexpected ']'", tok.src)
+        if kind == TOK_DOT:
             raise SchemeSyntaxError(
-               'undefined datum label #%d#' % label_n, tok.src)
-         return self.labels[label_n]
-      if kind == TOK_INT:
-         self._advance()
-         return make_integer(tok.value, tok.src)
-      if kind == TOK_REAL:
-         self._advance()
-         return make_real(tok.value, tok.src)
-      if kind == TOK_RATIONAL:
-         self._advance()
-         return make_rational(tok.value[0], tok.value[1], tok.src)
-      if kind == TOK_COMPLEX:
-         self._advance()
-         return make_complex(tok.value[0], tok.value[1], tok.src)
-      if kind == TOK_EXACT_COMPLEX:
-         self._advance()
-         re_s = tok.value[0]
-         im_s = tok.value[1]
-         if is_integer(im_s) and as_integer(im_s) == 0:
-            return re_s
-         return make_exact_complex(re_s, im_s, tok.src)
-      if kind == TOK_STRING:
-         self._advance()
-         s = make_string(tok.value, tok.src)
-         s.immutable = True
-         return s
-      if kind == TOK_CHAR:
-         self._advance()
-         return make_character(tok.value, tok.src)
-      if kind == TOK_BOOL:
-         self._advance()
-         return make_boolean(tok.value, tok.src)
-      if kind == TOK_IDENT:
-         self._advance()
-         return make_symbol(tok.value, tok.src)
-      if kind == TOK_LPAREN or kind == TOK_LBRACKET:
-         return self._read_list()
-      if kind == TOK_BYTEVECTOR_LPAREN:
-         return self._read_bytevector()
-      if kind == TOK_VECTOR_LPAREN:
-         return self._read_vector()
-      if kind == TOK_QUOTE:
-         quote_tok = self._advance()
-         datum     = self.parse_expr()
-         quote_sym = make_symbol('quote', quote_tok.src)
-         inner = alloc_cons(datum, NIL_VALUE, quote_tok.src)
-         return alloc_cons(quote_sym, inner, quote_tok.src)
-      if kind == TOK_QUASIQUOTE:
-         qq_tok = self._advance()
-         datum  = self.parse_expr()
-         qq_sym = make_symbol('quasiquote', qq_tok.src)
-         inner  = alloc_cons(datum, NIL_VALUE, qq_tok.src)
-         return alloc_cons(qq_sym, inner, qq_tok.src)
-      if kind == TOK_UNQUOTE:
-         uq_tok = self._advance()
-         datum  = self.parse_expr()
-         uq_sym = make_symbol('unquote', uq_tok.src)
-         inner  = alloc_cons(datum, NIL_VALUE, uq_tok.src)
-         return alloc_cons(uq_sym, inner, uq_tok.src)
-      if kind == TOK_UNQUOTE_SPLICING:
-         us_tok = self._advance()
-         datum  = self.parse_expr()
-         us_sym = make_symbol('unquote-splicing', us_tok.src)
-         inner  = alloc_cons(datum, NIL_VALUE, us_tok.src)
-         return alloc_cons(us_sym, inner, us_tok.src)
-      if kind == TOK_RPAREN:
-         raise SchemeSyntaxError("unexpected ')'", tok.src)
-      if kind == TOK_RBRACKET:
-         raise SchemeSyntaxError("unexpected ']'", tok.src)
-      if kind == TOK_DOT:
-         raise SchemeSyntaxError("unexpected '.' outside of a list", tok.src)
-      if kind == TOK_EOF:
-         raise SchemeSyntaxError("unexpected end of input", tok.src)
-      raise SchemeSyntaxError("unexpected token %s" % kind, tok.src)
+                "unexpected '.' outside of a list", tok.src)
+        if kind == TOK_EOF:
+            raise SchemeSyntaxError("unexpected end of input", tok.src)
+        raise SchemeSyntaxError("unexpected token %s" % kind, tok.src)
 
-   def _read_bytevector(self):
-      bv_tok = self._advance()   # consume '#u8(' or '#vu8('
-      items = []
-      while True:
-         self._skip_datum_comments()
-         tok = self._peek()
-         if tok.kind == TOK_RPAREN:
-            self._advance()
-            bv = make_bytevector(bytearray(items))
-            bv.immutable = True
-            return bv
-         if tok.kind == TOK_EOF:
-            raise SchemeSyntaxError('unterminated bytevector literal', bv_tok.src)
-         elem = self.parse_expr()
-         if not is_integer(elem):
-            raise SchemeSyntaxError(
-               'bytevector element must be an exact integer in 0-255', bv_tok.src)
-         n = as_integer(elem)
-         if n < 0 or n > 255:
-            raise SchemeSyntaxError(
-               'bytevector element out of range 0-255: %d' % n, bv_tok.src)
-         items.append(n)
+    def _read_bytevector(self):
+        bv_tok = self._advance()   # consume '#u8(' or '#vu8('
+        items = []
+        while True:
+            self._skip_datum_comments()
+            tok = self._peek()
+            if tok.kind == TOK_RPAREN:
+                self._advance()
+                bv = make_bytevector(bytearray(items))
+                bv.immutable = True
+                return bv
+            if tok.kind == TOK_EOF:
+                raise SchemeSyntaxError(
+                    'unterminated bytevector literal', bv_tok.src)
+            elem = self.parse_expr()
+            if not is_integer(elem):
+                raise SchemeSyntaxError(
+                    'bytevector element must be an exact integer in 0-255', bv_tok.src)
+            n = as_integer(elem)
+            if n < 0 or n > 255:
+                raise SchemeSyntaxError(
+                    'bytevector element out of range 0-255: %d' % n, bv_tok.src)
+            items.append(n)
 
-   def _read_vector(self):
-      vec_tok = self._advance()   # consume '#('
-      items = []
-      while True:
-         self._skip_datum_comments()
-         tok = self._peek()
-         if tok.kind == TOK_RPAREN:
-            self._advance()
-            v = make_vector(items)
-            v.immutable = True
-            return v
-         if tok.kind == TOK_EOF:
-            raise SchemeSyntaxError('unterminated vector literal', vec_tok.src)
-         items.append(self.parse_expr())
+    def _read_vector(self):
+        vec_tok = self._advance()   # consume '#('
+        items = []
+        while True:
+            self._skip_datum_comments()
+            tok = self._peek()
+            if tok.kind == TOK_RPAREN:
+                self._advance()
+                v = make_vector(items)
+                v.immutable = True
+                return v
+            if tok.kind == TOK_EOF:
+                raise SchemeSyntaxError(
+                    'unterminated vector literal', vec_tok.src)
+            items.append(self.parse_expr())
 
-   def _read_list(self):
-      lparen    = self._advance()   # consume '(' or '['
-      is_bracket = lparen.kind == TOK_LBRACKET
-      closer     = TOK_RBRACKET if is_bracket else TOK_RPAREN
-      closer_ch  = ']'           if is_bracket else ')'
-      items  = []
-      dotted_tail = None
-      while True:
-         self._skip_datum_comments()
-         tok = self._peek()
-         if tok.kind == closer:
-            self._advance()
-            return Parser._build_list(items, dotted_tail, lparen.src)
-         if tok.kind == TOK_RPAREN or tok.kind == TOK_RBRACKET:
-            raise SchemeSyntaxError(
-               "mismatched bracket: expected '%s'" % closer_ch, tok.src)
-         if tok.kind == TOK_DOT:
-            dot = self._advance()
-            if not items:
-               raise SchemeSyntaxError(
-                  "dot must be preceded by at least one element", dot.src)
-            nxt = self._peek()
-            if nxt.kind in (TOK_RPAREN, TOK_RBRACKET, TOK_EOF, TOK_DOT):
-               raise SchemeSyntaxError(
-                  "dot must be followed by an expression", nxt.src)
-            dotted_tail = self.parse_expr()
-            closing = self._peek()
-            if closing.kind != closer:
-               raise SchemeSyntaxError(
-                  "expected '%s' after dotted tail" % closer_ch, closing.src)
-            self._advance()
-            return Parser._build_list(items, dotted_tail, lparen.src)
-         if tok.kind == TOK_EOF:
-            raise SchemeSyntaxError(
-               "unterminated list (missing '%s')" % closer_ch, lparen.src)
-         items.append(self.parse_expr())
+    def _read_list(self):
+        lparen = self._advance()   # consume '(' or '['
+        is_bracket = lparen.kind == TOK_LBRACKET
+        closer = TOK_RBRACKET if is_bracket else TOK_RPAREN
+        closer_ch = ']' if is_bracket else ')'
+        items = []
+        dotted_tail = None
+        while True:
+            self._skip_datum_comments()
+            tok = self._peek()
+            if tok.kind == closer:
+                self._advance()
+                return Parser._build_list(items, dotted_tail, lparen.src)
+            if tok.kind == TOK_RPAREN or tok.kind == TOK_RBRACKET:
+                raise SchemeSyntaxError(
+                    "mismatched bracket: expected '%s'" % closer_ch, tok.src)
+            if tok.kind == TOK_DOT:
+                dot = self._advance()
+                if not items:
+                    raise SchemeSyntaxError(
+                        "dot must be preceded by at least one element", dot.src)
+                nxt = self._peek()
+                if nxt.kind in (TOK_RPAREN, TOK_RBRACKET, TOK_EOF, TOK_DOT):
+                    raise SchemeSyntaxError(
+                        "dot must be followed by an expression", nxt.src)
+                dotted_tail = self.parse_expr()
+                closing = self._peek()
+                if closing.kind != closer:
+                    raise SchemeSyntaxError(
+                        "expected '%s' after dotted tail" % closer_ch, closing.src)
+                self._advance()
+                return Parser._build_list(items, dotted_tail, lparen.src)
+            if tok.kind == TOK_EOF:
+                raise SchemeSyntaxError(
+                    "unterminated list (missing '%s')" % closer_ch, lparen.src)
+            items.append(self.parse_expr())
 
 
 # -------- Public entry points --------
 
 def parse(source, filename=None):
-   """Read all top-level forms.  Returns a Python list of Values (each
-   a cons-cell chain or an atom tuple)."""
-   return Parser(tokenize(source, filename)).parse_program()
+    """Read all top-level forms.  Returns a Python list of Values (each
+    a cons-cell chain or an atom tuple)."""
+    return Parser(tokenize(source, filename)).parse_program()
 
 
 def parse_one(source, filename=None):
-   """Read a single expression; error if source contains anything after it."""
-   parser = Parser(tokenize(source, filename))
-   expr   = parser.parse_expr()
-   tok    = parser._peek()
-   if tok.kind != TOK_EOF:
-      raise SchemeSyntaxError(
-         "unexpected token after expression: %s" % tok.kind, tok.src)
-   return expr
+    """Read a single expression; error if source contains anything after it."""
+    parser = Parser(tokenize(source, filename))
+    expr = parser.parse_expr()
+    tok = parser._peek()
+    if tok.kind != TOK_EOF:
+        raise SchemeSyntaxError(
+            "unexpected token after expression: %s" % tok.kind, tok.src)
+    return expr
 
 
 # -------- Self-test --------
 
 def _strip_src(v):
-   """Recursively convert parser-produced values to position-free Python
-   structures for test comparison:
-      ConsCell chain  -> Python list (proper) or (items, tail) tuple (dotted)
-      Atom tuple      -> same tag+payload tuple with the trailing src stripped
-      NIL_VALUE       -> empty list []
-   """
-   if is_cons(v):
-      items = []
-      cur   = v
-      while is_cons(cur):
-         items.append(_strip_src(cur.car))
-         cur = cur.cdr
-      if is_nil(cur):
-         return items
-      return (items, _strip_src(cur))
-   if is_nil(v):
-      return []
-   if is_integer(v):
-      return make_integer(as_integer(v))
-   if is_real(v):
-      return make_real(as_real(v))
-   if is_rational(v):
-      return make_rational(as_rational_num(v), as_rational_den(v))
-   if is_string(v):
-      return make_string(as_string(v))
-   if is_character(v):
-      return make_character(as_character(v))
-   if is_boolean(v):
-      return make_boolean(as_boolean(v))
-   if is_symbol(v):
-      return make_symbol(as_symbol(v))
-   return v
+    """Recursively convert parser-produced values to position-free Python
+    structures for test comparison:
+       ConsCell chain  -> Python list (proper) or (items, tail) tuple (dotted)
+       Atom tuple      -> same tag+payload tuple with the trailing src stripped
+       NIL_VALUE       -> empty list []
+    """
+    if is_cons(v):
+        items = []
+        cur = v
+        while is_cons(cur):
+            items.append(_strip_src(cur.car))
+            cur = cur.cdr
+        if is_nil(cur):
+            return items
+        return (items, _strip_src(cur))
+    if is_nil(v):
+        return []
+    if is_integer(v):
+        return make_integer(as_integer(v))
+    if is_real(v):
+        return make_real(as_real(v))
+    if is_rational(v):
+        return make_rational(as_rational_num(v), as_rational_den(v))
+    if is_string(v):
+        return make_string(as_string(v))
+    if is_character(v):
+        return make_character(as_character(v))
+    if is_boolean(v):
+        return make_boolean(as_boolean(v))
+    if is_symbol(v):
+        return make_symbol(as_symbol(v))
+    return v
 
 
 if __name__ == '__main__':
-   n_pass = 0
-   n_fail = 0
+    n_pass = 0
+    n_fail = 0
 
-   happy = [
-      # literals
-      ('42',                  make_integer(42)),
-      ('-5',                  make_integer(-5)),
-      ('3.14',                make_real(3.14)),
-      ('3/4',                 make_rational(3, 4)),
-      ('#t',                  make_boolean(True)),
-      ('#f',                  make_boolean(False)),
-      ('#\\a',                make_character('a')),
-      ('#\\space',            make_character(' ')),
-      ('"hello"',             make_string('hello')),
+    happy = [
+        # literals
+        ('42',                  make_integer(42)),
+        ('-5',                  make_integer(-5)),
+        ('3.14',                make_real(3.14)),
+        ('3/4',                 make_rational(3, 4)),
+        ('#t',                  make_boolean(True)),
+        ('#f',                  make_boolean(False)),
+        ('#\\a',                make_character('a')),
+        ('#\\space',            make_character(' ')),
+        ('"hello"',             make_string('hello')),
 
-      # identifiers
-      ('x',                   make_symbol('x')),
-      ('foo-bar',             make_symbol('foo-bar')),
-      ('+',                   make_symbol('+')),
-      ('lambda',              make_symbol('lambda')),
-      ('set!',                make_symbol('set!')),
+        # identifiers
+        ('x',                   make_symbol('x')),
+        ('foo-bar',             make_symbol('foo-bar')),
+        ('+',                   make_symbol('+')),
+        ('lambda',              make_symbol('lambda')),
+        ('set!',                make_symbol('set!')),
 
-      # lists - no special-form handling
-      ('()',                  []),
-      ('(1 2 3)',             [make_integer(1), make_integer(2), make_integer(3)]),
-      ('(lambda (x) x)',
-         [make_symbol('lambda'), [make_symbol('x')], make_symbol('x')]),
-      ('(define (f x) x)',
-         [make_symbol('define'),
+        # lists - no special-form handling
+        ('()',                  []),
+        ('(1 2 3)',             [make_integer(
+            1), make_integer(2), make_integer(3)]),
+        ('(lambda (x) x)',
+            [make_symbol('lambda'), [make_symbol('x')], make_symbol('x')]),
+        ('(define (f x) x)',
+            [make_symbol('define'),
              [make_symbol('f'), make_symbol('x')],
-             make_symbol('x')]),
-      ('(if #t 1)',
-         [make_symbol('if'), make_boolean(True), make_integer(1)]),
-      ('(if #t 1 2)',
-         [make_symbol('if'), make_boolean(True), make_integer(1), make_integer(2)]),
+                make_symbol('x')]),
+        ('(if #t 1)',
+            [make_symbol('if'), make_boolean(True), make_integer(1)]),
+        ('(if #t 1 2)',
+            [make_symbol('if'), make_boolean(True), make_integer(1), make_integer(2)]),
 
-      # nested
-      ('((lambda (x) x) 7)',
-         [[make_symbol('lambda'), [make_symbol('x')], make_symbol('x')],
-          make_integer(7)]),
+        # nested
+        ('((lambda (x) x) 7)',
+            [[make_symbol('lambda'), [make_symbol('x')], make_symbol('x')],
+             make_integer(7)]),
 
-      # quote shortcut becomes a list
-      ("'x",
-         [make_symbol('quote'), make_symbol('x')]),
-      ("'42",
-         [make_symbol('quote'), make_integer(42)]),
-      ("'(a b c)",
-         [make_symbol('quote'),
+        # quote shortcut becomes a list
+        ("'x",
+            [make_symbol('quote'), make_symbol('x')]),
+        ("'42",
+            [make_symbol('quote'), make_integer(42)]),
+        ("'(a b c)",
+            [make_symbol('quote'),
              [make_symbol('a'), make_symbol('b'), make_symbol('c')]]),
-      ("''x",
-         [make_symbol('quote'),
+        ("''x",
+            [make_symbol('quote'),
              [make_symbol('quote'), make_symbol('x')]]),
 
-      # dotted / improper lists
-      ('(a . b)',             ([make_symbol('a')], make_symbol('b'))),
-      ('(a b . c)',           ([make_symbol('a'), make_symbol('b')], make_symbol('c'))),
+        # dotted / improper lists
+        ('(a . b)',             ([make_symbol('a')], make_symbol('b'))),
+        ('(a b . c)',           ([make_symbol('a'),
+                                  make_symbol('b')], make_symbol('c'))),
 
-      # comments / whitespace
-      ('  42 ; comment\n',    make_integer(42)),
-   ]
+        # comments / whitespace
+        ('  42 ; comment\n',    make_integer(42)),
+    ]
 
-   print('-- happy path --')
-   i = 0
-   while i < len(happy):
-      source   = happy[i][0]
-      expected = happy[i][1]
-      try:
-         got = parse_one(source)
-      except SchemeSyntaxError as e:
-         print("[FAIL] %r: unexpected error %s" % (source, e))
-         n_fail = n_fail + 1
-         i = i + 1
-         continue
-      stripped = _strip_src(got)
-      if stripped == expected:
-         print("[ OK ] %r" % source)
-         n_pass = n_pass + 1
-      else:
-         print("[FAIL] %r" % source)
-         print("        expected: %r" % (expected,))
-         print("        got:      %r" % (stripped,))
-         n_fail = n_fail + 1
-      i = i + 1
-
-   # Lex/syntactic errors only.  Any "shape of a special form" check now
-   # belongs to the Analyzer.
-   errors = [
-      ('(',                      'unterminated list'),
-      (')',                      "unexpected ')'"),
-      ('(1 2',                   'unterminated list'),
-      ('"unterminated',          'unexpected character'),
-      ('"\\q"',                  'unknown string escape'),
-      ('#\\unknown',             'unknown character name'),
-      ('1abc',                   'malformed number or identifier'),
-      ('#z',                     'unknown #-syntax'),
-      ('',                       'unexpected end of input'),
-   ]
-
-   print()
-   print('-- error path --')
-   i = 0
-   while i < len(errors):
-      source            = errors[i][0]
-      expected_fragment = errors[i][1]
-      try:
-         parse_one(source)
-      except SchemeSyntaxError as e:
-         if expected_fragment in str(e):
-            print("[ OK ] %r  ->  %s" % (source, e))
+    print('-- happy path --')
+    i = 0
+    while i < len(happy):
+        source = happy[i][0]
+        expected = happy[i][1]
+        try:
+            got = parse_one(source)
+        except SchemeSyntaxError as e:
+            print("[FAIL] %r: unexpected error %s" % (source, e))
+            n_fail = n_fail + 1
+            i = i + 1
+            continue
+        stripped = _strip_src(got)
+        if stripped == expected:
+            print("[ OK ] %r" % source)
             n_pass = n_pass + 1
-         else:
-            print("[WARN] %r  ->  %s" % (source, e))
-            print("        expected substring: %r" % expected_fragment)
-            n_pass = n_pass + 1
-         i = i + 1
-         continue
-      print("[FAIL] %r should have raised SchemeSyntaxError" % source)
-      n_fail = n_fail + 1
-      i = i + 1
+        else:
+            print("[FAIL] %r" % source)
+            print("        expected: %r" % (expected,))
+            print("        got:      %r" % (stripped,))
+            n_fail = n_fail + 1
+        i = i + 1
 
-   # Source-position checks: verify that atoms carry their own src and
-   # that a cons cell's src points at the '(' that opened the list.
+    # Lex/syntactic errors only.  Any "shape of a special form" check now
+    # belongs to the Analyzer.
+    errors = [
+        ('(',                      'unterminated list'),
+        (')',                      "unexpected ')'"),
+        ('(1 2',                   'unterminated list'),
+        ('"unterminated',          'unexpected character'),
+        ('"\\q"',                  'unknown string escape'),
+        ('#\\unknown',             'unknown character name'),
+        ('1abc',                   'malformed number or identifier'),
+        ('#z',                     'unknown #-syntax'),
+        ('',                       'unexpected end of input'),
+    ]
 
-   print()
-   print('-- source positions --')
+    print()
+    print('-- error path --')
+    i = 0
+    while i < len(errors):
+        source = errors[i][0]
+        expected_fragment = errors[i][1]
+        try:
+            parse_one(source)
+        except SchemeSyntaxError as e:
+            if expected_fragment in str(e):
+                print("[ OK ] %r  ->  %s" % (source, e))
+                n_pass = n_pass + 1
+            else:
+                print("[WARN] %r  ->  %s" % (source, e))
+                print("        expected substring: %r" % expected_fragment)
+                n_pass = n_pass + 1
+            i = i + 1
+            continue
+        print("[FAIL] %r should have raised SchemeSyntaxError" % source)
+        n_fail = n_fail + 1
+        i = i + 1
 
-   expr = parse_one('(foo bar)')
-   check_pos = expr.src
-   if check_pos is not None and check_pos.line == 1 and check_pos.col == 1:
-      print("[ OK ] list cons src at '(' (line 1 col 1)")
-      n_pass = n_pass + 1
-   else:
-      print("[FAIL] list cons src: expected line 1 col 1, got %r" % check_pos)
-      n_fail = n_fail + 1
+    # Source-position checks: verify that atoms carry their own src and
+    # that a cons cell's src points at the '(' that opened the list.
 
-   foo_atom = expr.car
-   foo_src  = src_of(foo_atom)
-   if foo_src is not None and foo_src.line == 1 and foo_src.col == 2:
-      print("[ OK ] atom 'foo' src (line 1 col 2)")
-      n_pass = n_pass + 1
-   else:
-      print("[FAIL] atom 'foo' src: expected line 1 col 2, got %r" % foo_src)
-      n_fail = n_fail + 1
+    print()
+    print('-- source positions --')
 
-   bar_atom = expr.cdr.car
-   bar_src  = src_of(bar_atom)
-   if bar_src is not None and bar_src.line == 1 and bar_src.col == 6:
-      print("[ OK ] atom 'bar' src (line 1 col 6)")
-      n_pass = n_pass + 1
-   else:
-      print("[FAIL] atom 'bar' src: expected line 1 col 6, got %r" % bar_src)
-      n_fail = n_fail + 1
+    expr = parse_one('(foo bar)')
+    check_pos = expr.src
+    if check_pos is not None and check_pos.line == 1 and check_pos.col == 1:
+        print("[ OK ] list cons src at '(' (line 1 col 1)")
+        n_pass = n_pass + 1
+    else:
+        print("[FAIL] list cons src: expected line 1 col 1, got %r" % check_pos)
+        n_fail = n_fail + 1
 
-   # Filename propagation: REPL filename marker reaches every atom and cons
-   from pyscheme.AST import REPL_FILENAME
-   rexpr = parse_one('(a)', filename=REPL_FILENAME)
-   if rexpr.src is not None and rexpr.src.filename == REPL_FILENAME:
-      print("[ OK ] cons filename propagated")
-      n_pass = n_pass + 1
-   else:
-      print("[FAIL] cons filename: expected %r, got %r" % (REPL_FILENAME, rexpr.src))
-      n_fail = n_fail + 1
-   a_atom = rexpr.car
-   a_src  = src_of(a_atom)
-   if a_src is not None and a_src.filename == REPL_FILENAME:
-      print("[ OK ] atom filename propagated")
-      n_pass = n_pass + 1
-   else:
-      print("[FAIL] atom filename: expected %r, got %r" % (REPL_FILENAME, a_src))
-      n_fail = n_fail + 1
+    foo_atom = expr.car
+    foo_src = src_of(foo_atom)
+    if foo_src is not None and foo_src.line == 1 and foo_src.col == 2:
+        print("[ OK ] atom 'foo' src (line 1 col 2)")
+        n_pass = n_pass + 1
+    else:
+        print("[FAIL] atom 'foo' src: expected line 1 col 2, got %r" % foo_src)
+        n_fail = n_fail + 1
 
-   print()
-   print("%d passed, %d failed" % (n_pass, n_fail))
+    bar_atom = expr.cdr.car
+    bar_src = src_of(bar_atom)
+    if bar_src is not None and bar_src.line == 1 and bar_src.col == 6:
+        print("[ OK ] atom 'bar' src (line 1 col 6)")
+        n_pass = n_pass + 1
+    else:
+        print("[FAIL] atom 'bar' src: expected line 1 col 6, got %r" % bar_src)
+        n_fail = n_fail + 1
+
+    # Filename propagation: REPL filename marker reaches every atom and cons
+    from pyscheme.AST import REPL_FILENAME
+    rexpr = parse_one('(a)', filename=REPL_FILENAME)
+    if rexpr.src is not None and rexpr.src.filename == REPL_FILENAME:
+        print("[ OK ] cons filename propagated")
+        n_pass = n_pass + 1
+    else:
+        print("[FAIL] cons filename: expected %r, got %r" %
+              (REPL_FILENAME, rexpr.src))
+        n_fail = n_fail + 1
+    a_atom = rexpr.car
+    a_src = src_of(a_atom)
+    if a_src is not None and a_src.filename == REPL_FILENAME:
+        print("[ OK ] atom filename propagated")
+        n_pass = n_pass + 1
+    else:
+        print("[FAIL] atom filename: expected %r, got %r" %
+              (REPL_FILENAME, a_src))
+        n_fail = n_fail + 1
+
+    print()
+    print("%d passed, %d failed" % (n_pass, n_fail))

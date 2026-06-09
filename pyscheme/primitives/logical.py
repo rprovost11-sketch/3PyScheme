@@ -15,34 +15,36 @@ _SPECIAL = 'special'
 
 
 def _prim_not(ctx, env, args, app_node):
-   return make_boolean(isFalse(args[0]))
+    return make_boolean(isFalse(args[0]))
 
 
 def _form_and(ctx, env, args, app_node):
-   raise RuntimeError("'and' is a special form, not a procedure.")
+    raise RuntimeError("'and' is a special form, not a procedure.")
+
+
 def _form_or(ctx, env, args, app_node):
-   raise RuntimeError("'or' is a special form, not a procedure.")
+    raise RuntimeError("'or' is a special form, not a procedure.")
 
 
 def register():
-   register_primitive('not', (1, 1), _prim_not,
-      doc=(
-         "Return #t if a is #f, and #f otherwise.  In Scheme only #f is\n"
-         "considered false; every other value (including 0 and the empty list)\n"
-         "is truthy."),
-      category=CATEGORY)
+    register_primitive('not', (1, 1), _prim_not,
+                       doc=(
+        "Return #t if a is #f, and #f otherwise.  In Scheme only #f is\n"
+        "considered false; every other value (including 0 and the empty list)\n"
+        "is truthy."),
+        category=CATEGORY)
 
-   register_primitive('and', (0, None), _form_and,
-      usage='(and <expr>...)',
-      doc=(
-         "Evaluate expressions left to right.  Short-circuit and return #f\n"
-         "on the first false expression; otherwise return the last value.  With no\n"
-         "arguments, returns #t."),
-      category=CATEGORY, kind=_SPECIAL)
+    register_primitive('and', (0, None), _form_and,
+                       usage='(and <expr>...)',
+                       doc=(
+        "Evaluate expressions left to right.  Short-circuit and return #f\n"
+        "on the first false expression; otherwise return the last value.  With no\n"
+        "arguments, returns #t."),
+        category=CATEGORY, kind=_SPECIAL)
 
-   register_primitive('or', (0, None), _form_or,
-      usage='(or <expr>...)',
-      doc=(
-         "Evaluate expressions left to right.  Short-circuit and return\n"
-         "the first truthy value; otherwise return #f.  With no arguments, returns #f."),
-      category=CATEGORY, kind=_SPECIAL)
+    register_primitive('or', (0, None), _form_or,
+                       usage='(or <expr>...)',
+                       doc=(
+        "Evaluate expressions left to right.  Short-circuit and return\n"
+        "the first truthy value; otherwise return #f.  With no arguments, returns #f."),
+        category=CATEGORY, kind=_SPECIAL)
