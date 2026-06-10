@@ -106,7 +106,49 @@ TOK_LABEL_DEF = 'LABEL_DEF'
 TOK_LABEL_REF = 'LABEL_REF'
 
 
-_MAX_PARSE_DEPTH = 500   # graceful cap on reader nesting (mirrors _MAX_EXPAND_DEPTH)
+# Reader frame kinds — one per in-progress container/wrapper on the explicit
+# stack used by Parser._read_datum (replaces host recursion; see that method).
+_F_LIST = 0          # ( ... )  or  [ ... ]
+_F_VECTOR = 1        # #( ... )
+_F_BYTEVECTOR = 2    # #u8( ... )
+_F_PREFIX = 3        # '  `  ,  ,@   (wraps exactly one datum)
+_F_LABEL_LIST = 4    # #n= followed by a list   (stub pre-registered)
+_F_LABEL_VECTOR = 5  # #n= followed by a vector (pre_vector pre-registered)
+_F_LABEL_PLAIN = 6   # #n= followed by an atom/prefix/bytevector (registered after)
+_F_DISCARD = 7       # #;   (reads one datum and throws it away)
+
+# Sentinel returned by Parser._emit when the emitted value was consumed by a
+# container/discard frame (so the driver loop should read the next datum)
+# rather than being the final result.
+_READ_MORE = object()
+
+
+class _ParseFrame:
+    """One in-progress container/wrapper on the reader's explicit stack.
+
+    Carries the union of fields the various frame kinds need; only the fields
+    relevant to `kind` are populated.  Holding this state on a heap list (rather
+    than the host call stack) is what lets the reader handle arbitrarily deep
+    nesting without a recursion-depth cap."""
+
+    __slots__ = ('kind', 'items', 'src', 'closer', 'closer_ch',
+                 'want_tail', 'tail_filled', 'dotted_tail',
+                 'sym', 'label_n', 'stub', 'pre_vector', 'pre_items')
+
+    def __init__(self, kind):
+        self.kind = kind
+        self.items = None          # list: accumulated elements (LIST/VECTOR/BYTEVECTOR)
+        self.src = None            # SourceInfo of the opening token
+        self.closer = None         # TOK_RPAREN | TOK_RBRACKET (LIST)
+        self.closer_ch = None      # ')' | ']'                  (LIST)
+        self.want_tail = False     # saw '.' — next datum is the improper tail (LIST)
+        self.tail_filled = False   # the dotted tail has been read (LIST)
+        self.dotted_tail = None    # the improper-list tail value (LIST)
+        self.sym = None            # the wrapper symbol (PREFIX)
+        self.label_n = None        # datum-label number (LABEL_*)
+        self.stub = None           # pre-allocated cons mutated in place (LABEL_LIST)
+        self.pre_vector = None     # pre-created vector (LABEL_VECTOR)
+        self.pre_items = None      # the vector's backing list (LABEL_VECTOR)
 
 
 class Token:
@@ -857,7 +899,6 @@ class Parser:
         self.tokens = tokens
         self.pos = 0
         self.labels = {}   # datum labels: int -> value  (R7RS §2.4)
-        self._depth = 0    # parse_expr nesting depth (capped by _MAX_PARSE_DEPTH)
 
     def _peek(self):
         return self.tokens[self.pos]
@@ -884,217 +925,329 @@ class Parser:
         return forms
 
     def parse_expr(self):
-        # Bound recursion depth so deeply-nested input fails with a graceful
-        # syntax error instead of RecursionError / host-stack overflow (the reader
-        # is recursive-descent).  Caps nesting only; flat lists of any length are
-        # unaffected.  Mirrors the expander's _MAX_EXPAND_DEPTH.
-        self._depth = self._depth + 1
-        if self._depth > _MAX_PARSE_DEPTH:
-            self._depth = self._depth - 1
-            raise SchemeSyntaxError('expression nesting too deep', self._peek().src)
-        try:
-            return self._parse_expr_inner()
-        finally:
-            self._depth = self._depth - 1
+        """Read exactly one complete datum.
 
-    def _parse_expr_inner(self):
-        self._skip_datum_comments()
-        tok = self._peek()
-        kind = tok.kind
-        # Datum label definition: #n= <datum>  (R7RS §2.4)
-        if kind == TOK_LABEL_DEF:
-            self._advance()
-            label_n = tok.value
-            if label_n in self.labels:
+        Iterative: nesting (lists, vectors, bytevectors, reader prefixes, datum
+        labels and datum comments) is driven by an explicit frame stack rather
+        than host recursion, so arbitrarily deep input is read without any
+        nesting cap or RecursionError.  Flat lists of any length were always
+        fine; this removes the depth ceiling too.  Behaviour is otherwise
+        identical to the former recursive reader (same values, source positions,
+        immutability, datum-label semantics and error messages)."""
+        stack = []
+        while True:
+            top = stack[-1] if stack else None
+
+            # --- Container contexts: handle their own closer / dot / EOF ------
+            # A list whose dotted tail is already read accepts only its closer.
+            if top is not None and top.kind == _F_LIST and top.tail_filled:
+                tok = self._peek()
+                if tok.kind == top.closer:
+                    self._advance()
+                    built = Parser._build_list(
+                        top.items, top.dotted_tail, top.src)
+                    stack.pop()
+                    res = self._emit(stack, built)
+                    if res is _READ_MORE:
+                        continue
+                    return res
                 raise SchemeSyntaxError(
-                    'duplicate datum label #%d=' % label_n, tok.src)
-            nxt = self._peek()
-            # Pre-allocate a stub so forward #n# refs inside the datum work.
-            if nxt.kind == TOK_LPAREN or nxt.kind == TOK_LBRACKET:
-                # Lists: stub is a ConsCell mutated in-place after parsing.
-                stub = alloc_cons(NIL_VALUE, NIL_VALUE, nxt.src)
-                self.labels[label_n] = stub
-                datum = self.parse_expr()
-                if is_cons(datum):
-                    stub.car = datum.car
-                    stub.cdr = datum.cdr
-                    return stub
-                self.labels[label_n] = datum
-                return datum
-            if nxt.kind == TOK_VECTOR_LPAREN:
-                # Vectors: pre-create the vector with a mutable items list so
-                # any #n# references inside the vector resolve to the final object.
-                pre_items = []
-                pre_vector = make_vector(pre_items)
-                self.labels[label_n] = pre_vector
-                datum = self.parse_expr()
-                parsed_items = as_vector_items(datum)
+                    "expected '%s' after dotted tail" % top.closer_ch, tok.src)
+
+            # An open list/vector/bytevector reading its next element.  (A list
+            # that has seen '.' but not yet read the tail falls through to the
+            # generic datum reader below, so the tail is read like any datum —
+            # a closer/EOF there is an error, exactly as before.)
+            in_container = (top is not None and
+                            (top.kind == _F_VECTOR or top.kind == _F_BYTEVECTOR or
+                             (top.kind == _F_LIST and not top.want_tail)))
+            if in_container:
+                tok = self._peek()
+                kind = tok.kind
+                if top.kind == _F_LIST:
+                    if kind == top.closer:
+                        self._advance()
+                        built = Parser._build_list(top.items, None, top.src)
+                        stack.pop()
+                        res = self._emit(stack, built)
+                        if res is _READ_MORE:
+                            continue
+                        return res
+                    if kind == TOK_RPAREN or kind == TOK_RBRACKET:
+                        raise SchemeSyntaxError(
+                            "mismatched bracket: expected '%s'" % top.closer_ch,
+                            tok.src)
+                    if kind == TOK_DOT:
+                        dot = self._advance()
+                        if not top.items:
+                            raise SchemeSyntaxError(
+                                "dot must be preceded by at least one element",
+                                dot.src)
+                        nxt = self._peek()
+                        if nxt.kind in (TOK_RPAREN, TOK_RBRACKET, TOK_EOF, TOK_DOT):
+                            raise SchemeSyntaxError(
+                                "dot must be followed by an expression", nxt.src)
+                        top.want_tail = True
+                        continue
+                    if kind == TOK_EOF:
+                        raise SchemeSyntaxError(
+                            "unterminated list (missing '%s')" % top.closer_ch,
+                            top.src)
+                    # otherwise: start of an element -> generic datum reader
+                elif top.kind == _F_VECTOR:
+                    if kind == TOK_RPAREN:
+                        self._advance()
+                        v = make_vector(top.items)
+                        v.immutable = True
+                        stack.pop()
+                        res = self._emit(stack, v)
+                        if res is _READ_MORE:
+                            continue
+                        return res
+                    if kind == TOK_EOF:
+                        raise SchemeSyntaxError(
+                            'unterminated vector literal', top.src)
+                    # otherwise: element -> generic datum reader
+                else:   # _F_BYTEVECTOR
+                    if kind == TOK_RPAREN:
+                        self._advance()
+                        bv = make_bytevector(bytearray(top.items))
+                        bv.immutable = True
+                        stack.pop()
+                        res = self._emit(stack, bv)
+                        if res is _READ_MORE:
+                            continue
+                        return res
+                    if kind == TOK_EOF:
+                        raise SchemeSyntaxError(
+                            'unterminated bytevector literal', top.src)
+                    # otherwise: element -> generic datum reader
+
+            # --- Generic datum reader -----------------------------------------
+            # Reaches here at top level, for a single-child frame's datum
+            # (prefix / label / discard / dotted tail), or for a container
+            # element that wasn't a closer/dot/EOF.  Either pushes a frame and
+            # loops, or produces a completed `value` and emits it.
+            tok = self._peek()
+            kind = tok.kind
+
+            # Datum comment: #;  -- read and discard the next datum.
+            if kind == TOK_DATUM_COMMENT:
+                self._advance()
+                stack.append(_ParseFrame(_F_DISCARD))
+                continue
+
+            # Datum label definition: #n= <datum>  (R7RS §2.4)
+            if kind == TOK_LABEL_DEF:
+                self._advance()
+                label_n = tok.value
+                if label_n in self.labels:
+                    raise SchemeSyntaxError(
+                        'duplicate datum label #%d=' % label_n, tok.src)
+                nxt = self._peek()
+                # Pre-register a stub so forward #n# refs inside the datum work.
+                if nxt.kind == TOK_LPAREN or nxt.kind == TOK_LBRACKET:
+                    # Lists: stub is a ConsCell mutated in-place after parsing.
+                    stub = alloc_cons(NIL_VALUE, NIL_VALUE, nxt.src)
+                    self.labels[label_n] = stub
+                    f = _ParseFrame(_F_LABEL_LIST)
+                    f.label_n = label_n
+                    f.stub = stub
+                    stack.append(f)
+                    continue
+                if nxt.kind == TOK_VECTOR_LPAREN:
+                    # Vectors: pre-create with a mutable backing list so any
+                    # #n# references inside resolve to the final object.
+                    pre_items = []
+                    pre_vector = make_vector(pre_items)
+                    self.labels[label_n] = pre_vector
+                    f = _ParseFrame(_F_LABEL_VECTOR)
+                    f.label_n = label_n
+                    f.pre_vector = pre_vector
+                    f.pre_items = pre_items
+                    stack.append(f)
+                    continue
+                # Atoms / prefixes / bytevectors: register after the datum is read.
+                f = _ParseFrame(_F_LABEL_PLAIN)
+                f.label_n = label_n
+                stack.append(f)
+                continue
+
+            # Datum label reference: #n#  (R7RS §2.4)
+            if kind == TOK_LABEL_REF:
+                self._advance()
+                label_n = tok.value
+                if label_n not in self.labels:
+                    raise SchemeSyntaxError(
+                        'undefined datum label #%d#' % label_n, tok.src)
+                value = self.labels[label_n]
+            elif kind == TOK_INT:
+                self._advance()
+                value = make_integer(tok.value, tok.src)
+            elif kind == TOK_REAL:
+                self._advance()
+                value = make_real(tok.value, tok.src)
+            elif kind == TOK_RATIONAL:
+                self._advance()
+                value = make_rational(tok.value[0], tok.value[1], tok.src)
+            elif kind == TOK_COMPLEX:
+                self._advance()
+                value = make_complex(tok.value[0], tok.value[1], tok.src)
+            elif kind == TOK_EXACT_COMPLEX:
+                self._advance()
+                re_s = tok.value[0]
+                im_s = tok.value[1]
+                if is_integer(im_s) and as_integer(im_s) == 0:
+                    value = re_s
+                else:
+                    value = make_exact_complex(re_s, im_s, tok.src)
+            elif kind == TOK_STRING:
+                self._advance()
+                value = make_string(tok.value, tok.src)
+                value.immutable = True
+            elif kind == TOK_CHAR:
+                self._advance()
+                value = make_character(tok.value, tok.src)
+            elif kind == TOK_BOOL:
+                self._advance()
+                value = make_boolean(tok.value, tok.src)
+            elif kind == TOK_IDENT:
+                self._advance()
+                value = make_symbol(tok.value, tok.src)
+            elif kind == TOK_LPAREN or kind == TOK_LBRACKET:
+                self._advance()
+                f = _ParseFrame(_F_LIST)
+                f.items = []
+                f.src = tok.src
+                if kind == TOK_LBRACKET:
+                    f.closer = TOK_RBRACKET
+                    f.closer_ch = ']'
+                else:
+                    f.closer = TOK_RPAREN
+                    f.closer_ch = ')'
+                stack.append(f)
+                continue
+            elif kind == TOK_VECTOR_LPAREN:
+                self._advance()
+                f = _ParseFrame(_F_VECTOR)
+                f.items = []
+                f.src = tok.src
+                stack.append(f)
+                continue
+            elif kind == TOK_BYTEVECTOR_LPAREN:
+                self._advance()
+                f = _ParseFrame(_F_BYTEVECTOR)
+                f.items = []
+                f.src = tok.src
+                stack.append(f)
+                continue
+            elif kind == TOK_QUOTE:
+                self._advance()
+                f = _ParseFrame(_F_PREFIX)
+                f.sym = make_symbol('quote', tok.src)
+                f.src = tok.src
+                stack.append(f)
+                continue
+            elif kind == TOK_QUASIQUOTE:
+                self._advance()
+                f = _ParseFrame(_F_PREFIX)
+                f.sym = make_symbol('quasiquote', tok.src)
+                f.src = tok.src
+                stack.append(f)
+                continue
+            elif kind == TOK_UNQUOTE:
+                self._advance()
+                f = _ParseFrame(_F_PREFIX)
+                f.sym = make_symbol('unquote', tok.src)
+                f.src = tok.src
+                stack.append(f)
+                continue
+            elif kind == TOK_UNQUOTE_SPLICING:
+                self._advance()
+                f = _ParseFrame(_F_PREFIX)
+                f.sym = make_symbol('unquote-splicing', tok.src)
+                f.src = tok.src
+                stack.append(f)
+                continue
+            elif kind == TOK_RPAREN:
+                raise SchemeSyntaxError("unexpected ')'", tok.src)
+            elif kind == TOK_RBRACKET:
+                raise SchemeSyntaxError("unexpected ']'", tok.src)
+            elif kind == TOK_DOT:
+                raise SchemeSyntaxError(
+                    "unexpected '.' outside of a list", tok.src)
+            elif kind == TOK_EOF:
+                raise SchemeSyntaxError("unexpected end of input", tok.src)
+            else:
+                raise SchemeSyntaxError("unexpected token %s" % kind, tok.src)
+
+            # We have a completed `value`; feed it to the enclosing frame(s).
+            res = self._emit(stack, value)
+            if res is _READ_MORE:
+                continue
+            return res
+
+    def _emit(self, stack, value):
+        """Feed a completed datum to the top frame, reducing single-child
+        frames (prefix / datum-label / discard) as far as possible.
+
+        Returns the final value when the stack empties (it is the result), or
+        the sentinel _READ_MORE when the value was absorbed by a still-open
+        container or dropped by a datum comment (the driver should read on)."""
+        while stack:
+            top = stack[-1]
+            kind = top.kind
+            if kind == _F_LIST:
+                if top.want_tail and not top.tail_filled:
+                    top.dotted_tail = value
+                    top.tail_filled = True
+                else:
+                    top.items.append(value)
+                return _READ_MORE
+            if kind == _F_VECTOR:
+                top.items.append(value)
+                return _READ_MORE
+            if kind == _F_BYTEVECTOR:
+                if not is_integer(value):
+                    raise SchemeSyntaxError(
+                        'bytevector element must be an exact integer in 0-255',
+                        top.src)
+                n = as_integer(value)
+                if n < 0 or n > 255:
+                    raise SchemeSyntaxError(
+                        'bytevector element out of range 0-255: %d' % n, top.src)
+                top.items.append(n)
+                return _READ_MORE
+            if kind == _F_DISCARD:
+                stack.pop()
+                return _READ_MORE
+            if kind == _F_PREFIX:
+                stack.pop()
+                inner = alloc_cons(value, NIL_VALUE, top.src)
+                value = alloc_cons(top.sym, inner, top.src)
+                continue
+            if kind == _F_LABEL_LIST:
+                stack.pop()
+                if is_cons(value):
+                    top.stub.car = value.car
+                    top.stub.cdr = value.cdr
+                    value = top.stub
+                else:
+                    self.labels[top.label_n] = value
+                continue
+            if kind == _F_LABEL_VECTOR:
+                stack.pop()
+                parsed_items = as_vector_items(value)
                 i = 0
                 while i < len(parsed_items):
-                    pre_items.append(parsed_items[i])
+                    top.pre_items.append(parsed_items[i])
                     i = i + 1
-                return pre_vector
-            datum = self.parse_expr()
-            self.labels[label_n] = datum
-            return datum
-        # Datum label reference: #n#  (R7RS §2.4)
-        if kind == TOK_LABEL_REF:
-            self._advance()
-            label_n = tok.value
-            if label_n not in self.labels:
-                raise SchemeSyntaxError(
-                    'undefined datum label #%d#' % label_n, tok.src)
-            return self.labels[label_n]
-        if kind == TOK_INT:
-            self._advance()
-            return make_integer(tok.value, tok.src)
-        if kind == TOK_REAL:
-            self._advance()
-            return make_real(tok.value, tok.src)
-        if kind == TOK_RATIONAL:
-            self._advance()
-            return make_rational(tok.value[0], tok.value[1], tok.src)
-        if kind == TOK_COMPLEX:
-            self._advance()
-            return make_complex(tok.value[0], tok.value[1], tok.src)
-        if kind == TOK_EXACT_COMPLEX:
-            self._advance()
-            re_s = tok.value[0]
-            im_s = tok.value[1]
-            if is_integer(im_s) and as_integer(im_s) == 0:
-                return re_s
-            return make_exact_complex(re_s, im_s, tok.src)
-        if kind == TOK_STRING:
-            self._advance()
-            s = make_string(tok.value, tok.src)
-            s.immutable = True
-            return s
-        if kind == TOK_CHAR:
-            self._advance()
-            return make_character(tok.value, tok.src)
-        if kind == TOK_BOOL:
-            self._advance()
-            return make_boolean(tok.value, tok.src)
-        if kind == TOK_IDENT:
-            self._advance()
-            return make_symbol(tok.value, tok.src)
-        if kind == TOK_LPAREN or kind == TOK_LBRACKET:
-            return self._read_list()
-        if kind == TOK_BYTEVECTOR_LPAREN:
-            return self._read_bytevector()
-        if kind == TOK_VECTOR_LPAREN:
-            return self._read_vector()
-        if kind == TOK_QUOTE:
-            quote_tok = self._advance()
-            datum = self.parse_expr()
-            quote_sym = make_symbol('quote', quote_tok.src)
-            inner = alloc_cons(datum, NIL_VALUE, quote_tok.src)
-            return alloc_cons(quote_sym, inner, quote_tok.src)
-        if kind == TOK_QUASIQUOTE:
-            qq_tok = self._advance()
-            datum = self.parse_expr()
-            qq_sym = make_symbol('quasiquote', qq_tok.src)
-            inner = alloc_cons(datum, NIL_VALUE, qq_tok.src)
-            return alloc_cons(qq_sym, inner, qq_tok.src)
-        if kind == TOK_UNQUOTE:
-            uq_tok = self._advance()
-            datum = self.parse_expr()
-            uq_sym = make_symbol('unquote', uq_tok.src)
-            inner = alloc_cons(datum, NIL_VALUE, uq_tok.src)
-            return alloc_cons(uq_sym, inner, uq_tok.src)
-        if kind == TOK_UNQUOTE_SPLICING:
-            us_tok = self._advance()
-            datum = self.parse_expr()
-            us_sym = make_symbol('unquote-splicing', us_tok.src)
-            inner = alloc_cons(datum, NIL_VALUE, us_tok.src)
-            return alloc_cons(us_sym, inner, us_tok.src)
-        if kind == TOK_RPAREN:
-            raise SchemeSyntaxError("unexpected ')'", tok.src)
-        if kind == TOK_RBRACKET:
-            raise SchemeSyntaxError("unexpected ']'", tok.src)
-        if kind == TOK_DOT:
-            raise SchemeSyntaxError(
-                "unexpected '.' outside of a list", tok.src)
-        if kind == TOK_EOF:
-            raise SchemeSyntaxError("unexpected end of input", tok.src)
-        raise SchemeSyntaxError("unexpected token %s" % kind, tok.src)
-
-    def _read_bytevector(self):
-        bv_tok = self._advance()   # consume '#u8(' or '#vu8('
-        items = []
-        while True:
-            self._skip_datum_comments()
-            tok = self._peek()
-            if tok.kind == TOK_RPAREN:
-                self._advance()
-                bv = make_bytevector(bytearray(items))
-                bv.immutable = True
-                return bv
-            if tok.kind == TOK_EOF:
-                raise SchemeSyntaxError(
-                    'unterminated bytevector literal', bv_tok.src)
-            elem = self.parse_expr()
-            if not is_integer(elem):
-                raise SchemeSyntaxError(
-                    'bytevector element must be an exact integer in 0-255', bv_tok.src)
-            n = as_integer(elem)
-            if n < 0 or n > 255:
-                raise SchemeSyntaxError(
-                    'bytevector element out of range 0-255: %d' % n, bv_tok.src)
-            items.append(n)
-
-    def _read_vector(self):
-        vec_tok = self._advance()   # consume '#('
-        items = []
-        while True:
-            self._skip_datum_comments()
-            tok = self._peek()
-            if tok.kind == TOK_RPAREN:
-                self._advance()
-                v = make_vector(items)
-                v.immutable = True
-                return v
-            if tok.kind == TOK_EOF:
-                raise SchemeSyntaxError(
-                    'unterminated vector literal', vec_tok.src)
-            items.append(self.parse_expr())
-
-    def _read_list(self):
-        lparen = self._advance()   # consume '(' or '['
-        is_bracket = lparen.kind == TOK_LBRACKET
-        closer = TOK_RBRACKET if is_bracket else TOK_RPAREN
-        closer_ch = ']' if is_bracket else ')'
-        items = []
-        dotted_tail = None
-        while True:
-            self._skip_datum_comments()
-            tok = self._peek()
-            if tok.kind == closer:
-                self._advance()
-                return Parser._build_list(items, dotted_tail, lparen.src)
-            if tok.kind == TOK_RPAREN or tok.kind == TOK_RBRACKET:
-                raise SchemeSyntaxError(
-                    "mismatched bracket: expected '%s'" % closer_ch, tok.src)
-            if tok.kind == TOK_DOT:
-                dot = self._advance()
-                if not items:
-                    raise SchemeSyntaxError(
-                        "dot must be preceded by at least one element", dot.src)
-                nxt = self._peek()
-                if nxt.kind in (TOK_RPAREN, TOK_RBRACKET, TOK_EOF, TOK_DOT):
-                    raise SchemeSyntaxError(
-                        "dot must be followed by an expression", nxt.src)
-                dotted_tail = self.parse_expr()
-                closing = self._peek()
-                if closing.kind != closer:
-                    raise SchemeSyntaxError(
-                        "expected '%s' after dotted tail" % closer_ch, closing.src)
-                self._advance()
-                return Parser._build_list(items, dotted_tail, lparen.src)
-            if tok.kind == TOK_EOF:
-                raise SchemeSyntaxError(
-                    "unterminated list (missing '%s')" % closer_ch, lparen.src)
-            items.append(self.parse_expr())
+                value = top.pre_vector
+                continue
+            # _F_LABEL_PLAIN
+            stack.pop()
+            self.labels[top.label_n] = value
+        return value
 
 
 # -------- Public entry points --------
