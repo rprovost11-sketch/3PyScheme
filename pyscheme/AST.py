@@ -394,6 +394,8 @@ PRIM_STRING_MAP = 20
 PRIM_STRING_FOR_EACH = 21
 PRIM_MEMBER = 22
 PRIM_ASSOC = 23
+PRIM_PORT_RUNNER = 24
+PRIM_LOAD = 25
 
 _PRIMITIVE_KIND_BY_NAME = {
     'call-with-current-continuation': PRIM_CALL_CC,
@@ -420,6 +422,19 @@ _PRIMITIVE_KIND_BY_NAME = {
     'string-for-each':                PRIM_STRING_FOR_EACH,
     'member':                         PRIM_MEMBER,
     'assoc':                          PRIM_ASSOC,
+    # Port runners apply a user proc/thunk then run fixed cleanup (close the
+    # port; the with-* forms also restore a current-port parameter).  The
+    # evaluator intercepts them so the proc runs on the K stack and the cleanup
+    # rides the dynamic-wind machinery -- see port_runner_setup / PRIM_PORT_RUNNER.
+    'call-with-port':                 PRIM_PORT_RUNNER,
+    'call-with-input-file':           PRIM_PORT_RUNNER,
+    'call-with-output-file':          PRIM_PORT_RUNNER,
+    'with-input-from-file':           PRIM_PORT_RUNNER,
+    'with-output-to-file':            PRIM_PORT_RUNNER,
+    'with-input-from-string':         PRIM_PORT_RUNNER,
+    # load evaluates a file's top-level forms; the evaluator drives them on the
+    # main K stack via FRAME_EVAL_FORMS instead of a re-entrant cek_eval.
+    'load':                           PRIM_LOAD,
 }
 
 

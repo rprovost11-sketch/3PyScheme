@@ -94,7 +94,7 @@ from pyscheme.AST import (
     PRIM_WITH_PARAMETERS, PRIM_DYNAMIC_WIND, PRIM_ORDINARY,
     PRIM_CONTINUATION_DEPTH, PRIM_MAP, PRIM_FOR_EACH, PRIM_FILTER,
     PRIM_VECTOR_MAP, PRIM_VECTOR_FOR_EACH, PRIM_STRING_MAP, PRIM_STRING_FOR_EACH,
-    PRIM_MEMBER, PRIM_ASSOC,
+    PRIM_MEMBER, PRIM_ASSOC, PRIM_PORT_RUNNER, PRIM_LOAD,
     as_closure_params, as_closure_body, as_closure_env, as_closure_rest_name,
     as_case_closure_clauses, as_case_closure_env, as_parameter_value,
     as_continuation_k, as_continuation_wind, as_continuation_shadow,
@@ -150,6 +150,13 @@ FRAME_GUARD = 26
 FRAME_HOF_STEP = 27
 FRAME_HOF_STEP_IDX = 28
 FRAME_SEARCH_STEP = 29
+FRAME_RESTORE_VALUE = 30
+FRAME_DYNAMIC_WIND_BEFORE_DONE = 31
+FRAME_PARAMETERIZE_STEP = 32
+FRAME_WIND_STEP = 33
+FRAME_ERROR_UNWIND = 34
+FRAME_EVAL_FORMS = 35
+FRAME_LIB_FINALIZE = 36
 
 # Sentinel marking the very first FRAME_HOF_STEP entry, where V holds the
 # higher-order call's last argument (not a callback result) and must be
@@ -248,6 +255,28 @@ _MULTI_VALUES_OK_FRAMES = frozenset([
     FRAME_HOF_STEP,
     FRAME_HOF_STEP_IDX,
     FRAME_SEARCH_STEP,
+    # FRAME_RESTORE_VALUE discards the incoming V (a wind after-thunk's result)
+    # and reinstates a saved value, so a multi-valued after result is harmless.
+    FRAME_RESTORE_VALUE,
+    # FRAME_DYNAMIC_WIND_BEFORE_DONE discards the before-thunk's result before
+    # tail-calling the body, so a multi-valued before result is harmless.
+    FRAME_DYNAMIC_WIND_BEFORE_DONE,
+    # FRAME_PARAMETERIZE_STEP collects each converter's result as an installed
+    # parameter value; tolerate a multi-valued converter result as the old
+    # synchronous converter application did.
+    FRAME_PARAMETERIZE_STEP,
+    # FRAME_WIND_STEP discards each wind thunk's result and finally installs the
+    # continuation's value (which may itself be multiple values).
+    FRAME_WIND_STEP,
+    # FRAME_ERROR_UNWIND discards each unwind after-thunk's result before either
+    # dispatching the handler or re-raising; multi-values are irrelevant here.
+    FRAME_ERROR_UNWIND,
+    # FRAME_EVAL_FORMS discards each top-level form's result (load / library
+    # loading sequence the forms for effect), so multi-values are harmless.
+    FRAME_EVAL_FORMS,
+    # FRAME_LIB_FINALIZE builds + registers a library's exports; the incoming V
+    # (the last library form's result) is discarded.
+    FRAME_LIB_FINALIZE,
 ])
 
 _SHADOW_DEPTH_LIMIT = 50
@@ -461,16 +490,12 @@ def _restore_shadow_stack(ctx, snapshot):
     ctx.shadow_stack.extend(snapshot)
 
 
-def _build_parameterize_winds(params_list, values_list, ctx, saved_env, app_node):
-    """Prepare a parameterize wind frame: walk the parameter / value lists,
-    apply converters, compute install-and-save state, and return a pair of
-    Python-backed primitives (install_thunk, restore_thunk) that wind_walk
-    and FRAME_DYNAMIC_WIND_AFTER can invoke as Scheme procedures.  Also
-    installs the new values so the thunk sees them immediately; on normal
-    return FRAME_DYNAMIC_WIND_AFTER pops and calls restore_thunk, and on
-    exception _unwind_winds_on_error does the same."""
-    from pyscheme.primitives.meta import _apply_scheme_proc
-
+def _resolve_parameterize_params(params_list, values_list, ctx, app_node):
+    """Phase 1 of parameterize setup: walk the parameter / value lists,
+    resolve current-port accessor primitives to their backing parameters,
+    and validate.  Returns (params, new_vals_raw).  Pure -- no converter
+    application, no install -- so the converters can run on the K stack
+    (FRAME_PARAMETERIZE_STEP) instead of re-entering cek_eval."""
     params = []
     cur = params_list
     while is_cons(cur):
@@ -506,18 +531,17 @@ def _build_parameterize_winds(params_list, values_list, ctx, saved_env, app_node
     if len(params) != len(new_vals_raw):
         raise SchemeTypeError(
             '%with-parameters: parameter / value count mismatch', app_node)
+    return (params, new_vals_raw)
 
-    installed = []
-    i = 0
-    while i < len(params):
-        conv = as_parameter_converter(params[i])
-        if conv is None:
-            installed.append(new_vals_raw[i])
-        else:
-            installed.append(
-                _apply_scheme_proc(conv, [new_vals_raw[i]], ctx, saved_env, app_node))
-        i = i + 1
 
+def _finalize_parameterize_winds(params, installed, ctx):
+    """Phase 2 of parameterize setup, run once FRAME_PARAMETERIZE_STEP has
+    applied every converter and collected the `installed` values: save the
+    current values, install the new ones so the thunk sees them, and return a
+    pair of Python-backed primitives (install_thunk, restore_thunk) that
+    _wind_walk and FRAME_DYNAMIC_WIND_AFTER invoke as Scheme procedures.  Saving
+    after the converters (not before) matches the old _build_parameterize_winds
+    ordering."""
     saved_values = []
     i = 0
     while i < len(params):
@@ -581,12 +605,75 @@ def _continuation_must_escape(ctx, cont):
     return owner != ctx.current_eval_id and _eval_id_active(ctx, owner)
 
 
+def _build_hof_frame(fn_value, kind, collected, app_node):
+    """If fn_value is a higher-order primitive whose per-element calls are
+    driven on the K stack -- map / for-each / filter (FRAME_HOF_STEP), the
+    vector/string variants (FRAME_HOF_STEP_IDX), or the 3-arg member / assoc
+    forms (FRAME_SEARCH_STEP) -- build and return its driver frame; otherwise
+    return None.
+
+    Shared by the FRAME_CALL terminal dispatch and _enter_proc so that one of
+    these primitives reached as a *callback* (e.g. the per-element proc of an
+    outer map, as in (map filter ...)) is driven on frames too, rather than
+    re-entering cek_eval through its _prim_* fallback body.  Keeping the single
+    source of truth here guarantees the callback path and the direct-operator
+    path agree on arity checks, type checks, and frame layout."""
+    src = src_of(app_node) if app_node is not None else None
+    if kind == PRIM_MAP or kind == PRIM_FOR_EACH or kind == PRIM_FILTER:
+        name = as_primitive_name(fn_value)
+        if kind == PRIM_FILTER:
+            if len(collected) != 2:
+                raise SchemeArityError(
+                    arity_mismatch_msg(name, 2, 2, len(collected)), src)
+        elif len(collected) < 2:
+            raise SchemeArityError(
+                arity_mismatch_msg(name, 2, None, len(collected)), src)
+        return (FRAME_HOF_STEP, kind, collected[0],
+                tuple(collected[1:]), NIL_VALUE, app_node, _HOF_START)
+    if (kind == PRIM_VECTOR_MAP or kind == PRIM_VECTOR_FOR_EACH
+            or kind == PRIM_STRING_MAP or kind == PRIM_STRING_FOR_EACH):
+        name = as_primitive_name(fn_value)
+        if len(collected) < 2:
+            raise SchemeArityError(
+                arity_mismatch_msg(name, 2, None, len(collected)), src)
+        is_vec = (kind == PRIM_VECTOR_MAP or kind == PRIM_VECTOR_FOR_EACH)
+        seqs = []
+        shortest = None
+        j = 1
+        while j < len(collected):
+            seq = collected[j]
+            if is_vec:
+                if not is_vector(seq):
+                    raise SchemeTypeError(
+                        '%s: argument %d must be a vector' % (name, j + 1), src)
+                seq_len = len(as_vector_items(seq))
+            else:
+                if not is_string(seq):
+                    raise SchemeTypeError(
+                        '%s: argument %d must be a string' % (name, j + 1), src)
+                seq_len = len(as_string(seq))
+            seqs.append(seq)
+            if shortest is None or seq_len < shortest:
+                shortest = seq_len
+            j = j + 1
+        return (FRAME_HOF_STEP_IDX, kind, collected[0], tuple(seqs), 0,
+                shortest, NIL_VALUE, app_node, False)
+    if (kind == PRIM_MEMBER or kind == PRIM_ASSOC) and len(collected) == 3:
+        return (FRAME_SEARCH_STEP, kind, collected[2], collected[0],
+                collected[1], app_node, False)
+    return None
+
+
 def _enter_proc(fn_value, args, ctx, saved_env, app_node):
     """Dispatch a procedure application with known args.  Returns a
     next-state descriptor so frame handlers can update the CEK state
     without duplicating the FRAME_CALL terminal-dispatch logic:
       ('value', V)                 - primitive or parameter produced V
       ('cont',  new_K, new_V)      - continuation invoked; restore K and V
+      ('frame', frame)             - higher-order primitive reached as a
+                                     callback; push `frame` on K and resume the
+                                     APPLY loop (drives the call on frames
+                                     instead of re-entering cek_eval)
       ('enter', C, new_env, seq)   - closure entered; eval C in new_env;
                                      push FRAME_SEQ(seq, new_env) if seq is
                                      not None (multi-form body)"""
@@ -595,15 +682,29 @@ def _enter_proc(fn_value, args, ctx, saved_env, app_node):
         if _continuation_must_escape(ctx, fn_value):
             raise ContinuationEscape(
                 as_continuation_owner(fn_value), fn_value, args)
-        _wind_walk(ctx, as_continuation_wind(fn_value))
-        _restore_handler_stack(ctx, as_continuation_handlers(fn_value))
-        return ('cont',
-                list(as_continuation_k(fn_value)),
-                _continuation_value(fn_value, args))
+        # Drive the wind walk on the K stack (FRAME_WIND_STEP), which then
+        # installs the continuation.  Delivered via the ('frame', ...)
+        # descriptor every _enter_proc caller already handles, so the wind
+        # before/after thunks run without re-entering cek_eval.
+        return ('frame',
+                (FRAME_WIND_STEP,
+                 _compute_wind_ops(ctx, as_continuation_wind(fn_value)),
+                 0, fn_value, _continuation_value(fn_value, args)))
     pv = _apply_parameter_if(fn_value, len(args), app_node)
     if pv is not None:
         return ('value', pv)
     if is_primitive(fn_value):
+        pkind = as_primitive_kind(fn_value)
+        hof_frame = _build_hof_frame(fn_value, pkind, args, app_node)
+        if hof_frame is not None:
+            return ('frame', hof_frame)
+        if pkind == PRIM_LOAD:
+            # load reached as a callback (e.g. (for-each load files)): read +
+            # parse and drive its forms on the K stack, like the FRAME_CALL
+            # interception, rather than re-entering cek_eval via _prim_load.
+            from pyscheme.primitives.meta import load_setup
+            _lf = load_setup(args, saved_env, app_node)
+            return ('frame', (FRAME_EVAL_FORMS, _lf[0], _lf[1], 0, {}, True))
         V = as_primitive_fn(fn_value)(ctx, saved_env, args, app_node)
         return ('value', V)
     # Record accessors / mutators are first-class procedures (R7RS 5.5), so the
@@ -677,12 +778,43 @@ def _continuation_value(cont, arg_values):
     return make_multi_values(list(arg_values))
 
 
+def _compute_wind_ops(ctx, target):
+    """Return the ordered wind operations that transform ctx.wind_stack into
+    `target` (a continuation's wind snapshot), WITHOUT mutating the stack or
+    running any thunk:
+      ('exit', after_thunk)         -- leaving an extent: pop the top, run after
+      ('enter', before_thunk, entry)-- entering an extent: push entry, run before
+    Exits come first (innermost-first), then enters (outermost-first), matching
+    _wind_walk's order.  FRAME_WIND_STEP performs the pops/pushes and runs the
+    thunks on the K stack, so a continuation jump across dynamic-wind /
+    parameterize no longer re-enters cek_eval via _apply_scheme_proc."""
+    ws = ctx.wind_stack
+    common = 0
+    while common < len(ws) and common < len(target):
+        cur = ws[common]
+        tgt = target[common]
+        if cur[0] is not tgt[0] or cur[1] is not tgt[1]:
+            break
+        common = common + 1
+    ops = []
+    j = len(ws)
+    while j > common:
+        ops.append(('exit', ws[j - 1][1]))
+        j = j - 1
+    i = common
+    while i < len(target):
+        ops.append(('enter', target[i][0], target[i]))
+        i = i + 1
+    return ops
+
+
 def _wind_walk(ctx, target):
     """Adjust ctx.wind_stack to match `target` (a list of (before, after) pairs).
     For frames being exited (below the common prefix of current and target),
     call the after thunk and pop.  For frames being entered, push and call
-    the before thunk.  Used when invoking a continuation whose wind-stack
-    snapshot differs from the current stack."""
+    the before thunk.  Now used only by the ContinuationEscape backstop; the
+    normal continuation-jump path drives the same walk on the K stack via
+    _compute_wind_ops + FRAME_WIND_STEP."""
     from pyscheme.primitives.meta import _apply_scheme_proc
     ws = ctx.wind_stack
     common = 0
@@ -956,11 +1088,13 @@ def _process_import(sets_cons, env, ctx=None):
         cur = cur.cdr
 
 
-def _process_one_lib_decl(decl, lib_env, export_names, ctx):
-    """Process a single library declaration in the context of an active
-    _process_define_library call.  Mutates lib_env / export_names in place.
-    Recursive: include-library-declarations and cond-expand decls call
-    back into this function for the forms they produce."""
+def _process_one_lib_decl(decl, lib_env, export_names, eval_forms, ctx):
+    """Process a single library declaration during define-library setup.
+    Mutates lib_env (import bindings) / export_names in place and APPENDS any
+    begin / unknown-decl forms (unexpanded) to eval_forms, to be evaluated on
+    the main K stack later (FRAME_EVAL_FORMS) rather than via a re-entrant
+    cek_eval here.  Recursive: include-library-declarations and cond-expand
+    decls call back into this function for the forms they produce."""
     from pyscheme.library import resolve_import_set
     from pyscheme.Parser import SchemeSyntaxError, parse
     from pyscheme.Expander import expand, _include_base_dir, _feature_req_matches
@@ -1020,7 +1154,7 @@ def _process_one_lib_decl(decl, lib_env, export_names, ctx):
     if dsym == 'begin':
         forms = dbody
         while is_cons(forms):
-            cek_eval(expand(forms.car), lib_env, ctx)
+            eval_forms.append(forms.car)
             forms = forms.cdr
         return
 
@@ -1049,7 +1183,8 @@ def _process_one_lib_decl(decl, lib_env, export_names, ctx):
             f.close()
             inner_forms = parse(source, resolved)
             for inner in inner_forms:
-                _process_one_lib_decl(inner, lib_env, export_names, ctx)
+                _process_one_lib_decl(
+                    inner, lib_env, export_names, eval_forms, ctx)
             paths = paths.cdr
         return
 
@@ -1070,32 +1205,44 @@ def _process_one_lib_decl(decl, lib_env, export_names, ctx):
                 cur_inner = body
                 while is_cons(cur_inner):
                     _process_one_lib_decl(
-                        cur_inner.car, lib_env, export_names, ctx)
+                        cur_inner.car, lib_env, export_names, eval_forms, ctx)
                     cur_inner = cur_inner.cdr
                 return
         # No clause matched: silently produce no declarations (R7RS).
         return
 
-    # Unknown declaration keyword: expand and evaluate whole decl in
-    # lib_env.  Covers stray (define ...) forms or other top-level
-    # shapes; the expand step also routes define-syntax through the
-    # active per-library macro scope.
-    cek_eval(expand(decl), lib_env, ctx)
+    # Unknown declaration keyword: collect for evaluation in lib_env on the
+    # main loop.  Covers stray (define ...) forms or other top-level shapes;
+    # the later expand step routes define-syntax through the active per-library
+    # macro scope (FRAME_EVAL_FORMS expands while _runtime_env_ref is lib_env).
+    eval_forms.append(decl)
 
 
-def _process_define_library(C, ctx):
-    """Top-level (define-library <name> <decl>...).  Creates a fresh
-    parentless env, processes decls in order (with the runtime env
-    reference temporarily swapped to lib_env so define-syntax inside
-    the library's begin body installs transformers in lib_env, scoped
-    to this library), builds an exports env per the export declarations,
-    and registers under the library's key.  Macros become regular lib_env
-    bindings, so the export filter exposes them like any other binding."""
-    from pyscheme.library import (
-        library_name_to_key, library_register,
-    )
-    from pyscheme.Parser import SchemeSyntaxError
+def _make_runtime_env_setter(target_env):
+    """Return a Python-backed primitive that sets _runtime_env_ref[0] =
+    target_env.  Used as a define-library wind's before/after so the per-library
+    macro scope (for define-syntax) is established on entry and restored on exit,
+    on the main loop -- across normal return, error unwind, and continuation
+    re-entry alike (replacing the old try/finally restore)."""
     from pyscheme.Expander import _runtime_env_ref
+
+    def setter(ctx2, env2, args2, app_node2):
+        _runtime_env_ref[0] = target_env
+        return VOID_VALUE
+    return setter
+
+
+def define_library_setup(C, ctx):
+    """Pre-pass for (define-library <name> <decl>...): validate, create the
+    library env, and process the declarations IN ORDER -- binding imports,
+    collecting export names, flattening include / cond-expand -- while
+    COLLECTING the begin / unknown-decl forms (unexpanded) into eval_forms for
+    evaluation on the main K stack.  Returns (lib_env, eval_forms, export_names,
+    key).  Evaluates no form and does NOT swap _runtime_env_ref (no
+    define-syntax runs here); the evaluator swaps it around the FRAME_EVAL_FORMS
+    phase and registers the library via FRAME_LIB_FINALIZE."""
+    from pyscheme.library import library_name_to_key
+    from pyscheme.Parser import SchemeSyntaxError
     if not is_cons(C.cdr):
         raise SchemeSyntaxError(
             'define-library: missing library name', src_of(C))
@@ -1108,18 +1255,20 @@ def _process_define_library(C, ctx):
 
     lib_env = Environment(parent=None)
     export_names = []          # Python list of (internal, external) pairs
-    # Swap the runtime env to lib_env so define-syntax binds transformers
-    # into this library's env rather than into the surrounding env.
-    outer_env = _runtime_env_ref[0]
-    _runtime_env_ref[0] = lib_env
-    try:
-        d = decls_cons
-        while is_cons(d):
-            _process_one_lib_decl(d.car, lib_env, export_names, ctx)
-            d = d.cdr
-    finally:
-        _runtime_env_ref[0] = outer_env
+    eval_forms = []            # begin / unknown-decl forms, in declaration order
+    d = decls_cons
+    while is_cons(d):
+        _process_one_lib_decl(d.car, lib_env, export_names, eval_forms, ctx)
+        d = d.cdr
+    return (lib_env, eval_forms, export_names, key)
 
+
+def _finalize_define_library(lib_env, export_names, key, C):
+    """Build the exports env from export_names + lib_env and register the
+    library under key.  Run by FRAME_LIB_FINALIZE after the library's forms have
+    been evaluated on the main loop (so exported names are defined)."""
+    from pyscheme.library import library_register
+    from pyscheme.Parser import SchemeSyntaxError
     # Build exports env: copy each (internal, external) entry out of
     # lib_env; missing names are hard errors.
     from pyscheme.AST import is_syntax_transformer
@@ -1255,8 +1404,29 @@ def _cek_loop(expr, env, ctx):
 
                             elif sf_kind == _SF_DEFINE_LIBRARY:
                                 # (define-library <name> <decl>...) - install a new
-                                # library.  Returns VOID; no visible effect on E.
-                                _process_define_library(C, ctx)
+                                # library.  Pre-pass resolves the pure decls and
+                                # collects the begin/unknown forms; those evaluate on
+                                # the main loop (FRAME_EVAL_FORMS) with _runtime_env_ref
+                                # swapped to lib_env -- restored via a wind so it resets
+                                # on normal return, error, and continuation escape --
+                                # then FRAME_LIB_FINALIZE builds + registers exports.
+                                # No re-entrant cek_eval.  Returns VOID.
+                                from pyscheme.Expander import _runtime_env_ref
+                                _dl = define_library_setup(C, ctx)
+                                _dl_env = _dl[0]
+                                _dl_install = make_primitive(
+                                    '%define-library-install-env',
+                                    _make_runtime_env_setter(_dl_env))
+                                _dl_restore = make_primitive(
+                                    '%define-library-restore-env',
+                                    _make_runtime_env_setter(_runtime_env_ref[0]))
+                                _runtime_env_ref[0] = _dl_env
+                                ctx.wind_stack.append((_dl_install, _dl_restore))
+                                K.append((FRAME_DYNAMIC_WIND_AFTER, _dl_restore))
+                                K.append(
+                                    (FRAME_LIB_FINALIZE, _dl_env, _dl[2], _dl[3], C))
+                                K.append((FRAME_EVAL_FORMS, _dl[1], _dl_env,
+                                          0, {}, False))
                                 V = VOID_VALUE
                                 break
 
@@ -1557,16 +1727,261 @@ def _cek_loop(expr, env, ctx):
 
                     if ftag == FRAME_DYNAMIC_WIND_AFTER:
                         # frame = (FRAME_DYNAMIC_WIND_AFTER, after_thunk)
-                        # The thunk has produced its value (now in V).  Pop the wind
-                        # entry, save the body result across the after call, then run
-                        # after for its effect and restore the result.
-                        from pyscheme.primitives.meta import _apply_scheme_proc
+                        # The body has produced its value (now in V).  Pop the wind
+                        # entry, then run after_thunk on the K stack (not via a
+                        # re-entrant _apply_scheme_proc) for its effect, preserving the
+                        # body result across it with FRAME_RESTORE_VALUE.
                         after_thunk = frame[1]
-                        body_result = V
                         if ctx.wind_stack:
                             ctx.wind_stack.pop()
-                        _apply_scheme_proc(after_thunk, [], ctx, None, None)
-                        V = body_result
+                        K.append((FRAME_RESTORE_VALUE, V))
+                        result = _enter_proc(after_thunk, [], ctx, None, None)
+                        if result[0] == 'value':
+                            V = result[1]
+                            continue
+                        if result[0] == 'cont':
+                            K = result[1]
+                            V = result[2]
+                            continue
+                        if result[0] == 'frame':
+                            K.append(result[1])
+                            continue
+                        C = result[1]
+                        E = result[2]
+                        if result[3] is not None:
+                            K.append((FRAME_SEQ, result[3], E))
+                        break
+
+                    if ftag == FRAME_RESTORE_VALUE:
+                        # frame = (FRAME_RESTORE_VALUE, saved_value)
+                        # Discard the incoming V (a wind after-thunk's result) and
+                        # reinstate the value saved when the frame was pushed.
+                        V = frame[1]
+                        continue
+
+                    if ftag == FRAME_DYNAMIC_WIND_BEFORE_DONE:
+                        # frame = (FRAME_DYNAMIC_WIND_BEFORE_DONE, before, thunk, after)
+                        # The before-thunk has completed (V is its result, discarded).
+                        # Now the dynamic extent is active: install the wind entry and
+                        # after-frame, then tail-call the body thunk on the K stack.
+                        before = frame[1]
+                        thunk = frame[2]
+                        after = frame[3]
+                        ctx.wind_stack.append((before, after))
+                        K.append((FRAME_DYNAMIC_WIND_AFTER, after))
+                        result = _enter_proc(thunk, [], ctx, None, None)
+                        if result[0] == 'value':
+                            V = result[1]
+                            continue
+                        if result[0] == 'cont':
+                            K = result[1]
+                            V = result[2]
+                            continue
+                        if result[0] == 'frame':
+                            K.append(result[1])
+                            continue
+                        C = result[1]
+                        E = result[2]
+                        if result[3] is not None:
+                            K.append((FRAME_SEQ, result[3], E))
+                        break
+
+                    if ftag == FRAME_PARAMETERIZE_STEP:
+                        # frame = (FRAME_PARAMETERIZE_STEP, params, raw_vals, acc,
+                        #          index, thunk, app_node, awaiting)
+                        # Drives parameterize's value converters on the K stack: for
+                        # each parameter with a converter, tail-call it with the raw
+                        # value and collect the result; parameters without a converter
+                        # take the raw value directly.  When every value is converted,
+                        # install the winds (FRAME_DYNAMIC_WIND_AFTER + wind_stack) and
+                        # tail-call the body thunk.  awaiting=True means V holds the
+                        # converter result for params[index] and must be collected.
+                        p_params = frame[1]
+                        p_raw = frame[2]
+                        p_acc = frame[3]
+                        p_i = frame[4]
+                        p_thunk = frame[5]
+                        p_app = frame[6]
+                        p_awaiting = frame[7]
+                        if p_awaiting:
+                            p_acc = p_acc + [V]
+                            p_i = p_i + 1
+                        # Parameters needing no converter take the raw value directly.
+                        while (p_i < len(p_params)
+                               and as_parameter_converter(p_params[p_i]) is None):
+                            p_acc = p_acc + [p_raw[p_i]]
+                            p_i = p_i + 1
+                        if p_i < len(p_params):
+                            # params[p_i] has a converter: run it on the K stack.
+                            conv = as_parameter_converter(p_params[p_i])
+                            K.append((FRAME_PARAMETERIZE_STEP, p_params, p_raw,
+                                      p_acc, p_i, p_thunk, p_app, True))
+                            result = _enter_proc(conv, [p_raw[p_i]], ctx, None, p_app)
+                            if result[0] == 'value':
+                                V = result[1]
+                                continue
+                            if result[0] == 'cont':
+                                K = result[1]
+                                V = result[2]
+                                continue
+                            if result[0] == 'frame':
+                                K.append(result[1])
+                                continue
+                            C = result[1]
+                            E = result[2]
+                            if result[3] is not None:
+                                K.append((FRAME_SEQ, result[3], E))
+                            break
+                        # Every value converted: install winds, tail-call the body.
+                        _pw = _finalize_parameterize_winds(p_params, p_acc, ctx)
+                        ctx.wind_stack.append((_pw[0], _pw[1]))
+                        K.append((FRAME_DYNAMIC_WIND_AFTER, _pw[1]))
+                        result = _enter_proc(p_thunk, [], ctx, None, p_app)
+                        if result[0] == 'value':
+                            V = result[1]
+                            continue
+                        if result[0] == 'cont':
+                            K = result[1]
+                            V = result[2]
+                            continue
+                        if result[0] == 'frame':
+                            K.append(result[1])
+                            continue
+                        C = result[1]
+                        E = result[2]
+                        if result[3] is not None:
+                            K.append((FRAME_SEQ, result[3], E))
+                        break
+
+                    if ftag == FRAME_WIND_STEP:
+                        # frame = (FRAME_WIND_STEP, ops, index, cont, value)
+                        # Drives a continuation jump's wind walk on the K stack: each
+                        # op exits an extent (pop wind_stack, run its after) or enters
+                        # one (push wind_stack, run its before), with the thunk run via
+                        # _enter_proc rather than a re-entrant _apply_scheme_proc.  The
+                        # incoming V (a wind thunk's result) is discarded.  When the ops
+                        # are exhausted, install the continuation: restore the handler /
+                        # shadow stacks, swap in its K, and deliver its value.
+                        w_ops = frame[1]
+                        w_i = frame[2]
+                        w_cont = frame[3]
+                        w_val = frame[4]
+                        if w_i < len(w_ops):
+                            op = w_ops[w_i]
+                            if op[0] == 'exit':
+                                if ctx.wind_stack:
+                                    ctx.wind_stack.pop()
+                                w_thunk = op[1]
+                            else:  # 'enter'
+                                ctx.wind_stack.append(op[2])
+                                w_thunk = op[1]
+                            K.append((FRAME_WIND_STEP, w_ops, w_i + 1,
+                                      w_cont, w_val))
+                            result = _enter_proc(w_thunk, [], ctx, None, None)
+                            if result[0] == 'value':
+                                V = result[1]
+                                continue
+                            if result[0] == 'cont':
+                                K = result[1]
+                                V = result[2]
+                                continue
+                            if result[0] == 'frame':
+                                K.append(result[1])
+                                continue
+                            C = result[1]
+                            E = result[2]
+                            if result[3] is not None:
+                                K.append((FRAME_SEQ, result[3], E))
+                            break
+                        # All wind thunks have run: install the continuation.
+                        _restore_handler_stack(
+                            ctx, as_continuation_handlers(w_cont))
+                        K = list(as_continuation_k(w_cont))
+                        _restore_shadow_stack(
+                            ctx, as_continuation_shadow(w_cont))
+                        V = w_val
+                        continue
+
+                    if ftag == FRAME_ERROR_UNWIND:
+                        # frame = (FRAME_ERROR_UNWIND, afters, index, exc)
+                        # Runs the dynamic-wind after-thunks for the extents between a
+                        # raise and its handler ON THE K STACK (the except block below
+                        # collected them in one scan, preserving its reinstall
+                        # accounting, and left the handler frame installed below so it
+                        # still protects these afters).  Each after's result is
+                        # discarded.  When the afters are exhausted, re-raise the
+                        # original condition: the still-installed handler frame is now
+                        # at the top of K, so the except block dispatches it via its
+                        # no-afters inline path.  Propagate semantics (matches Chez;
+                        # R7RS-unspecified): an after that raises becomes the new
+                        # in-flight condition, caught by that same handler.
+                        eu_afters = frame[1]
+                        eu_i = frame[2]
+                        eu_exc = frame[3]
+                        if eu_i < len(eu_afters):
+                            K.append((FRAME_ERROR_UNWIND, eu_afters,
+                                      eu_i + 1, eu_exc))
+                            result = _enter_proc(
+                                eu_afters[eu_i], [], ctx, None, None)
+                            if result[0] == 'value':
+                                V = result[1]
+                                continue
+                            if result[0] == 'cont':
+                                K = result[1]
+                                V = result[2]
+                                continue
+                            if result[0] == 'frame':
+                                K.append(result[1])
+                                continue
+                            C = result[1]
+                            E = result[2]
+                            if result[3] is not None:
+                                K.append((FRAME_SEQ, result[3], E))
+                            break
+                        raise eu_exc
+
+                    if ftag == FRAME_EVAL_FORMS:
+                        # frame = (FRAME_EVAL_FORMS, forms, env, index, static_env,
+                        #          do_analyze)
+                        # Evaluates a Python list of top-level forms in sequence ON
+                        # THE MAIN K STACK (load / library loading), instead of a
+                        # re-entrant cek_eval per form.  Each form is expanded and
+                        # evaluated; its result is discarded.  do_analyze gates the
+                        # Analyzer pass (load analyzes + accumulates defines into
+                        # static_env; define-library's begin/decl forms are not
+                        # analyzed, matching the old cek_eval(expand(form)) path).
+                        # Yields VOID when the forms are exhausted.
+                        ef_forms = frame[1]
+                        ef_env = frame[2]
+                        ef_i = frame[3]
+                        ef_static = frame[4]
+                        ef_do_analyze = frame[5]
+                        if ef_i >= len(ef_forms):
+                            V = VOID_VALUE
+                            continue
+                        from pyscheme.Expander import expand
+                        expanded = expand(ef_forms[ef_i])
+                        if ef_do_analyze:
+                            from pyscheme.Analyzer import (
+                                analyze, extend_static_env_with_define)
+                            analyze(expanded, ef_static)
+                            extend_static_env_with_define(ef_static, expanded)
+                        K.append((FRAME_EVAL_FORMS, ef_forms, ef_env,
+                                  ef_i + 1, ef_static, ef_do_analyze))
+                        C = expanded
+                        E = ef_env
+                        break
+
+                    if ftag == FRAME_LIB_FINALIZE:
+                        # frame = (FRAME_LIB_FINALIZE, lib_env, export_names, key, C)
+                        # The library's forms have evaluated on the main loop; build +
+                        # register its exports.  Reached only on normal completion (a
+                        # library form that raised unwinds past this frame), so a
+                        # failed library is not registered -- as before.  The
+                        # _runtime_env_ref restore rides a wind beneath this frame.
+                        _finalize_define_library(
+                            frame[1], frame[2], frame[3], frame[4])
+                        V = VOID_VALUE
                         continue
 
                     if ftag == FRAME_CWV_CONSUMER:
@@ -1587,6 +2002,9 @@ def _cek_loop(expr, env, ctx):
                         if result[0] == 'cont':
                             K = result[1]
                             V = result[2]
+                            continue
+                        if result[0] == 'frame':
+                            K.append(result[1])
                             continue
                         C = result[1]
                         E = result[2]
@@ -1665,6 +2083,9 @@ def _cek_loop(expr, env, ctx):
                             K = result[1]
                             V = result[2]
                             continue
+                        if result[0] == 'frame':
+                            K.append(result[1])
+                            continue
                         C = result[1]
                         E = result[2]
                         if result[3] is not None:
@@ -1741,6 +2162,9 @@ def _cek_loop(expr, env, ctx):
                             K = result[1]
                             V = result[2]
                             continue
+                        if result[0] == 'frame':
+                            K.append(result[1])
+                            continue
                         C = result[1]
                         E = result[2]
                         if result[3] is not None:
@@ -1798,6 +2222,9 @@ def _cek_loop(expr, env, ctx):
                         if result[0] == 'cont':
                             K = result[1]
                             V = result[2]
+                            continue
+                        if result[0] == 'frame':
+                            K.append(result[1])
                             continue
                         C = result[1]
                         E = result[2]
@@ -1865,6 +2292,9 @@ def _cek_loop(expr, env, ctx):
                                 K = result[1]
                                 V = result[2]
                                 continue
+                            if result[0] == 'frame':
+                                K.append(result[1])
+                                continue
                             C = result[1]
                             E = result[2]
                             if result[3] is not None:
@@ -1883,13 +2313,10 @@ def _cek_loop(expr, env, ctx):
                                 if _continuation_must_escape(ctx, V):
                                     raise ContinuationEscape(
                                         as_continuation_owner(V), V, [])
-                                _wind_walk(ctx, as_continuation_wind(V))
-                                _restore_handler_stack(
-                                    ctx, as_continuation_handlers(V))
-                                K = list(as_continuation_k(V))
-                                _restore_shadow_stack(
-                                    ctx, as_continuation_shadow(V))
-                                V = _continuation_value(V, [])
+                                K.append((FRAME_WIND_STEP,
+                                          _compute_wind_ops(
+                                              ctx, as_continuation_wind(V)),
+                                          0, V, _continuation_value(V, [])))
                                 continue
                             pv = _apply_parameter_if(V, 0, app_node)
                             if pv is not None:
@@ -1965,14 +2392,15 @@ def _cek_loop(expr, env, ctx):
                                 if _continuation_must_escape(ctx, fn_value):
                                     raise ContinuationEscape(as_continuation_owner(fn_value),
                                                              fn_value, new_collected)
-                                _wind_walk(ctx, as_continuation_wind(fn_value))
-                                _restore_handler_stack(
-                                    ctx, as_continuation_handlers(fn_value))
-                                K = list(as_continuation_k(fn_value))
-                                _restore_shadow_stack(
-                                    ctx, as_continuation_shadow(fn_value))
-                                V = _continuation_value(
-                                    fn_value, new_collected)
+                                # Drive the wind walk on the K stack via
+                                # FRAME_WIND_STEP, which then restores the handler /
+                                # shadow stacks, swaps in the continuation's K, and
+                                # delivers its value -- no re-entrant _wind_walk.
+                                K.append((FRAME_WIND_STEP,
+                                          _compute_wind_ops(
+                                              ctx, as_continuation_wind(fn_value)),
+                                          0, fn_value,
+                                          _continuation_value(fn_value, new_collected)))
                                 continue
                             # #2: classify the operator once, then dispatch on the
                             # integer kind below instead of ~15 _is_X_primitive name
@@ -2021,105 +2449,22 @@ def _cek_loop(expr, env, ctx):
                                 new_collected = flat_args
                                 kind = (as_primitive_kind(fn_value)
                                         if is_primitive(fn_value) else PRIM_ORDINARY)
-                            # map / for-each / filter: drive the per-element calls
-                            # through the K stack (FRAME_HOF_STEP) instead of the
-                            # _prim_* Python loop, which re-enters cek_eval per
-                            # element and grows the host stack when such calls nest
-                            # (e.g. a for-each tree walk).  The _prim_* bodies stay
-                            # as the fallback for the rare higher-order path where
-                            # one of these is itself applied via _apply_scheme_proc
-                            # (e.g. (map filter ...)).  Reached here for both direct
-                            # operator position and (apply map ...), since apply
-                            # collapses into this dispatch above.
-                            if (kind == PRIM_MAP or kind == PRIM_FOR_EACH
-                                    or kind == PRIM_FILTER):
-                                _hof_name = as_primitive_name(fn_value)
-                                if kind == PRIM_FILTER:
-                                    if len(new_collected) != 2:
-                                        raise SchemeArityError(
-                                            arity_mismatch_msg(
-                                                _hof_name, 2, 2, len(new_collected)),
-                                            src_of(app_node) if app_node is not None else None)
-                                elif len(new_collected) < 2:
-                                    raise SchemeArityError(
-                                        arity_mismatch_msg(
-                                            _hof_name, 2, None, len(new_collected)),
-                                        src_of(app_node) if app_node is not None else None)
-                                # Push the driver frame and re-enter the frame loop;
-                                # the FRAME_HOF_STEP handler advances the cursors and
-                                # tail-calls the proc.  acc starts empty; the _HOF_START
-                                # sentinel tells the handler to ignore the current V
-                                # (the last argument, not a callback result).
-                                K.append(
-                                    (FRAME_HOF_STEP, kind, new_collected[0],
-                                     tuple(new_collected[1:]), NIL_VALUE,
-                                     app_node, _HOF_START))
-                                continue
-                            # vector-map / vector-for-each / string-map /
-                            # string-for-each: the indexed analogue of the above,
-                            # driven on the K stack via FRAME_HOF_STEP_IDX so nested
-                            # higher-order calls cost K rather than the Python stack.
-                            # _prim_vector_map etc. remain the fallback for the rare
-                            # _apply_scheme_proc path.  Type-check the sequences and
-                            # precompute the shortest length here (the _wrap_arity
-                            # check is bypassed on this fast path).
-                            if (kind == PRIM_VECTOR_MAP
-                                    or kind == PRIM_VECTOR_FOR_EACH
-                                    or kind == PRIM_STRING_MAP
-                                    or kind == PRIM_STRING_FOR_EACH):
-                                _hof_name = as_primitive_name(fn_value)
-                                if len(new_collected) < 2:
-                                    raise SchemeArityError(
-                                        arity_mismatch_msg(
-                                            _hof_name, 2, None, len(new_collected)),
-                                        src_of(app_node) if app_node is not None else None)
-                                _hof_is_vec = (kind == PRIM_VECTOR_MAP
-                                               or kind == PRIM_VECTOR_FOR_EACH)
-                                _hof_seqs = []
-                                _hof_short = None
-                                _hof_j = 1
-                                while _hof_j < len(new_collected):
-                                    _hof_seq = new_collected[_hof_j]
-                                    if _hof_is_vec:
-                                        if not is_vector(_hof_seq):
-                                            raise SchemeTypeError(
-                                                '%s: argument %d must be a vector'
-                                                % (_hof_name, _hof_j + 1),
-                                                src_of(app_node) if app_node is not None else None)
-                                        _hof_len = len(as_vector_items(_hof_seq))
-                                    else:
-                                        if not is_string(_hof_seq):
-                                            raise SchemeTypeError(
-                                                '%s: argument %d must be a string'
-                                                % (_hof_name, _hof_j + 1),
-                                                src_of(app_node) if app_node is not None else None)
-                                        _hof_len = len(as_string(_hof_seq))
-                                    _hof_seqs.append(_hof_seq)
-                                    if _hof_short is None or _hof_len < _hof_short:
-                                        _hof_short = _hof_len
-                                    _hof_j = _hof_j + 1
-                                # started=False on the first entry: V there is the
-                                # call's last argument, not a callback result.
-                                K.append(
-                                    (FRAME_HOF_STEP_IDX, kind, new_collected[0],
-                                     tuple(_hof_seqs), 0, _hof_short, NIL_VALUE,
-                                     app_node, False))
-                                continue
-                            # member / assoc with a custom comparator (the 3-arg
-                            # R7RS forms): drive the per-element comparator calls on
-                            # the K stack via FRAME_SEARCH_STEP so a deeply-recursing
-                            # comparator costs K rather than the host stack (the same
-                            # overflow class map/for-each had).  The 2-arg forms use a
-                            # built-in equality predicate and never re-enter the
-                            # evaluator, so they fall through to the normal primitive
-                            # call; _make_*_search bodies also stay as the fallback for
-                            # the rare higher-order path (e.g. (map member ...)).
-                            if ((kind == PRIM_MEMBER or kind == PRIM_ASSOC)
-                                    and len(new_collected) == 3):
-                                K.append(
-                                    (FRAME_SEARCH_STEP, kind, new_collected[2],
-                                     new_collected[0], new_collected[1],
-                                     app_node, False))
+                            # map / for-each / filter, the vector/string variants,
+                            # and 3-arg member / assoc: drive the per-element calls
+                            # through the K stack (FRAME_HOF_STEP / _IDX /
+                            # FRAME_SEARCH_STEP) instead of the _prim_* Python loop,
+                            # which re-enters cek_eval per element and grows the host
+                            # stack when such calls nest (e.g. a for-each tree walk).
+                            # _build_hof_frame is the single source of truth, shared
+                            # with _enter_proc so the same primitive reached as a
+                            # callback is driven on frames too -- no _prim_* re-entry
+                            # on any path.  Reached here for both direct operator
+                            # position and (apply map ...), since apply collapses into
+                            # this dispatch above.
+                            _hof_frame = _build_hof_frame(
+                                fn_value, kind, new_collected, app_node)
+                            if _hof_frame is not None:
+                                K.append(_hof_frame)
                                 continue
                             # call-with-values: install consumer frame, tail-call producer.
                             if kind == PRIM_CALL_WITH_VALUES:
@@ -2362,19 +2707,15 @@ def _cek_loop(expr, env, ctx):
                                         ctx.wind_stack.pop()
                                     as_primitive_fn(_prev_restore)(
                                         ctx, saved_env, [], app_node)
-                                _param_winds = _build_parameterize_winds(
-                                    new_collected[0], new_collected[1],
-                                    ctx, saved_env, app_node)
-                                install_prim = _param_winds[0]
-                                restore_prim = _param_winds[1]
-                                ctx.wind_stack.append(
-                                    (install_prim, restore_prim))
-                                K.append(
-                                    (FRAME_DYNAMIC_WIND_AFTER, restore_prim))
-                                fn_value = new_collected[2]
-                                new_collected = []
-                                kind = (as_primitive_kind(fn_value)
-                                        if is_primitive(fn_value) else PRIM_ORDINARY)
+                                # Resolve params/values (pure), then drive the value
+                                # converters on the K stack via FRAME_PARAMETERIZE_STEP;
+                                # its final step installs the winds and tail-calls the
+                                # body thunk.  No re-entrant _apply_scheme_proc.
+                                _pp = _resolve_parameterize_params(
+                                    new_collected[0], new_collected[1], ctx, app_node)
+                                K.append((FRAME_PARAMETERIZE_STEP, _pp[0], _pp[1],
+                                          [], 0, new_collected[2], app_node, False))
+                                continue
                             # dynamic-wind: install the wind frame in the CEK machine
                             # so continuation captures see it and FRAME_DYNAMIC_WIND_AFTER
                             # runs the after thunk when the body returns.
@@ -2384,16 +2725,45 @@ def _cek_loop(expr, env, ctx):
                                         arity_mismatch_msg('dynamic-wind',
                                                            3, 3, len(new_collected)),
                                         src_of(app_node) if app_node is not None else None)
-                                before = new_collected[0]
-                                thunk = new_collected[1]
-                                after = new_collected[2]
-                                from pyscheme.primitives.meta import _apply_scheme_proc
-                                _apply_scheme_proc(
-                                    before, [], ctx, saved_env, app_node)
-                                ctx.wind_stack.append((before, after))
-                                K.append((FRAME_DYNAMIC_WIND_AFTER, after))
-                                fn_value = thunk
+                                # Run the before-thunk on the K stack (not via a
+                                # re-entrant _apply_scheme_proc); when it returns,
+                                # FRAME_DYNAMIC_WIND_BEFORE_DONE installs the wind +
+                                # after-frame and tail-calls the body.  If before
+                                # raises, no wind is installed (the frame is discarded
+                                # during unwind) -- matching the old eager call.
+                                K.append((FRAME_DYNAMIC_WIND_BEFORE_DONE,
+                                          new_collected[0], new_collected[1],
+                                          new_collected[2]))
+                                fn_value = new_collected[0]
                                 new_collected = []
+                            # call-with-port / call-with-{input,output}-file /
+                            # with-{input,output}-{from,to}-{file,string}: open and
+                            # set up as the _prim_* bodies did, then ride the
+                            # dynamic-wind machinery -- a native after-thunk does the
+                            # close / parameter-restore on every exit path (normal,
+                            # error, escape), and the proc/thunk is tail-called on the
+                            # K stack instead of re-entering cek_eval.  Reached for the
+                            # operator position and (apply call-with-port ...) alike.
+                            if kind == PRIM_PORT_RUNNER:
+                                from pyscheme.primitives.ports import (
+                                    port_runner_setup)
+                                _pr = port_runner_setup(
+                                    as_primitive_name(fn_value), ctx, saved_env,
+                                    new_collected, app_node)
+                                ctx.wind_stack.append((_pr[0], _pr[1]))
+                                K.append((FRAME_DYNAMIC_WIND_AFTER, _pr[1]))
+                                fn_value = _pr[2]
+                                new_collected = _pr[3]
+                            # load: read + parse the file (native), then evaluate its
+                            # top-level forms on the K stack via FRAME_EVAL_FORMS
+                            # instead of a re-entrant cek_eval per form.  Reached for
+                            # the operator position and (apply load ...) alike.
+                            if kind == PRIM_LOAD:
+                                from pyscheme.primitives.meta import load_setup
+                                _lf = load_setup(new_collected, saved_env, app_node)
+                                K.append((FRAME_EVAL_FORMS, _lf[0], _lf[1],
+                                          0, {}, True))
+                                continue
                             pv = _apply_parameter_if(
                                 fn_value, len(new_collected), app_node)
                             if pv is not None:
@@ -2593,11 +2963,10 @@ def _cek_loop(expr, env, ctx):
                             if _continuation_must_escape(ctx, V):
                                 raise ContinuationEscape(
                                     as_continuation_owner(V), V, [test_value])
-                            _wind_walk(ctx, as_continuation_wind(V))
-                            _restore_handler_stack(
-                                ctx, as_continuation_handlers(V))
-                            K = list(as_continuation_k(V))
-                            V = _continuation_value(V, [test_value])
+                            K.append((FRAME_WIND_STEP,
+                                      _compute_wind_ops(
+                                          ctx, as_continuation_wind(V)),
+                                      0, V, _continuation_value(V, [test_value])))
                             continue
                         pv = _apply_parameter_if(V, 1, None)
                         if pv is not None:
@@ -2621,11 +2990,10 @@ def _cek_loop(expr, env, ctx):
                             if _continuation_must_escape(ctx, V):
                                 raise ContinuationEscape(
                                     as_continuation_owner(V), V, [key_value])
-                            _wind_walk(ctx, as_continuation_wind(V))
-                            _restore_handler_stack(
-                                ctx, as_continuation_handlers(V))
-                            K = list(as_continuation_k(V))
-                            V = _continuation_value(V, [key_value])
+                            K.append((FRAME_WIND_STEP,
+                                      _compute_wind_ops(
+                                          ctx, as_continuation_wind(V)),
+                                      0, V, _continuation_value(V, [key_value])))
                             continue
                         pv = _apply_parameter_if(V, 1, None)
                         if pv is not None:
@@ -2805,20 +3173,20 @@ def _cek_loop(expr, env, ctx):
             continue
 
         except _CATCHABLE_LOCAL as e:
-            # Walk K to find a handler frame; on the way, run any
-            # FRAME_DYNAMIC_WIND_AFTER thunks (errors swallowed, matching
-            # the C++ reference's exception-dispatch convention).  When
-            # the handler is found, dispatch it via _enter_proc which
-            # rewrites C / E / K / V in place; the next outer-loop
-            # iteration resumes the same activation record with the
-            # handler call set up.  No native recursion to invoke the
-            # handler, so a continuation captured inside the handler
+            # Walk K once to find a handler frame, COLLECTING (not running) the
+            # FRAME_DYNAMIC_WIND_AFTER thunks for the extents between the raise and
+            # the handler.  A single scan keeps the reinstall accounting correct;
+            # the collected afters are then run on the K stack by FRAME_ERROR_UNWIND
+            # (so an after-thunk's continuation/HOF no longer re-enters cek_eval),
+            # which performs the terminal action -- dispatch handler, or re-raise if
+            # none.  Propagate semantics: an after that raises becomes the new
+            # in-flight condition (matches Chez; R7RS-unspecified).  Handler dispatch
+            # rewrites C/E/K/V in place; a continuation captured inside the handler
             # body sees the outer K-stack as its captured K.
-            from pyscheme.primitives.meta import _apply_scheme_proc
             from pyscheme.AST import make_error_object
-            _w = K
             handler = None
             is_guard_handler = False
+            unwind_afters = []
             # A raise-continuable pops its handler off handler_stack but leaves the
             # handler's FRAME_POP_HANDLER / FRAME_GUARD on K, with a
             # FRAME_REINSTALL_HANDLER above it.  When the handler then raises and we
@@ -2828,8 +3196,8 @@ def _cek_loop(expr, env, ctx):
             # plain one and spuriously raise "exception handler returned").  Count
             # the FRAME_REINSTALL_HANDLER frames and skip that many handler frames.
             pending_reinstalls = 0
-            while _w:
-                frame = _w.pop()
+            while K:
+                frame = K.pop()
                 ftag = frame[0]
                 if ftag == FRAME_REINSTALL_HANDLER:
                     pending_reinstalls += 1
@@ -2840,6 +3208,13 @@ def _cek_loop(expr, env, ctx):
                         continue
                     if not ctx.handler_stack:
                         break
+                    if unwind_afters:
+                        # Leave the handler installed: the collected afters run within
+                        # its dynamic extent, so an after that raises must reach it.
+                        # FRAME_ERROR_UNWIND re-raises once the afters are done, and
+                        # this frame -- now atop K -- is dispatched with no afters.
+                        K.append(frame)
+                        break
                     handler = ctx.handler_stack.pop()
                     break
                 if ftag == FRAME_GUARD:
@@ -2848,17 +3223,25 @@ def _cek_loop(expr, env, ctx):
                         continue
                     if not ctx.handler_stack:
                         break
+                    if unwind_afters:
+                        K.append(frame)
+                        break
                     handler = ctx.handler_stack.pop()
                     is_guard_handler = True
                     break
                 if ftag == FRAME_DYNAMIC_WIND_AFTER:
-                    after = frame[1]
                     if ctx.wind_stack:
                         ctx.wind_stack.pop()
-                    try:
-                        _apply_scheme_proc(after, [], ctx, None, None)
-                    except BaseException:
-                        pass
+                    unwind_afters.append(frame[1])
+            if unwind_afters:
+                # Run the collected afters on the K stack, then re-raise (the handler
+                # frame, if any, was left installed above and is dispatched then).
+                # skip_eval: resume in the APPLY phase to process FRAME_ERROR_UNWIND;
+                # WITHOUT this the loop would re-EVAL the unchanged C (e.g. re-run a
+                # define-library whose FRAME_LIB_FINALIZE raised) -- an infinite loop.
+                K.append((FRAME_ERROR_UNWIND, unwind_afters, 0, e))
+                skip_eval = True
+                continue
             if handler is None:
                 raise
             if isinstance(e, SchemeRaised):
@@ -2867,6 +3250,7 @@ def _cek_loop(expr, env, ctx):
                 raised_value = make_read_error_object(e.msg, [])
             else:
                 raised_value = make_error_object(e.msg, [])
+            # No winds to run: dispatch the handler inline.
             if isinstance(e, SchemeRaised) and not e.continuable and not is_guard_handler:
                 K.append((FRAME_NONCONTIN_RETURN, raised_value))
             result = _enter_proc(handler, [raised_value], ctx, E, None)
@@ -2876,6 +3260,11 @@ def _cek_loop(expr, env, ctx):
             elif result[0] == 'cont':
                 K = result[1]
                 V = result[2]
+                skip_eval = True
+            elif result[0] == 'frame':
+                # Handler is itself a frame-driven HOF primitive: push its driver
+                # and resume the APPLY loop (the start-frame ignores the current V).
+                K.append(result[1])
                 skip_eval = True
             else:  # 'enter'
                 C = result[1]

@@ -995,6 +995,98 @@ def _prim_with_input_from_string(ctx, env, args, app_node):
     return result
 
 
+def _close_port_obj(p):
+    """Close a port object the way the call-with-* finally blocks did."""
+    if p.is_open and p.file_h is not None:
+        try:
+            p.file_h.close()
+        except OSError:
+            pass
+    p.is_open = False
+
+
+def port_runner_setup(name, ctx, env, args, app_node):
+    """Frame-driven setup for the port runners (call-with-port,
+    call-with-{input,output}-file, with-{input,output}-{from,to}-{file,string}).
+
+    Validates and opens exactly as the _prim_* bodies did, then returns
+    (before_prim, after_prim, body_proc, body_args).  The evaluator pushes a
+    dynamic-wind entry (before_prim, after_prim) and tail-calls body_proc on the
+    K stack, so the user proc/thunk no longer re-enters cek_eval.  after_prim is
+    a native (Python-backed) primitive performing the cleanup the old
+    try/finally did -- close the port, and for the with-* forms restore the
+    current-port parameter -- so it runs on normal return, error unwind, and
+    continuation escape alike, yet never itself re-enters the evaluator.  The
+    before-thunk is a no-op: these forms establish their state once, matching
+    the old set-then-finally (re-entry through them is unspecified in R7RS)."""
+    from pyscheme.AST import (make_primitive, as_parameter_value,
+                              set_parameter_value)
+    from pyscheme.Environment import SchemeArityError, arity_mismatch_msg
+    src = src_of(app_node)
+    if len(args) != 2:
+        raise SchemeArityError(arity_mismatch_msg(name, 2, 2, len(args)), src)
+    before = make_primitive('%port-runner-before',
+                            lambda c, e, a, n: VOID_VALUE)
+
+    # call-with-port / call-with-input-file / call-with-output-file:
+    # body = (proc port); cleanup = close the port.
+    if name == 'call-with-port':
+        port_val = args[0]
+        p = _check_port(port_val, name, app_node)
+    elif name == 'call-with-input-file' or name == 'call-with-output-file':
+        if not is_string(args[0]):
+            raise SchemeTypeError(name + ': filename must be a string', src)
+        if name == 'call-with-input-file':
+            port_val = _prim_open_input_file(ctx, env, [args[0]], app_node)
+        else:
+            port_val = _prim_open_output_file(ctx, env, [args[0]], app_node)
+        p = as_port(port_val)
+    else:
+        p = None
+
+    if p is not None:
+        def after(c, e, a, n, _p=p):
+            _close_port_obj(_p)
+            return VOID_VALUE
+        return (before, make_primitive('%port-runner-after', after),
+                args[1], [port_val])
+
+    # with-{input,output}-{from,to}-{file,string}: body = (thunk); set the
+    # current-port parameter now, restore it and close the port on exit.
+    if name == 'with-input-from-file':
+        if not is_string(args[0]):
+            raise SchemeTypeError(name + ': filename must be a string', src)
+        port_val = _prim_open_input_file(ctx, env, [args[0]], app_node)
+        _get_current_input(ctx)
+        param = _current_input_param[0]
+    elif name == 'with-input-from-string':
+        if not is_string(args[0]):
+            raise SchemeTypeError(
+                name + ': first argument must be a string', src)
+        port_val = _prim_open_input_string(ctx, env, [args[0]], app_node)
+        _get_current_input(ctx)
+        param = _current_input_param[0]
+    elif name == 'with-output-to-file':
+        if not is_string(args[0]):
+            raise SchemeTypeError(name + ': filename must be a string', src)
+        port_val = _prim_open_output_file(ctx, env, [args[0]], app_node)
+        _get_current_output(ctx)
+        param = _current_output_param[0]
+    else:
+        raise SchemeTypeError(
+            'port_runner_setup: unknown port runner ' + repr(name), src)
+
+    old_val = as_parameter_value(param)
+    set_parameter_value(param, port_val)
+
+    def after(c, e, a, n, _param=param, _old=old_val, _port=port_val):
+        set_parameter_value(_param, _old)
+        _prim_close_port(ctx, env, [_port], app_node)
+        return VOID_VALUE
+    return (before, make_primitive('%port-runner-after', after),
+            args[1], [])
+
+
 def register():
     # Predicates
     register_primitive('port?', (1, 1), _prim_port_p,

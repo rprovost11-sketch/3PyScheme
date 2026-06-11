@@ -373,6 +373,41 @@ def _prim_scheme_report_environment(ctx, env, args, app_node):
     return make_environment(env.getGlobalEnv())
 
 
+def load_setup(args, env, app_node):
+    """Validate (load filename [environment]) and read + parse the file,
+    returning (forms, eval_env).  The evaluator intercepts `load` and drives the
+    forms on the main K stack via FRAME_EVAL_FORMS instead of a re-entrant
+    cek_eval per form, so a continuation captured outside the load no longer
+    crosses a nested evaluator activation.  Mirrors _prim_load's setup."""
+    import os as _os
+    from pyscheme.AST import is_environment, as_environment
+    from pyscheme.Environment import SchemeArityError, arity_mismatch_msg
+    if len(args) < 1 or len(args) > 2:
+        raise SchemeArityError(
+            arity_mismatch_msg('load', 1, 2, len(args)), src_of(app_node))
+    if not is_string(args[0]):
+        raise SchemeTypeError(
+            'load: filename must be a string', src_of(app_node))
+    if len(args) >= 2:
+        if not is_environment(args[1]):
+            raise SchemeTypeError(
+                'load: second argument must be an environment specifier',
+                src_of(app_node))
+        eval_env = as_environment(args[1])
+    else:
+        eval_env = env
+    path = as_string(args[0])
+    abs_path = _os.path.abspath(path)
+    try:
+        f = open(abs_path, 'r', encoding='utf-8')
+        source = f.read()
+        f.close()
+    except OSError as e:
+        raise SchemeTypeError('load: ' + str(e), src_of(app_node))
+    from pyscheme.Parser import parse
+    return (parse(source, abs_path), eval_env)
+
+
 def _prim_load(ctx, env, args, app_node):
     import os as _os
     from pyscheme.AST import VOID_VALUE, is_environment, as_environment
