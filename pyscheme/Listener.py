@@ -363,6 +363,7 @@ class Listener:
             'test':       self._cmd_feature,  # legacy alias for ]feature
             'compliance': self._cmd_compliance,
             'regression': self._cmd_regression,
+            'suites':     self._cmd_suites,
             'cd':         self._cmd_cd,
             'pwd':      self._cmd_pwd,
             'lhistory': self._cmd_lhistory,
@@ -1025,7 +1026,7 @@ class Listener:
                 raise ListenerCommandError(
                     'No .log files in ' + repr(self._testdir))
 
-        self._runTestFiles(filenames, testDir, 'feature')
+        return self._runTestFiles(filenames, testDir, 'feature')
 
     @staticmethod
     def _parse_iter_count(value):
@@ -1190,6 +1191,8 @@ class Listener:
                 print('Elapsed time: ' + elapsed_str, file=runFile)
                 runFile.close()
 
+        return (grand_pass, grand_fail)
+
     def _cmd_compliance(self, args):
         """Usage: ]compliance [-I:<count>] [<file.log> | <start> [<end>]]
 
@@ -1263,9 +1266,8 @@ class Listener:
             raise ListenerCommandError('No .log files in ' + compdir)
 
         if not args:
-            self._runTestFiles(all_files, compdir,
-                               'compliance', tco_iters=tco_iters)
-            return
+            return self._runTestFiles(all_files, compdir,
+                                      'compliance', tco_iters=tco_iters)
 
         start_lc = args[0].lower()
         end_lc = args[1].lower() if len(args) == 2 else None
@@ -1335,8 +1337,7 @@ class Listener:
             raise ListenerCommandError('No .log files in ' + regdir)
 
         if not args:
-            self._runTestFiles(all_files, regdir, 'regression')
-            return
+            return self._runTestFiles(all_files, regdir, 'regression')
 
         start_lc = args[0].lower()
         end_lc = args[1].lower() if len(args) == 2 else None
@@ -1356,6 +1357,119 @@ class Listener:
                     'No .log files at or after "' + args[0] + '"')
 
         self._runTestFiles(filtered, regdir, 'regression')
+
+    def _cmd_suites(self, args):
+        """Usage: ]suites <suite> [<suite> ...]
+
+        Run one or more test suites in sequence -- each fully rebooted between
+        files, exactly as the individual ]feature/]compliance/]regression
+        commands do -- then print one combined pass/fail verdict.  This is the
+        batch runner Cherry's "Run test suites" dialog drives; it is equally
+        usable headless.
+
+        Suite tokens (executed in the canonical order feature -> compliance ->
+        regression regardless of the order given; duplicates collapse):
+          feature             the feature suite
+          regression          the regression suite
+          compliance-quick    compliance with the default 100k TCO soak
+          compliance          alias for compliance-quick
+          all-quick           feature + compliance-quick + regression
+          all                 alias for all-quick
+
+        compliance-slow / all-slow are cppscheme2-only and are rejected here:
+        the slow run is a high-N soak whose payoff is stressing cppscheme2's
+        generational GC.  pyScheme has no custom GC, and bounded-space TCO is
+        already proven at small N by the quick run, so a slow run on pyScheme
+        buys nothing.
+
+        For a specific TCO iteration count use ]compliance -I:<count> directly;
+        ]suites exposes only the quick variant (and, on cppscheme2, slow).
+        """
+        if self._logFile:
+            raise ListenerCommandError(
+                'Please close the log before running suites (]close).')
+        if not args:
+            raise ListenerCommandError(
+                'Usage: ]suites <suite> ...  '
+                '(feature, regression, compliance[-quick], all[-quick])')
+
+        run_feature = False
+        run_regression = False
+        compliance_mode = [None]   # 'quick' (slow is cppscheme2-only)
+
+        def want_compliance(mode):
+            if compliance_mode[0] is not None and compliance_mode[0] != mode:
+                raise ListenerCommandError(
+                    'compliance-quick and compliance-slow are mutually exclusive')
+            compliance_mode[0] = mode
+
+        slow_msg = ('%s is cppscheme2-only: the slow run is a high-N GC-stress '
+                    'soak and pyScheme has no custom GC.  Use %s.')
+        for tok in args:
+            t = tok.lower()
+            if t == 'feature':
+                run_feature = True
+            elif t == 'regression':
+                run_regression = True
+            elif t in ('compliance', 'compliance-quick'):
+                want_compliance('quick')
+            elif t == 'compliance-slow':
+                raise ListenerCommandError(
+                    slow_msg % ('compliance-slow', 'compliance-quick'))
+            elif t in ('all', 'all-quick'):
+                run_feature = True
+                run_regression = True
+                want_compliance('quick')
+            elif t == 'all-slow':
+                raise ListenerCommandError(slow_msg % ('all-slow', 'all-quick'))
+            else:
+                raise ListenerCommandError(
+                    'unknown suite ' + repr(tok) + '.  Valid: feature, '
+                    'regression, compliance[-quick], all[-quick].')
+
+        # Canonical order: feature -> compliance -> regression.
+        plan = []
+        if run_feature:
+            plan.append('feature')
+        if compliance_mode[0] == 'quick':
+            plan.append('compliance-quick')
+        if run_regression:
+            plan.append('regression')
+
+        color = self._use_color()
+        BOLD = '\033[1;97m' if color else ''
+        GREEN = '\033[92m' if color else ''
+        RED = '\033[91m' if color else ''
+        RESET = '\033[0m' if color else ''
+
+        print()
+        print(BOLD + '; running suites: ' + ', '.join(plan) + RESET)
+        print()
+
+        results = []   # (label, n_pass, n_fail)
+        for name in plan:
+            if name == 'feature':
+                p, f = self._cmd_feature([])
+            elif name == 'compliance-quick':
+                p, f = self._cmd_compliance([])
+            else:   # 'regression'
+                p, f = self._cmd_regression([])
+            results.append((name, p, f))
+            print()
+
+        total_fail = sum(entry[2] for entry in results)
+        print(BOLD + '===== SUITES COMPLETE =====' + RESET)
+        for label, p, f in results:
+            if f == 0:
+                detail = GREEN + str(p) + ' passed' + RESET
+            else:
+                detail = RED + ('%d of %d failed' % (f, p + f)) + RESET
+            print('  ' + label.ljust(18) + ' ' + detail)
+        if total_fail == 0:
+            print(BOLD + GREEN + '  ALL SUITES PASSED' + RESET)
+        else:
+            print(BOLD + RED + '  SUITE FAILURES: ' + str(total_fail) + RESET)
+        return (sum(e[1] for e in results), total_fail)
 
     def _cmd_cd(self, args):
         """Usage: ]cd <directory>
