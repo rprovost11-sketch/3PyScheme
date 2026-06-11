@@ -18,9 +18,8 @@ from pyscheme.AST import (
 # when (exit) is called from the prompt rather than from a batch file.  It
 # is deliberately a BaseException -- NOT a Scheme error -- so guard /
 # with-exception-handler (which only catch Exception subclasses) never
-# intercept it, mirroring how Evaluator.ContinuationEscape stays outside
-# the condition system.  Batch-mode (exit) still calls sys.exit(); the
-# mode is read from Context.interactive.  See primitives/meta.py:_prim_exit.
+# intercept it.  Batch-mode (exit) still calls sys.exit(); the mode is read
+# from Context.interactive.  See primitives/meta.py:_prim_exit.
 
 class ReplExit(BaseException):
     """Raised by (exit [code]) in interactive mode to abort the current

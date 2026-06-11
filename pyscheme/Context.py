@@ -35,16 +35,6 @@ class Context:
         self.shadow_stack = []      # call-stack entries for error backtraces
         self.timeout_at = 0.0    # monotonic deadline; 0 = disabled
         self._timeout_step = 0      # iteration counter for throttled timeout checks
-        # Continuation-escape bookkeeping.  Each cek_eval activation claims a
-        # unique id from eval_id_counter and publishes it in current_eval_id
-        # while running; continuations record the id of the loop that captured
-        # them.  eval_id_stack holds the ids of every cek_eval still live on the
-        # Python call stack, so an invocation can tell whether a continuation's
-        # owning loop is still an ancestor (escape) or has already returned
-        # (re-entry).  See Evaluator.ContinuationEscape / _continuation_must_escape.
-        self.eval_id_counter = 0
-        self.current_eval_id = 0
-        self.eval_id_stack = []
 
     def _update_instrumented(self):
         """Recompute the single instrumentation gate after any flag change."""

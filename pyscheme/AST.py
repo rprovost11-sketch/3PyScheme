@@ -186,17 +186,11 @@ class Continuation:
     shadow_snapshot, and resumes the CEK machine."""
 
     def __init__(self, k_snapshot, wind_snapshot, handler_snapshot,
-                 shadow_snapshot, owner_eval_id=0):
+                 shadow_snapshot):
         self.k_snapshot = k_snapshot
         self.wind_snapshot = wind_snapshot
         self.handler_snapshot = handler_snapshot
         self.shadow_snapshot = shadow_snapshot
-        # Identity of the _cek_loop activation that captured this continuation.
-        # Used so invoking it can tell whether the owning loop is still a live
-        # ancestor (escape -- raise ContinuationEscape to unwind native frames
-        # such as a for-each/map callback) or has already returned (re-entry --
-        # install in place).  See Evaluator.ContinuationEscape.
-        self.owner_eval_id = owner_eval_id
 
 
 class Port:
@@ -480,9 +474,9 @@ def make_error_object(message, irritants):
 
 
 def make_continuation(k_snapshot, wind_snapshot, handler_snapshot,
-                      shadow_snapshot, owner_eval_id=0):
+                      shadow_snapshot):
     return Continuation(k_snapshot, wind_snapshot, handler_snapshot,
-                        shadow_snapshot, owner_eval_id)
+                        shadow_snapshot)
 
 
 def make_syntax_transformer(name, literals, ellipsis, rules,
@@ -917,10 +911,6 @@ def as_continuation_handlers(c):
 
 def as_continuation_shadow(c):
     return c.shadow_snapshot
-
-
-def as_continuation_owner(c):
-    return c.owner_eval_id
 
 
 def as_syntax_transformer_name(t):

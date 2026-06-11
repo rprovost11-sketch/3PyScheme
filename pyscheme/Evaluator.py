@@ -98,7 +98,6 @@ from pyscheme.AST import (
     as_closure_params, as_closure_body, as_closure_env, as_closure_rest_name,
     as_case_closure_clauses, as_case_closure_env, as_parameter_value,
     as_continuation_k, as_continuation_wind, as_continuation_shadow,
-    as_continuation_owner,
     as_promise_is_done, as_promise_is_iterative, as_promise_payload,
     as_multi_values_list, as_environment, as_continuation_handlers,
     as_record_type, as_record_fields,
@@ -545,9 +544,9 @@ def _finalize_parameterize_winds(params, installed, ctx):
     applied every converter and collected the `installed` values: save the
     current values, install the new ones so the thunk sees them, and return a
     pair of Python-backed primitives (install_thunk, restore_thunk) that
-    _wind_walk and FRAME_DYNAMIC_WIND_AFTER invoke as Scheme procedures.  Saving
-    after the converters (not before) matches the old _build_parameterize_winds
-    ordering."""
+    FRAME_WIND_STEP and FRAME_DYNAMIC_WIND_AFTER invoke as Scheme procedures.
+    Saving after the converters (not before) matches the old
+    _build_parameterize_winds ordering."""
     saved_values = []
     i = 0
     while i < len(params):
@@ -560,8 +559,8 @@ def _finalize_parameterize_winds(params, installed, ctx):
         set_parameter_value(params[i], installed[i])
         i = i + 1
 
-    # Build installer (called by _wind_walk on continuation re-entry) and
-    # restorer (called by FRAME_DYNAMIC_WIND_AFTER / _unwind_winds_on_error).
+    # Build installer (called by FRAME_WIND_STEP on continuation re-entry) and
+    # restorer (called by FRAME_DYNAMIC_WIND_AFTER / FRAME_ERROR_UNWIND).
     def installer(ctx2, env2, args2, app_node2):
         j = 0
         while j < len(params):
@@ -578,37 +577,6 @@ def _finalize_parameterize_winds(params, installed, ctx):
 
     return (make_primitive('%parameterize-install', installer),
             make_primitive('%parameterize-restore', restorer))
-
-
-class ContinuationEscape(Exception):
-    """Raised when a continuation is invoked from a _cek_loop activation other
-    than the one that captured it -- i.e. the invocation is nested below the
-    owner on the Python call stack, behind native frames (a for-each / map
-    callback, a dynamic-wind thunk, ...).  Replacing K locally would only
-    redirect the nested loop and the escape value would be discarded by the
-    native caller, so we unwind the Python stack with this exception until we
-    reach the owning loop, which installs the captured continuation.
-    Deliberately NOT a Scheme-error subclass so the handler/guard machinery
-    never treats an escape as a raised condition."""
-
-    def __init__(self, owner_eval_id, cont, args):
-        super().__init__('continuation escape')
-        self.owner_eval_id = owner_eval_id
-        self.cont = cont
-        self.args = args
-
-
-def _eval_id_active(ctx, eval_id):
-    """True when eval_id belongs to a cek_eval still live on the Python stack."""
-    return eval_id in ctx.eval_id_stack
-
-
-def _continuation_must_escape(ctx, cont):
-    """A continuation must escape (unwind to its owner) only when its owning
-    loop is a still-live ancestor other than the current one.  When the owner
-    is the current loop, or has already returned, install it in place."""
-    owner = as_continuation_owner(cont)
-    return owner != ctx.current_eval_id and _eval_id_active(ctx, owner)
 
 
 def _build_hof_frame(fn_value, kind, collected, app_node):
@@ -684,14 +652,12 @@ def _enter_proc(fn_value, args, ctx, saved_env, app_node):
                                      push FRAME_SEQ(seq, new_env) if seq is
                                      not None (multi-form body)"""
     if is_continuation(fn_value):
-        # Invoked below a still-live owning loop (behind native frames)?  Unwind.
-        if _continuation_must_escape(ctx, fn_value):
-            raise ContinuationEscape(
-                as_continuation_owner(fn_value), fn_value, args)
         # Drive the wind walk on the K stack (FRAME_WIND_STEP), which then
         # installs the continuation.  Delivered via the ('frame', ...)
         # descriptor every _enter_proc caller already handles, so the wind
-        # before/after thunks run without re-entering cek_eval.
+        # before/after thunks run without re-entering cek_eval.  (All evaluation
+        # now runs on one loop, so a continuation is always installed in place --
+        # no escape across native frames is ever needed.)
         return ('frame',
                 (FRAME_WIND_STEP,
                  _compute_wind_ops(ctx, as_continuation_wind(fn_value)),
@@ -790,10 +756,10 @@ def _compute_wind_ops(ctx, target):
     running any thunk:
       ('exit', after_thunk)         -- leaving an extent: pop the top, run after
       ('enter', before_thunk, entry)-- entering an extent: push entry, run before
-    Exits come first (innermost-first), then enters (outermost-first), matching
-    _wind_walk's order.  FRAME_WIND_STEP performs the pops/pushes and runs the
-    thunks on the K stack, so a continuation jump across dynamic-wind /
-    parameterize no longer re-enters cek_eval via _apply_scheme_proc."""
+    Exits come first (innermost-first), then enters (outermost-first).
+    FRAME_WIND_STEP performs the pops/pushes and runs the thunks on the K stack,
+    so a continuation jump across dynamic-wind / parameterize runs entirely on
+    the one loop (no re-entrant cek_eval)."""
     ws = ctx.wind_stack
     common = 0
     while common < len(ws) and common < len(target):
@@ -812,33 +778,6 @@ def _compute_wind_ops(ctx, target):
         ops.append(('enter', target[i][0], target[i]))
         i = i + 1
     return ops
-
-
-def _wind_walk(ctx, target):
-    """Adjust ctx.wind_stack to match `target` (a list of (before, after) pairs).
-    For frames being exited (below the common prefix of current and target),
-    call the after thunk and pop.  For frames being entered, push and call
-    the before thunk.  Now used only by the ContinuationEscape backstop; the
-    normal continuation-jump path drives the same walk on the K stack via
-    _compute_wind_ops + FRAME_WIND_STEP."""
-    from pyscheme.primitives.meta import _apply_scheme_proc
-    ws = ctx.wind_stack
-    common = 0
-    while common < len(ws) and common < len(target):
-        cur = ws[common]
-        tgt = target[common]
-        if cur[0] is not tgt[0] or cur[1] is not tgt[1]:
-            break
-        common = common + 1
-    while len(ws) > common:
-        wf = ws[len(ws) - 1]
-        ws.pop()
-        _apply_scheme_proc(wf[1], [], ctx, None, None)
-    i = common
-    while i < len(target):
-        ws.append(target[i])
-        _apply_scheme_proc(target[i][0], [], ctx, None, None)
-        i = i + 1
 
 
 def _apply_parameter_if(V, n_args, app_node):
@@ -938,15 +877,6 @@ def cek_eval(expr, env, ctx=None):
     # helper function so we can wrap it in a single try/except.
     wind_depth_entry = len(ctx.wind_stack)
     handler_depth_entry = len(ctx.handler_stack)
-    # Claim a unique id for this activation and publish it for the duration so
-    # _cek_loop (and continuations captured in it) can route escapes.  The
-    # finally restores the parent's id and pops the stack on every exit, normal
-    # or exceptional, as the Python stack unwinds.
-    ctx.eval_id_counter += 1
-    my_eval_id = ctx.eval_id_counter
-    saved_eval_id = ctx.current_eval_id
-    ctx.current_eval_id = my_eval_id
-    ctx.eval_id_stack.append(my_eval_id)
     from pyscheme.Parser import SchemeSyntaxError
     _CATCHABLE = (SchemeRaised, SchemeTypeError, SchemeArityError,
                   SchemeUnboundError, SchemeSyntaxError)
@@ -979,9 +909,6 @@ def cek_eval(expr, env, ctx=None):
             ctx.handler_stack.pop()
         ctx.shadow_stack.clear()
         raise
-    finally:
-        ctx.current_eval_id = saved_eval_id
-        ctx.eval_id_stack.pop()
 
 
 def _library_load_path():
@@ -1018,80 +945,6 @@ def _load_py_extension(path):
     spec.loader.exec_module(module)
     if hasattr(module, 'register'):
         module.register(_global_env_ref[0])
-
-
-def _try_load_library_file(name_sexpr, ctx):
-    """Try to load a library from the search path.  For each directory
-    on SCHEME_LIBRARY_PATH, looks for <name>.py and <name>.sld (both
-    optional; .py is loaded first so its primitives are available to
-    the .sld).  Returns True if the library ended up registered."""
-    import os
-    from pyscheme.library import library_name_to_key, library_registered_p
-    from pyscheme.Parser import parse
-    try:
-        key = library_name_to_key(name_sexpr)
-    except ValueError:
-        return False
-    if library_registered_p(key):
-        return True
-    parts = key.split('.')
-    base_path = os.path.join(*parts)
-    for base in _library_load_path():
-        prefix = os.path.join(base, base_path) if base else base_path
-        py_path = prefix + '.py'
-        sld_path = prefix + '.sld'
-        found = False
-        if os.path.isfile(py_path):
-            found = True
-            _load_py_extension(py_path)
-        if os.path.isfile(sld_path):
-            found = True
-            f = open(sld_path, 'r')
-            source = f.read()
-            f.close()
-            forms = parse(source, sld_path)
-            i = 0
-            while i < len(forms):
-                from pyscheme.Expander import expand
-                cek_eval(expand(forms[i]), Environment(parent=None), ctx)
-                i = i + 1
-        if found and library_registered_p(key):
-            return True
-    return library_registered_p(key)
-
-
-def _process_import(sets_cons, env, ctx=None):
-    """Top-level (import <import-set>...).  Resolves each set and binds
-    every exported name into env.  Macros (SyntaxTransformer values) are
-    bound the same way as runtime values; the Expander's _lookup_macro
-    walks the env chain to find them.  When an import set names a
-    library that is not yet registered, this attempts to load it from
-    a .sld file on the SCHEME_LIBRARY_PATH search path.  Raises
-    SchemeSyntaxError (positioned) on shape or lookup errors."""
-    from pyscheme.library import resolve_import_set
-    from pyscheme.Parser import SchemeSyntaxError
-    cur = sets_cons
-    while is_cons(cur):
-        import_set = cur.car
-        try:
-            bindings = resolve_import_set(import_set)
-        except ValueError as e:
-            # Try auto-discovery: if the import-set is a bare library name,
-            # look for an .sld file on the load path.
-            loaded = False
-            if is_cons(import_set) and ctx is not None:
-                loaded = _try_load_library_file(import_set, ctx)
-            if loaded:
-                try:
-                    bindings = resolve_import_set(import_set)
-                except ValueError as e2:
-                    raise SchemeSyntaxError(
-                        'import: ' + str(e2), src_of(cur.car))
-            else:
-                raise SchemeSyntaxError('import: ' + str(e), src_of(cur.car))
-        for n in bindings:
-            env.bind(n, bindings[n])
-        cur = cur.cdr
 
 
 def _process_one_lib_decl(decl, lib_env, export_names, eval_forms,
@@ -2394,9 +2247,6 @@ def _cek_loop(expr, env, ctx):
                         app_node = frame[3]
                         if len(args) == 0:
                             if is_continuation(V):
-                                if _continuation_must_escape(ctx, V):
-                                    raise ContinuationEscape(
-                                        as_continuation_owner(V), V, [])
                                 K.append((FRAME_WIND_STEP,
                                           _compute_wind_ops(
                                               ctx, as_continuation_wind(V)),
@@ -2473,13 +2323,10 @@ def _cek_loop(expr, env, ctx):
                         if len(remaining) == 0:
                             # Invoke continuation: replace K with its snapshot.
                             if is_continuation(fn_value):
-                                if _continuation_must_escape(ctx, fn_value):
-                                    raise ContinuationEscape(as_continuation_owner(fn_value),
-                                                             fn_value, new_collected)
                                 # Drive the wind walk on the K stack via
                                 # FRAME_WIND_STEP, which then restores the handler /
                                 # shadow stacks, swaps in the continuation's K, and
-                                # delivers its value -- no re-entrant _wind_walk.
+                                # delivers its value -- entirely on the one loop.
                                 K.append((FRAME_WIND_STEP,
                                           _compute_wind_ops(
                                               ctx, as_continuation_wind(fn_value)),
@@ -2505,7 +2352,7 @@ def _cek_loop(expr, env, ctx):
                                 cont = make_continuation(
                                     list(K), list(ctx.wind_stack), list(
                                         ctx.handler_stack),
-                                    list(ctx.shadow_stack), ctx.current_eval_id)
+                                    list(ctx.shadow_stack))
                                 user_proc = new_collected[0]
                                 # Apply the user proc with the continuation as its arg,
                                 # reusing the normal dispatch paths below.
@@ -3044,9 +2891,6 @@ def _cek_loop(expr, env, ctx):
                         test_value = frame[1]
                         saved_env = frame[2]
                         if is_continuation(V):
-                            if _continuation_must_escape(ctx, V):
-                                raise ContinuationEscape(
-                                    as_continuation_owner(V), V, [test_value])
                             K.append((FRAME_WIND_STEP,
                                       _compute_wind_ops(
                                           ctx, as_continuation_wind(V)),
@@ -3071,9 +2915,6 @@ def _cek_loop(expr, env, ctx):
                         key_value = frame[1]
                         saved_env = frame[2]
                         if is_continuation(V):
-                            if _continuation_must_escape(ctx, V):
-                                raise ContinuationEscape(
-                                    as_continuation_owner(V), V, [key_value])
                             K.append((FRAME_WIND_STEP,
                                       _compute_wind_ops(
                                           ctx, as_continuation_wind(V)),
@@ -3239,22 +3080,6 @@ def _cek_loop(expr, env, ctx):
                     raise RuntimeError("unknown frame tag: " + str(ftag))
 
                 # fall through to outer `while True` - restart EVAL
-
-        except ContinuationEscape as esc:
-            # An escape continuation captured by some loop was invoked below us,
-            # behind native frames, and unwound the Python stack to here.  Only
-            # the owning loop (current_eval_id, restored by every inner cek_eval's
-            # finally as it unwound) may install it; otherwise keep unwinding.
-            if esc.owner_eval_id != ctx.current_eval_id:
-                raise
-            cont = esc.cont
-            _wind_walk(ctx, as_continuation_wind(cont))
-            _restore_handler_stack(ctx, as_continuation_handlers(cont))
-            K = list(as_continuation_k(cont))
-            _restore_shadow_stack(ctx, as_continuation_shadow(cont))
-            V = _continuation_value(cont, esc.args)
-            skip_eval = True   # V is ready; resume in the APPLY phase
-            continue
 
         except _CATCHABLE_LOCAL as e:
             # Walk K once to find a handler frame, COLLECTING (not running) the
