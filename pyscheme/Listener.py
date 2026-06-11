@@ -1458,6 +1458,7 @@ class Listener:
             print()
 
         total_fail = sum(entry[2] for entry in results)
+        total_cases = sum(entry[1] + entry[2] for entry in results)
         print(BOLD + '===== SUITES COMPLETE =====' + RESET)
         for label, p, f in results:
             if f == 0:
@@ -1465,6 +1466,8 @@ class Listener:
             else:
                 detail = RED + ('%d of %d failed' % (f, p + f)) + RESET
             print('  ' + label.ljust(18) + ' ' + detail)
+        print('  ' + 'Total test cases'.ljust(18) + ' '
+              + BOLD + str(total_cases) + RESET)
         if total_fail == 0:
             print(BOLD + GREEN + '  ALL SUITES PASSED' + RESET)
         else:
