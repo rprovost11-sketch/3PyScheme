@@ -157,6 +157,8 @@ FRAME_WIND_STEP = 33
 FRAME_ERROR_UNWIND = 34
 FRAME_EVAL_FORMS = 35
 FRAME_LIB_FINALIZE = 36
+FRAME_IMPORT_STEP = 37
+FRAME_ENSURE_LOADED = 38
 
 # Sentinel marking the very first FRAME_HOF_STEP entry, where V holds the
 # higher-order call's last argument (not a callback result) and must be
@@ -277,6 +279,10 @@ _MULTI_VALUES_OK_FRAMES = frozenset([
     # FRAME_LIB_FINALIZE builds + registers a library's exports; the incoming V
     # (the last library form's result) is discarded.
     FRAME_LIB_FINALIZE,
+    # FRAME_IMPORT_STEP / FRAME_ENSURE_LOADED sequence import resolution and
+    # library file loading for effect; the incoming V is irrelevant.
+    FRAME_IMPORT_STEP,
+    FRAME_ENSURE_LOADED,
 ])
 
 _SHADOW_DEPTH_LIMIT = 50
@@ -1088,14 +1094,16 @@ def _process_import(sets_cons, env, ctx=None):
         cur = cur.cdr
 
 
-def _process_one_lib_decl(decl, lib_env, export_names, eval_forms, ctx):
+def _process_one_lib_decl(decl, lib_env, export_names, eval_forms,
+                          import_sets, ctx):
     """Process a single library declaration during define-library setup.
-    Mutates lib_env (import bindings) / export_names in place and APPENDS any
-    begin / unknown-decl forms (unexpanded) to eval_forms, to be evaluated on
-    the main K stack later (FRAME_EVAL_FORMS) rather than via a re-entrant
-    cek_eval here.  Recursive: include-library-declarations and cond-expand
-    decls call back into this function for the forms they produce."""
-    from pyscheme.library import resolve_import_set
+    Collects export names into export_names, import-set sexprs into import_sets,
+    and begin / unknown-decl forms (unexpanded) into eval_forms -- all in
+    declaration order.  Nothing is resolved or evaluated here: the imports are
+    bound (loading library files if needed) and the forms evaluated later on the
+    main K stack (FRAME_IMPORT_STEP / FRAME_EVAL_FORMS), so no re-entrant
+    cek_eval.  Recursive: include-library-declarations and cond-expand decls
+    call back into this function for the forms they produce."""
     from pyscheme.Parser import SchemeSyntaxError, parse
     from pyscheme.Expander import expand, _include_base_dir, _feature_req_matches
     if not is_cons(decl) or not is_symbol(decl.car):
@@ -1108,24 +1116,7 @@ def _process_one_lib_decl(decl, lib_env, export_names, eval_forms, ctx):
     if dsym == 'import':
         sets = dbody
         while is_cons(sets):
-            import_set = sets.car
-            try:
-                bindings = resolve_import_set(import_set)
-            except ValueError as e:
-                loaded = False
-                if is_cons(import_set):
-                    loaded = _try_load_library_file(import_set, ctx)
-                if loaded:
-                    try:
-                        bindings = resolve_import_set(import_set)
-                    except ValueError as e2:
-                        raise SchemeSyntaxError(
-                            'define-library: import: ' + str(e2), src_of(import_set))
-                else:
-                    raise SchemeSyntaxError(
-                        'define-library: import: ' + str(e), src_of(import_set))
-            for n in bindings:
-                lib_env.bind(n, bindings[n])
+            import_sets.append(sets.car)
             sets = sets.cdr
         return
 
@@ -1184,7 +1175,8 @@ def _process_one_lib_decl(decl, lib_env, export_names, eval_forms, ctx):
             inner_forms = parse(source, resolved)
             for inner in inner_forms:
                 _process_one_lib_decl(
-                    inner, lib_env, export_names, eval_forms, ctx)
+                    inner, lib_env, export_names, eval_forms,
+                    import_sets, ctx)
             paths = paths.cdr
         return
 
@@ -1205,7 +1197,8 @@ def _process_one_lib_decl(decl, lib_env, export_names, eval_forms, ctx):
                 cur_inner = body
                 while is_cons(cur_inner):
                     _process_one_lib_decl(
-                        cur_inner.car, lib_env, export_names, eval_forms, ctx)
+                        cur_inner.car, lib_env, export_names, eval_forms,
+                        import_sets, ctx)
                     cur_inner = cur_inner.cdr
                 return
         # No clause matched: silently produce no declarations (R7RS).
@@ -1256,11 +1249,13 @@ def define_library_setup(C, ctx):
     lib_env = Environment(parent=None)
     export_names = []          # Python list of (internal, external) pairs
     eval_forms = []            # begin / unknown-decl forms, in declaration order
+    import_sets = []           # import-set sexprs, in declaration order
     d = decls_cons
     while is_cons(d):
-        _process_one_lib_decl(d.car, lib_env, export_names, eval_forms, ctx)
+        _process_one_lib_decl(d.car, lib_env, export_names, eval_forms,
+                              import_sets, ctx)
         d = d.cdr
-    return (lib_env, eval_forms, export_names, key)
+    return (lib_env, eval_forms, export_names, key, import_sets)
 
 
 def _finalize_define_library(lib_env, export_names, key, C):
@@ -1397,8 +1392,13 @@ def _cek_loop(expr, env, ctx):
 
                             elif sf_kind == _SF_IMPORT:
                                 # (import <import-set>...) - resolve each set and bind
-                                # each exported name into the current env.  Returns VOID.
-                                _process_import(C.cdr, E, ctx)
+                                # each exported name into the current env, loading
+                                # library files on the K stack if needed.  Returns
+                                # VOID.  Driven by FRAME_IMPORT_STEP (no re-entrant
+                                # cek_eval).
+                                _imp_sets = _collect_cons_to_list(C.cdr)
+                                K.append((FRAME_IMPORT_STEP, _imp_sets, 0, E,
+                                          False, 'import: '))
                                 V = VOID_VALUE
                                 break
 
@@ -1427,6 +1427,11 @@ def _cek_loop(expr, env, ctx):
                                     (FRAME_LIB_FINALIZE, _dl_env, _dl[2], _dl[3], C))
                                 K.append((FRAME_EVAL_FORMS, _dl[1], _dl_env,
                                           0, {}, False))
+                                # Imports run first (frame-driven, loading library
+                                # files on the K stack if needed), before the begin
+                                # forms; pushed last so APPLY pops it first.
+                                K.append((FRAME_IMPORT_STEP, _dl[4], 0, _dl_env,
+                                          False, 'define-library: import: '))
                                 V = VOID_VALUE
                                 break
 
@@ -1982,6 +1987,85 @@ def _cek_loop(expr, env, ctx):
                         _finalize_define_library(
                             frame[1], frame[2], frame[3], frame[4])
                         V = VOID_VALUE
+                        continue
+
+                    if ftag == FRAME_IMPORT_STEP:
+                        # frame = (FRAME_IMPORT_STEP, sets, index, env, post_load,
+                        #          err_prefix)
+                        # Resolves each import-set and binds its exports into env.
+                        # When a set names an unregistered library, frame-drives a
+                        # load (FRAME_ENSURE_LOADED) then retries (post_load=True),
+                        # so library files evaluate on the main K stack instead of a
+                        # re-entrant cek_eval.  Used for top-level import and (via the
+                        # define-library dispatch) library imports.
+                        im_sets = frame[1]
+                        im_i = frame[2]
+                        im_env = frame[3]
+                        im_post = frame[4]
+                        im_prefix = frame[5]
+                        if im_i >= len(im_sets):
+                            V = VOID_VALUE
+                            continue
+                        from pyscheme.library import (
+                            resolve_import_set, library_name_to_key,
+                            library_registered_p)
+                        from pyscheme.Parser import SchemeSyntaxError
+                        import_set = im_sets[im_i]
+                        try:
+                            bindings = resolve_import_set(import_set)
+                        except ValueError as ie:
+                            _isrc = src_of(import_set)
+                            if not im_post and is_cons(import_set):
+                                try:
+                                    _ikey = library_name_to_key(import_set)
+                                except ValueError:
+                                    _ikey = None
+                                if (_ikey is not None
+                                        and not library_registered_p(_ikey)):
+                                    K.append((FRAME_IMPORT_STEP, im_sets, im_i,
+                                              im_env, True, im_prefix))
+                                    K.append((FRAME_ENSURE_LOADED, _ikey,
+                                              import_set, _library_load_path(), 0))
+                                    continue
+                            raise SchemeSyntaxError(
+                                im_prefix + str(ie), _isrc)
+                        for n in bindings:
+                            im_env.bind(n, bindings[n])
+                        K.append((FRAME_IMPORT_STEP, im_sets, im_i + 1,
+                                  im_env, False, im_prefix))
+                        continue
+
+                    if ftag == FRAME_ENSURE_LOADED:
+                        # frame = (FRAME_ENSURE_LOADED, key, name_sexpr, dirs, di)
+                        # Walks the load path for a library: per dir loads <key>.py
+                        # (native) then drives <key>.sld's forms on the K stack via
+                        # FRAME_EVAL_FORMS, re-checking registration after each dir.
+                        # Yields when the library is registered or the dirs run out.
+                        el_key = frame[1]
+                        el_name = frame[2]
+                        el_dirs = frame[3]
+                        el_di = frame[4]
+                        from pyscheme.library import library_registered_p
+                        if library_registered_p(el_key) or el_di >= len(el_dirs):
+                            V = VOID_VALUE
+                            continue
+                        import os as _os
+                        _base = el_dirs[el_di]
+                        _bpath = _os.path.join(*el_key.split('.'))
+                        _prefix = (_os.path.join(_base, _bpath)
+                                   if _base else _bpath)
+                        if _os.path.isfile(_prefix + '.py'):
+                            _load_py_extension(_prefix + '.py')
+                        _sld = _prefix + '.sld'
+                        K.append((FRAME_ENSURE_LOADED, el_key, el_name,
+                                  el_dirs, el_di + 1))
+                        if _os.path.isfile(_sld):
+                            from pyscheme.Parser import parse
+                            _fh = open(_sld, 'r')
+                            _src = _fh.read()
+                            _fh.close()
+                            K.append((FRAME_EVAL_FORMS, parse(_src, _sld),
+                                      Environment(parent=None), 0, {}, False))
                         continue
 
                     if ftag == FRAME_CWV_CONSUMER:
