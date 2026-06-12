@@ -33,6 +33,7 @@ from pyscheme.AST import (
     make_port, make_eof, make_string, make_character, make_integer,
     make_boolean, make_parameter, make_bytevector,
     Port,
+    as_primitive_fn,
     src_of,
 )
 from pyscheme.Environment import SchemeTypeError, SchemeFileError
@@ -830,22 +831,7 @@ def port_parameter_for_accessor(name, ctx):
 
 
 def _prim_call_with_port(ctx, env, args, app_node):
-    # (call-with-port port proc) calls (proc port) and closes port before
-    # returning the result.  R7RS 6.13.
-    from pyscheme.primitives.meta import _apply_scheme_proc
-    port_val = args[0]
-    proc = args[1]
-    p = _check_port(port_val, 'call-with-port', app_node)
-    try:
-        result = _apply_scheme_proc(proc, [port_val], ctx, None, app_node)
-    finally:
-        if p.is_open and p.file_h is not None:
-            try:
-                p.file_h.close()
-            except OSError:
-                pass
-        p.is_open = False
-    return result
+    return _run_port_runner_reentrant('call-with-port', ctx, env, args, app_node)
 
 
 def _prim_write_shared(ctx, env, args, app_node):
@@ -901,98 +887,28 @@ def _prim_rename_file(ctx, env, args, app_node):
 
 
 def _prim_call_with_input_file(ctx, env, args, app_node):
-    from pyscheme.primitives.meta import _apply_scheme_proc
-    if not is_string(args[0]):
-        raise SchemeTypeError(
-            'call-with-input-file: filename must be a string', src_of(app_node))
-    port_val = _prim_open_input_file(ctx, env, [args[0]], app_node)
-    p = as_port(port_val)
-    try:
-        result = _apply_scheme_proc(args[1], [port_val], ctx, None, app_node)
-    finally:
-        if p.is_open and p.file_h is not None:
-            try:
-                p.file_h.close()
-            except OSError:
-                pass
-        p.is_open = False
-    return result
+    return _run_port_runner_reentrant(
+        'call-with-input-file', ctx, env, args, app_node)
 
 
 def _prim_call_with_output_file(ctx, env, args, app_node):
-    from pyscheme.primitives.meta import _apply_scheme_proc
-    if not is_string(args[0]):
-        raise SchemeTypeError(
-            'call-with-output-file: filename must be a string', src_of(app_node))
-    port_val = _prim_open_output_file(ctx, env, [args[0]], app_node)
-    p = as_port(port_val)
-    try:
-        result = _apply_scheme_proc(args[1], [port_val], ctx, None, app_node)
-    finally:
-        if p.is_open and p.file_h is not None:
-            try:
-                p.file_h.close()
-            except OSError:
-                pass
-        p.is_open = False
-    return result
+    return _run_port_runner_reentrant(
+        'call-with-output-file', ctx, env, args, app_node)
 
 
 def _prim_with_input_from_file(ctx, env, args, app_node):
-    from pyscheme.primitives.meta import _apply_scheme_proc
-    from pyscheme.AST import as_parameter_value, set_parameter_value
-    if not is_string(args[0]):
-        raise SchemeTypeError(
-            'with-input-from-file: filename must be a string', src_of(app_node))
-    port_val = _prim_open_input_file(ctx, env, [args[0]], app_node)
-    _get_current_input(ctx)
-    old_val = as_parameter_value(_current_input_param[0])
-    set_parameter_value(_current_input_param[0], port_val)
-    try:
-        result = _apply_scheme_proc(args[1], [], ctx, None, app_node)
-    finally:
-        set_parameter_value(_current_input_param[0], old_val)
-        _prim_close_port(ctx, env, [port_val], app_node)
-    return result
+    return _run_port_runner_reentrant(
+        'with-input-from-file', ctx, env, args, app_node)
 
 
 def _prim_with_output_to_file(ctx, env, args, app_node):
-    from pyscheme.primitives.meta import _apply_scheme_proc
-    from pyscheme.AST import as_parameter_value, set_parameter_value
-    if not is_string(args[0]):
-        raise SchemeTypeError(
-            'with-output-to-file: filename must be a string', src_of(app_node))
-    port_val = _prim_open_output_file(ctx, env, [args[0]], app_node)
-    _get_current_output(ctx)
-    old_val = as_parameter_value(_current_output_param[0])
-    set_parameter_value(_current_output_param[0], port_val)
-    try:
-        result = _apply_scheme_proc(args[1], [], ctx, None, app_node)
-    finally:
-        set_parameter_value(_current_output_param[0], old_val)
-        _prim_close_port(ctx, env, [port_val], app_node)
-    return result
+    return _run_port_runner_reentrant(
+        'with-output-to-file', ctx, env, args, app_node)
 
 
 def _prim_with_input_from_string(ctx, env, args, app_node):
-    # Common (non-R7RS) extension: like with-input-from-file but reads from a
-    # string port.  Temporarily make (open-input-string str) the current input
-    # port, call the thunk, then restore.
-    from pyscheme.primitives.meta import _apply_scheme_proc
-    from pyscheme.AST import as_parameter_value, set_parameter_value
-    if not is_string(args[0]):
-        raise SchemeTypeError(
-            'with-input-from-string: first argument must be a string', src_of(app_node))
-    port_val = _prim_open_input_string(ctx, env, [args[0]], app_node)
-    _get_current_input(ctx)
-    old_val = as_parameter_value(_current_input_param[0])
-    set_parameter_value(_current_input_param[0], port_val)
-    try:
-        result = _apply_scheme_proc(args[1], [], ctx, None, app_node)
-    finally:
-        set_parameter_value(_current_input_param[0], old_val)
-        _prim_close_port(ctx, env, [port_val], app_node)
-    return result
+    return _run_port_runner_reentrant(
+        'with-input-from-string', ctx, env, args, app_node)
 
 
 def _close_port_obj(p):
@@ -1085,6 +1001,24 @@ def port_runner_setup(name, ctx, env, args, app_node):
         return VOID_VALUE
     return (before, make_primitive('%port-runner-after', after),
             args[1], [])
+
+
+def _run_port_runner_reentrant(name, ctx, env, args, app_node):
+    """Re-entrant fallback for the port runners.  port_runner_setup is the
+    SINGLE source of their open / validate / teardown logic; the evaluator's
+    FRAME_CALL and apply paths drive the body frame-based off it with no
+    re-entry.  The _prim_* bodies registered for these names are reached only
+    when a port runner is applied through a path that still calls a primitive
+    body directly (e.g. a cond / case `=>` target); they reuse that one source
+    by running its body and cleanup re-entrantly via _apply_scheme_proc, so the
+    open/validate/close logic is no longer duplicated here."""
+    from pyscheme.primitives.meta import _apply_scheme_proc
+    before, after, body_proc, body_args = port_runner_setup(
+        name, ctx, env, args, app_node)
+    try:
+        return _apply_scheme_proc(body_proc, body_args, ctx, None, app_node)
+    finally:
+        as_primitive_fn(after)(ctx, env, [], app_node)
 
 
 def register():
