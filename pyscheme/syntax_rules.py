@@ -197,13 +197,41 @@ def collect_free_ids(tmpl, pvars, literals, ellipsis_sym, out):
             collect_free_ids(item, pvars, literals, ellipsis_sym, out)
 
 
+# ── Binding forms: shared roster for the two hygiene walkers ───────────────
+# Two walkers must know which special-form heads introduce *bindings*, and they
+# must not silently drift apart:
+#   * collect_binding_intros (below) walks RAW syntax-rules TEMPLATES, adding
+#     binder-position names to the per-expansion gensym set.
+#   * Expander._rename_refs_in_form walks ALREADY-EXPANDED forms, masking
+#     re-bound names while it renames free references.
+# They deliberately cover DIFFERENT subsets because they see different input
+# languages: a template can contain `define` (internal defines are lowered to
+# letrec* before the expanded-form walker ever runs, so it never sees one),
+# while case-lambda / let-syntax / letrec-syntax survive into expanded code (so
+# the expanded-form walker masks them).  Both share the binder extractors
+# formals_bound_names / let_binding_names.  Adding a binding form means deciding
+# which walker(s) it reaches and updating the matching roster below; this is the
+# single place that records the full set.
+TEMPLATE_BINDING_HEADS = frozenset([
+    'lambda', 'let', 'let*', 'letrec', 'letrec*', 'define',
+])
+EXPANDED_BINDING_HEADS = frozenset([
+    'lambda', 'let', 'let*', 'letrec', 'letrec*',
+    'case-lambda', 'let-syntax', 'letrec-syntax',
+])
+BINDING_FORM_HEADS = TEMPLATE_BINDING_HEADS | EXPANDED_BINDING_HEADS
+
+
 # ── Binding-site intro-name collector ─────────────────────────────────────
 
 def collect_binding_intros(tmpl, pvars, out):
     """Collect non-pvar template symbols that appear in binding positions
     (lambda formals, let/letrec binding names, named-let name, define name).
     These are the intro_names that must be gensymmed per application so they
-    don't accidentally capture same-named use-site variables."""
+    don't accidentally capture same-named use-site variables.
+
+    Handles TEMPLATE_BINDING_HEADS (this walker's roster -- see that set's
+    comment for why it differs from _rename_refs_in_form's set)."""
     if not is_cons(tmpl):
         return
     if is_symbol(tmpl.car) and as_symbol(tmpl.car) == 'quote':
@@ -250,31 +278,47 @@ def collect_binding_intros(tmpl, pvars, out):
     collect_binding_intros(tmpl.cdr, pvars, out)
 
 
-def _cbi_formals(formals, pvars, out):
-    """Collect binding-intro names from a lambda formals list."""
+def formals_bound_names(formals):
+    """Names bound by a lambda formals list (proper or dotted/rest arg), in
+    order.  The single binder-extractor for formals, shared by both hygiene
+    walkers (collect_binding_intros here and Expander._rename_refs_in_form)."""
+    names = []
     cur = formals
     while is_cons(cur):
         if is_symbol(cur.car):
-            n = as_symbol(cur.car)
-            if n not in pvars:
-                out.add(n)
+            names.append(as_symbol(cur.car))
         cur = cur.cdr
     if is_symbol(cur):
-        n = as_symbol(cur)
+        names.append(as_symbol(cur))
+    return names
+
+
+def let_binding_names(bindings):
+    """Names bound by a let/letrec binding list ((name init)...), in order.
+    The single binder-extractor for let-bindings, shared by both hygiene
+    walkers (collect_binding_intros here and Expander._rename_refs_in_form)."""
+    names = []
+    cur = bindings
+    while is_cons(cur):
+        b = cur.car
+        if is_cons(b) and is_symbol(b.car):
+            names.append(as_symbol(b.car))
+        cur = cur.cdr
+    return names
+
+
+def _cbi_formals(formals, pvars, out):
+    """Collect binding-intro names from a lambda formals list."""
+    for n in formals_bound_names(formals):
         if n not in pvars:
             out.add(n)
 
 
 def _cbi_let_bindings(bindings, pvars, out):
     """Collect binding-intro names from a let/letrec binding list."""
-    cur = bindings
-    while is_cons(cur):
-        b = cur.car
-        if is_cons(b) and is_symbol(b.car):
-            n = as_symbol(b.car)
-            if n not in pvars:
-                out.add(n)
-        cur = cur.cdr
+    for n in let_binding_names(bindings):
+        if n not in pvars:
+            out.add(n)
 
 
 # ── Pattern matching ────────────────────────────────────────────────────────

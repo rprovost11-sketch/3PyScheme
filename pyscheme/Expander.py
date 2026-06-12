@@ -42,7 +42,9 @@ from pyscheme.AST import (
     intern_symbol, symbol_name,
     SYMBOL, VOID,
 )
-from pyscheme.syntax_rules import hygiene_gensym
+from pyscheme.syntax_rules import (
+    hygiene_gensym, formals_bound_names, let_binding_names,
+)
 
 
 # Runtime environment reference - the Interpreter installs this before
@@ -578,28 +580,16 @@ def _expand_define(sexpr):
 # substituted.  This replaces the sets-of-scopes mechanism entirely.
 
 def _collect_formals_names(formals):
-    """Return set of name strings bound by a formals cons chain (possibly improper)."""
-    names = set()
-    cur = formals
-    while is_cons(cur):
-        if is_symbol(cur.car):
-            names.add(as_symbol(cur.car))
-        cur = cur.cdr
-    if is_symbol(cur):
-        names.add(as_symbol(cur))
-    return names
+    """Set of names bound by a formals cons chain (possibly improper).
+    Delegates to the shared binder-extractor in syntax_rules so the two
+    hygiene walkers can't disagree on what a formals list binds."""
+    return set(formals_bound_names(formals))
 
 
 def _collect_let_bound_names(bindings):
-    """Return set of name strings bound by a let/letrec binding list."""
-    names = set()
-    cur = bindings
-    while is_cons(cur):
-        pair = cur.car
-        if is_cons(pair) and is_symbol(pair.car):
-            names.add(as_symbol(pair.car))
-        cur = cur.cdr
-    return names
+    """Set of names bound by a let/letrec binding list.  Delegates to the
+    shared binder-extractor in syntax_rules (single source of truth)."""
+    return set(let_binding_names(bindings))
 
 
 def _mask_table(table, bound):
@@ -682,8 +672,14 @@ def _gensym_rename_formals(formals, rename_table, src):
 
 def _rename_refs_in_form(form, rename_table):
     """Substitute free variable references named in rename_table.
-    Scope-aware: masks names re-bound by inner lambda/let forms.
-    Does not rename inside (quote ...) or binding-site positions."""
+    Scope-aware: masks names re-bound by inner binding forms.  Does not rename
+    inside (quote ...), quasiquoted template data, case datum-lists, or
+    binding-site positions.
+
+    Masks the binders of syntax_rules.EXPANDED_BINDING_HEADS (this walker's
+    roster -- see that set's comment for why it differs from the template
+    walker collect_binding_intros).  Shares the binder extractors
+    formals_bound_names / let_binding_names with it."""
     if not rename_table:
         return form
     if is_symbol(form):
