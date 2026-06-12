@@ -1243,51 +1243,9 @@ class Listener:
                 tco_iters = Listener._parse_iter_count(a[3:])
             else:
                 rest.append(a)
-        args = rest
 
-        # Detect single-file mode: last token ends with ".log".
-        # Tokens are rejoined since filenames may contain spaces.
-        if args and args[-1].endswith('.log'):
-            fname = ' '.join(args)
-            fpath = os.path.join(compdir, fname)
-            if not os.path.isfile(fpath):
-                raise ListenerCommandError('File not found: ' + fname)
-            self._runTestFiles(
-                [fpath], compdir, 'compliance', tco_iters=tco_iters)
-            return
-
-        # Range mode: 0 args = all, 1 arg = [start, ∞), 2 args = [start, end).
-        if len(args) > 2:
-            raise ListenerCommandError(
-                'Usage: ]compliance [<file.log> | <start> [<end>]]')
-
-        all_files = retrieveFileList(compdir)
-        if not all_files:
-            raise ListenerCommandError('No .log files in ' + compdir)
-
-        if not args:
-            return self._runTestFiles(all_files, compdir,
-                                      'compliance', tco_iters=tco_iters)
-
-        start_lc = args[0].lower()
-        end_lc = args[1].lower() if len(args) == 2 else None
-
-        filtered = [
-            f for f in all_files
-            if os.path.basename(f).lower() >= start_lc
-            and (end_lc is None or os.path.basename(f).lower() < end_lc)
-        ]
-
-        if not filtered:
-            if end_lc is not None:
-                raise ListenerCommandError(
-                    'No .log files in range [' + args[0] + ', ' + args[1] + ')')
-            else:
-                raise ListenerCommandError(
-                    'No .log files at or after "' + args[0] + '"')
-
-        self._runTestFiles(filtered, compdir, 'compliance',
-                           tco_iters=tco_iters)
+        return self._run_suite_files(rest, compdir, 'compliance',
+                                     tco_iters=tco_iters)
 
     def _cmd_regression(self, args):
         """Usage: ]regression [<file.log> | <start> [<end>]]
@@ -1318,26 +1276,38 @@ class Listener:
             raise ListenerCommandError(
                 'Regression directory not found: ' + regdir)
 
+        return self._run_suite_files(args, regdir, 'regression')
+
+    def _run_suite_files(self, args, suite_dir, suite_label, tco_iters=None):
+        """Shared file-selection + dispatch for ]compliance and ]regression.
+
+        suite_dir is already validated and any -I: switch already stripped from
+        args.  Single-file mode, range mode (0/1/2 selectors), and the empty /
+        out-of-range errors are identical between the two suites; only the suite
+        label and the optional tco_iters differ.  Returns the (pass, fail) tuple
+        from _runTestFiles so ]suites can tally the counts."""
+        kw = {} if tco_iters is None else {'tco_iters': tco_iters}
+
         # Detect single-file mode: last token ends with ".log".
+        # Tokens are rejoined since filenames may contain spaces.
         if args and args[-1].endswith('.log'):
             fname = ' '.join(args)
-            fpath = os.path.join(regdir, fname)
+            fpath = os.path.join(suite_dir, fname)
             if not os.path.isfile(fpath):
                 raise ListenerCommandError('File not found: ' + fname)
-            self._runTestFiles([fpath], regdir, 'regression')
-            return
+            return self._runTestFiles([fpath], suite_dir, suite_label, **kw)
 
         # Range mode: 0 args = all, 1 arg = [start, inf), 2 args = [start, end).
         if len(args) > 2:
             raise ListenerCommandError(
-                'Usage: ]regression [<file.log> | <start> [<end>]]')
+                'Usage: ]' + suite_label + ' [<file.log> | <start> [<end>]]')
 
-        all_files = retrieveFileList(regdir)
+        all_files = retrieveFileList(suite_dir)
         if not all_files:
-            raise ListenerCommandError('No .log files in ' + regdir)
+            raise ListenerCommandError('No .log files in ' + suite_dir)
 
         if not args:
-            return self._runTestFiles(all_files, regdir, 'regression')
+            return self._runTestFiles(all_files, suite_dir, suite_label, **kw)
 
         start_lc = args[0].lower()
         end_lc = args[1].lower() if len(args) == 2 else None
@@ -1356,7 +1326,7 @@ class Listener:
                 raise ListenerCommandError(
                     'No .log files at or after "' + args[0] + '"')
 
-        self._runTestFiles(filtered, regdir, 'regression')
+        return self._runTestFiles(filtered, suite_dir, suite_label, **kw)
 
     def _cmd_suites(self, args):
         """Usage: ]suites <suite> [<suite> ...]
