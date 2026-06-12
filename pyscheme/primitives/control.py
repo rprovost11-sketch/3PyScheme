@@ -8,20 +8,13 @@ A special-form stub would only be reached by pathological code like
 `(apply if ...)`; raising from the stub is the right behavior.
 """
 
-from pyscheme.primitives import register_primitive
+from pyscheme.primitives import register_primitive, _stub
 from pyscheme.AST import make_multi_values, src_of
 from pyscheme.Environment import SchemeTypeError
 
 
 CATEGORY = 'control'
 _SPECIAL = 'special'
-
-
-def _stub(form_name):
-    raise RuntimeError(
-        repr(form_name) + ' is a special form, not a procedure; it cannot be '
-        'applied as a first-class value.  This stub exists only to carry '
-        'documentation into the help system.')
 
 
 # --- Special-form stubs -------------------------------------------------------

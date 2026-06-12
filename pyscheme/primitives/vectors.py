@@ -12,7 +12,7 @@ vector-copy!, vector-append, vector->string, string->vector,
 vector-for-each, vector-map.
 """
 
-from pyscheme.primitives import register_primitive
+from pyscheme.primitives import register_primitive, _check_index
 from pyscheme.AST import (
     alloc_cons, NIL_VALUE, VOID_VALUE,
     is_cons, is_nil, is_integer, is_string, is_character, is_vector,
@@ -31,17 +31,6 @@ def _check_vector(v, name, app_node, idx=1):
         raise SchemeTypeError(
             '%s: argument %d must be a vector' % (name, idx), src_of(app_node))
     return as_vector_items(v)
-
-
-def _check_index(v, name, length, app_node):
-    if not is_integer(v):
-        raise SchemeTypeError(
-            '%s: index must be an integer' % name, src_of(app_node))
-    k = as_integer(v)
-    if k < 0 or k >= length:
-        raise SchemeTypeError(
-            '%s: index %d out of range' % (name, k), src_of(app_node))
-    return k
 
 
 def _prim_vector_p(ctx, env, args, app_node):

@@ -279,18 +279,6 @@ def pretty_print(val):
     return repr(val)
 
 
-def _print_list(pair):
-    """Render a (possibly improper) ConsCell chain as '(a b c)' or '(a b . c)'."""
-    items = []
-    cur = pair
-    while is_cons(cur):
-        items.append(pretty_print(cur.car))
-        cur = cur.cdr
-    if is_nil(cur):
-        return '(' + ' '.join(items) + ')'
-    return '(' + ' '.join(items) + ' . ' + pretty_print(cur) + ')'
-
-
 def _shared_scan(val, counts):
     """First pass for write-shared: count how many times each mutable object
     (cons cell, vector) is reachable.  counts maps id -> [val, n].  Iterative

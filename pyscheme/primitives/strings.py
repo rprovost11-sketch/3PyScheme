@@ -11,7 +11,7 @@ make-string, string, string->symbol, symbol->string,
 string-upcase, string-downcase.
 """
 
-from pyscheme.primitives import register_primitive
+from pyscheme.primitives import register_primitive, _check_index
 from pyscheme.AST import (
     alloc_cons, NIL_VALUE,
     is_cons, is_nil, is_string, is_character, is_integer, is_symbol,
@@ -30,17 +30,6 @@ def _check_string(v, name, app_node, idx=1):
         raise SchemeTypeError(
             '%s: argument %d must be a string' % (name, idx), src_of(app_node))
     return as_string(v)
-
-
-def _check_index(v, name, length, app_node):
-    if not is_integer(v):
-        raise SchemeTypeError(
-            '%s: index must be an integer' % name, src_of(app_node))
-    k = as_integer(v)
-    if k < 0 or k >= length:
-        raise SchemeTypeError(
-            '%s: index %d out of range' % (name, k), src_of(app_node))
-    return k
 
 
 def _prim_string_length(ctx, env, args, app_node):

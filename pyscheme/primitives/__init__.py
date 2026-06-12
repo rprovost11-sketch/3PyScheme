@@ -28,8 +28,10 @@ Public exports:
     install_primitives  - bind every registered primitive into an env
 """
 
-from pyscheme.AST import make_primitive
-from pyscheme.Environment import SchemeArityError, arity_mismatch_msg
+from pyscheme.AST import make_primitive, is_integer, as_integer, src_of
+from pyscheme.Environment import (
+    SchemeArityError, SchemeTypeError, arity_mismatch_msg,
+)
 
 
 # Registration tables: populated by register_primitive() calls from each
@@ -114,6 +116,26 @@ def register_primitive(name, arity, fn, usage=None, doc='', category='', kind='p
     _REGISTRY.append((name, arity, wrapped, usage, doc, kind, category))
     PRIMITIVE_ARITIES[name] = arity
     PRIMITIVE_HELP[name] = (kind, usage, doc, category)
+
+
+# Shared helpers used by several primitive modules.
+
+def _stub(form_name):
+    raise RuntimeError(
+        repr(form_name) + ' is a special form, not a procedure; it cannot be '
+        'applied as a first-class value.  This stub exists only to carry '
+        'documentation into the help system.')
+
+
+def _check_index(v, name, length, app_node):
+    if not is_integer(v):
+        raise SchemeTypeError(
+            '%s: index must be an integer' % name, src_of(app_node))
+    k = as_integer(v)
+    if k < 0 or k >= length:
+        raise SchemeTypeError(
+            '%s: index %d out of range' % (name, k), src_of(app_node))
+    return k
 
 
 # Category display titles and ordering.  Categories not named in the
