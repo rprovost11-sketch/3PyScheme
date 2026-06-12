@@ -62,7 +62,6 @@ from pyscheme.Environment import (
     _PositionedSchemeError, SchemeArityError, arity_mismatch_msg,
 )
 from pyscheme.Parser import SchemeSyntaxError
-from pyscheme.Evaluator import _SYNTACTIC_KEYWORDS
 from pyscheme.primitives import PRIMITIVE_ARITIES
 from pyscheme.AST import (
     is_cons, is_nil, is_symbol, is_integer, is_real, is_rational, is_complex,
@@ -71,6 +70,20 @@ from pyscheme.AST import (
     as_rational_num, as_rational_den, as_complex_real, as_complex_imag,
     src_of,
 )
+
+
+# R7RS §3.1: syntactic keywords that may not be used as plain expressions.
+# The analyzer rejects a bare reference to one of these names (when no local
+# binding shadows it) instead of letting it reach the evaluator as a stub.
+_SYNTACTIC_KEYWORDS = frozenset([
+    'and', 'begin', 'case', 'case-lambda', 'cond', 'cond-expand',
+    'define', 'define-library', 'define-record-type', 'define-syntax',
+    'define-values', 'delay', 'delay-force', 'do', 'guard', 'if',
+    'import', 'include', 'include-ci', 'lambda', 'let', 'let*',
+    'let*-values', 'let-syntax', 'let-values', 'letrec', 'letrec*',
+    'letrec-syntax', 'or', 'parameterize', 'quasiquote', 'quote',
+    'set!', 'syntax-rules', 'unless', 'when',
+])
 
 
 # ---- error type --------------------------------------------------------

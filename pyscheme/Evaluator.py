@@ -112,8 +112,6 @@ from pyscheme.AST import (
     mark_literal_immutable,
     eqv_atom, intern_symbol,
     src_of,
-    VOID, BOOLEAN, COMPLEX, REAL, RATIONAL, INTEGER, CHARACTER, STRING,
-    CLOSURE, PAIR, NIL, PRIMITIVE, CASE_CLOSURE, PROMISE, MULTI_VALUES, SYMBOL,
 )
 
 
@@ -222,21 +220,6 @@ _SPECIAL_FORM_KIND = {
     intern_symbol('trace'):          _SF_TRACE,
     intern_symbol('untrace'):        _SF_UNTRACE,
 }
-
-
-# R7RS §3.1: syntactic keywords that may not be used as expressions.
-# When a bare symbol evaluates to the global stub primitive for one of
-# these names (i.e., there is no local binding that shadows it), the
-# evaluator raises SchemeSyntaxError instead of returning the stub.
-_SYNTACTIC_KEYWORDS = frozenset([
-    'and', 'begin', 'case', 'case-lambda', 'cond', 'cond-expand',
-    'define', 'define-library', 'define-record-type', 'define-syntax',
-    'define-values', 'delay', 'delay-force', 'do', 'guard', 'if',
-    'import', 'include', 'include-ci', 'lambda', 'let', 'let*',
-    'let*-values', 'let-syntax', 'let-values', 'letrec', 'letrec*',
-    'letrec-syntax', 'or', 'parameterize', 'quasiquote', 'quote',
-    'set!', 'syntax-rules', 'unless', 'when',
-])
 
 
 # Frames that are not single-value continuations: FRAME_CWV_CONSUMER
