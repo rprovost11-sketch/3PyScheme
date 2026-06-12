@@ -699,6 +699,32 @@ def _enter_proc(fn_value, args, ctx, saved_env, app_node):
         'expected a procedure', app_node)
 
 
+def _apply_enter_result(result, K, V):
+    """Apply an _enter_proc descriptor to the CEK registers and tell the APPLY
+    loop what to do next.  K is mutated in place when a frame must be pushed.
+    Two outcomes:
+      ('apply', V)    -- a value was produced (or a frame-driven callback was
+                         pushed); V is the value register to carry forward
+                         (caller: set V, then continue / resume the APPLY phase)
+      ('eval',  C, E) -- a closure body was entered; evaluate expression C in
+                         environment E (caller: set C and E, then run EVAL)
+    _enter_proc never yields a 'cont' descriptor since the single-loop rewrite
+    -- a continuation arrives as a FRAME_WIND_STEP 'frame' -- so there is no
+    K / V reinstatement case here."""
+    tag = result[0]
+    if tag == 'value':
+        return ('apply', result[1])
+    if tag == 'frame':
+        K.append(result[1])
+        return ('apply', V)
+    # 'enter': a closure body to evaluate; push FRAME_SEQ for a multi-form body.
+    new_C = result[1]
+    new_E = result[2]
+    if result[3] is not None:
+        K.append((FRAME_SEQ, result[3], new_E))
+    return ('eval', new_C, new_E)
+
+
 def _unpack_apply_args(collected, app_node):
     """(apply proc arg1 arg2 ... argN list) has the tail list spliced onto
     the leading args.  Returns (proc, flat_args) or raises SchemeTypeError."""
@@ -1577,20 +1603,12 @@ def _cek_loop(expr, env, ctx):
                             ctx.wind_stack.pop()
                         K.append((FRAME_RESTORE_VALUE, V))
                         result = _enter_proc(after_thunk, [], ctx, None, None)
-                        if result[0] == 'value':
-                            V = result[1]
+                        sig = _apply_enter_result(result, K, V)
+                        if sig[0] == 'apply':
+                            V = sig[1]
                             continue
-                        if result[0] == 'cont':
-                            K = result[1]
-                            V = result[2]
-                            continue
-                        if result[0] == 'frame':
-                            K.append(result[1])
-                            continue
-                        C = result[1]
-                        E = result[2]
-                        if result[3] is not None:
-                            K.append((FRAME_SEQ, result[3], E))
+                        C = sig[1]
+                        E = sig[2]
                         break
 
                     if ftag == FRAME_RESTORE_VALUE:
@@ -1611,20 +1629,12 @@ def _cek_loop(expr, env, ctx):
                         ctx.wind_stack.append((before, after))
                         K.append((FRAME_DYNAMIC_WIND_AFTER, after))
                         result = _enter_proc(thunk, [], ctx, None, None)
-                        if result[0] == 'value':
-                            V = result[1]
+                        sig = _apply_enter_result(result, K, V)
+                        if sig[0] == 'apply':
+                            V = sig[1]
                             continue
-                        if result[0] == 'cont':
-                            K = result[1]
-                            V = result[2]
-                            continue
-                        if result[0] == 'frame':
-                            K.append(result[1])
-                            continue
-                        C = result[1]
-                        E = result[2]
-                        if result[3] is not None:
-                            K.append((FRAME_SEQ, result[3], E))
+                        C = sig[1]
+                        E = sig[2]
                         break
 
                     if ftag == FRAME_PARAMETERIZE_STEP:
@@ -1658,40 +1668,24 @@ def _cek_loop(expr, env, ctx):
                             K.append((FRAME_PARAMETERIZE_STEP, p_params, p_raw,
                                       p_acc, p_i, p_thunk, p_app, True))
                             result = _enter_proc(conv, [p_raw[p_i]], ctx, None, p_app)
-                            if result[0] == 'value':
-                                V = result[1]
+                            sig = _apply_enter_result(result, K, V)
+                            if sig[0] == 'apply':
+                                V = sig[1]
                                 continue
-                            if result[0] == 'cont':
-                                K = result[1]
-                                V = result[2]
-                                continue
-                            if result[0] == 'frame':
-                                K.append(result[1])
-                                continue
-                            C = result[1]
-                            E = result[2]
-                            if result[3] is not None:
-                                K.append((FRAME_SEQ, result[3], E))
+                            C = sig[1]
+                            E = sig[2]
                             break
                         # Every value converted: install winds, tail-call the body.
                         _pw = _finalize_parameterize_winds(p_params, p_acc, ctx)
                         ctx.wind_stack.append((_pw[0], _pw[1]))
                         K.append((FRAME_DYNAMIC_WIND_AFTER, _pw[1]))
                         result = _enter_proc(p_thunk, [], ctx, None, p_app)
-                        if result[0] == 'value':
-                            V = result[1]
+                        sig = _apply_enter_result(result, K, V)
+                        if sig[0] == 'apply':
+                            V = sig[1]
                             continue
-                        if result[0] == 'cont':
-                            K = result[1]
-                            V = result[2]
-                            continue
-                        if result[0] == 'frame':
-                            K.append(result[1])
-                            continue
-                        C = result[1]
-                        E = result[2]
-                        if result[3] is not None:
-                            K.append((FRAME_SEQ, result[3], E))
+                        C = sig[1]
+                        E = sig[2]
                         break
 
                     if ftag == FRAME_WIND_STEP:
@@ -1719,20 +1713,12 @@ def _cek_loop(expr, env, ctx):
                             K.append((FRAME_WIND_STEP, w_ops, w_i + 1,
                                       w_cont, w_val))
                             result = _enter_proc(w_thunk, [], ctx, None, None)
-                            if result[0] == 'value':
-                                V = result[1]
+                            sig = _apply_enter_result(result, K, V)
+                            if sig[0] == 'apply':
+                                V = sig[1]
                                 continue
-                            if result[0] == 'cont':
-                                K = result[1]
-                                V = result[2]
-                                continue
-                            if result[0] == 'frame':
-                                K.append(result[1])
-                                continue
-                            C = result[1]
-                            E = result[2]
-                            if result[3] is not None:
-                                K.append((FRAME_SEQ, result[3], E))
+                            C = sig[1]
+                            E = sig[2]
                             break
                         # All wind thunks have run: install the continuation.
                         _restore_handler_stack(
@@ -1764,20 +1750,12 @@ def _cek_loop(expr, env, ctx):
                                       eu_i + 1, eu_exc))
                             result = _enter_proc(
                                 eu_afters[eu_i], [], ctx, None, None)
-                            if result[0] == 'value':
-                                V = result[1]
+                            sig = _apply_enter_result(result, K, V)
+                            if sig[0] == 'apply':
+                                V = sig[1]
                                 continue
-                            if result[0] == 'cont':
-                                K = result[1]
-                                V = result[2]
-                                continue
-                            if result[0] == 'frame':
-                                K.append(result[1])
-                                continue
-                            C = result[1]
-                            E = result[2]
-                            if result[3] is not None:
-                                K.append((FRAME_SEQ, result[3], E))
+                            C = sig[1]
+                            E = sig[2]
                             break
                         raise eu_exc
 
@@ -1916,20 +1894,12 @@ def _cek_loop(expr, env, ctx):
                             consumer_args = [V]
                         result = _enter_proc(
                             consumer, consumer_args, ctx, E, app_node)
-                        if result[0] == 'value':
-                            V = result[1]
+                        sig = _apply_enter_result(result, K, V)
+                        if sig[0] == 'apply':
+                            V = sig[1]
                             continue
-                        if result[0] == 'cont':
-                            K = result[1]
-                            V = result[2]
-                            continue
-                        if result[0] == 'frame':
-                            K.append(result[1])
-                            continue
-                        C = result[1]
-                        E = result[2]
-                        if result[3] is not None:
-                            K.append((FRAME_SEQ, result[3], E))
+                        C = sig[1]
+                        E = sig[2]
                         break
 
                     if ftag == FRAME_HOF_STEP:
@@ -1996,20 +1966,12 @@ def _cek_loop(expr, env, ctx):
                         K.append((FRAME_HOF_STEP, hof_mode, hof_proc, hof_next,
                                   hof_acc, app_node, hof_next_pending))
                         result = _enter_proc(hof_proc, hof_row, ctx, E, app_node)
-                        if result[0] == 'value':
-                            V = result[1]
+                        sig = _apply_enter_result(result, K, V)
+                        if sig[0] == 'apply':
+                            V = sig[1]
                             continue
-                        if result[0] == 'cont':
-                            K = result[1]
-                            V = result[2]
-                            continue
-                        if result[0] == 'frame':
-                            K.append(result[1])
-                            continue
-                        C = result[1]
-                        E = result[2]
-                        if result[3] is not None:
-                            K.append((FRAME_SEQ, result[3], E))
+                        C = sig[1]
+                        E = sig[2]
                         break
 
                     if ftag == FRAME_HOF_STEP_IDX:
@@ -2075,20 +2037,12 @@ def _cek_loop(expr, env, ctx):
                         K.append((FRAME_HOF_STEP_IDX, hof_mode, hof_proc, hof_seqs,
                                   hof_idx + 1, hof_short, hof_acc, app_node, True))
                         result = _enter_proc(hof_proc, hof_row, ctx, E, app_node)
-                        if result[0] == 'value':
-                            V = result[1]
+                        sig = _apply_enter_result(result, K, V)
+                        if sig[0] == 'apply':
+                            V = sig[1]
                             continue
-                        if result[0] == 'cont':
-                            K = result[1]
-                            V = result[2]
-                            continue
-                        if result[0] == 'frame':
-                            K.append(result[1])
-                            continue
-                        C = result[1]
-                        E = result[2]
-                        if result[3] is not None:
-                            K.append((FRAME_SEQ, result[3], E))
+                        C = sig[1]
+                        E = sig[2]
                         break
 
                     if ftag == FRAME_SEARCH_STEP:
@@ -2136,20 +2090,12 @@ def _cek_loop(expr, env, ctx):
                         K.append((FRAME_SEARCH_STEP, s_mode, s_proc, s_target,
                                   s_cursor, app_node, True))
                         result = _enter_proc(s_proc, [s_target, s_item], ctx, E, app_node)
-                        if result[0] == 'value':
-                            V = result[1]
+                        sig = _apply_enter_result(result, K, V)
+                        if sig[0] == 'apply':
+                            V = sig[1]
                             continue
-                        if result[0] == 'cont':
-                            K = result[1]
-                            V = result[2]
-                            continue
-                        if result[0] == 'frame':
-                            K.append(result[1])
-                            continue
-                        C = result[1]
-                        E = result[2]
-                        if result[3] is not None:
-                            K.append((FRAME_SEQ, result[3], E))
+                        C = sig[1]
+                        E = sig[2]
                         break
 
                     if ftag == FRAME_POP_HANDLER:
@@ -2205,20 +2151,12 @@ def _cek_loop(expr, env, ctx):
                             K.append((FRAME_FORCE_RESULT, p))
                             thunk = as_promise_payload(p)
                             result = _enter_proc(thunk, [], ctx, E, None)
-                            if result[0] == 'value':
-                                V = result[1]
+                            sig = _apply_enter_result(result, K, V)
+                            if sig[0] == 'apply':
+                                V = sig[1]
                                 continue
-                            if result[0] == 'cont':
-                                K = result[1]
-                                V = result[2]
-                                continue
-                            if result[0] == 'frame':
-                                K.append(result[1])
-                                continue
-                            C = result[1]
-                            E = result[2]
-                            if result[3] is not None:
-                                K.append((FRAME_SEQ, result[3], E))
+                            C = sig[1]
+                            E = sig[2]
                             break
                         promise_resolve(p, V)
                         continue
@@ -3146,23 +3084,16 @@ def _cek_loop(expr, env, ctx):
             if isinstance(e, SchemeRaised) and not e.continuable and not is_guard_handler:
                 K.append((FRAME_NONCONTIN_RETURN, raised_value))
             result = _enter_proc(handler, [raised_value], ctx, E, None)
-            if result[0] == 'value':
-                V = result[1]
+            sig = _apply_enter_result(result, K, V)
+            if sig[0] == 'apply':
+                # Handler produced a value, or is itself a frame-driven HOF
+                # primitive whose driver was just pushed; resume the APPLY loop
+                # (the start-frame ignores the current V).
+                V = sig[1]
                 skip_eval = True
-            elif result[0] == 'cont':
-                K = result[1]
-                V = result[2]
-                skip_eval = True
-            elif result[0] == 'frame':
-                # Handler is itself a frame-driven HOF primitive: push its driver
-                # and resume the APPLY loop (the start-frame ignores the current V).
-                K.append(result[1])
-                skip_eval = True
-            else:  # 'enter'
-                C = result[1]
-                E = result[2]
-                if result[3] is not None:
-                    K.append((FRAME_SEQ, result[3], E))
+            else:  # 'eval': handler is a closure body to evaluate
+                C = sig[1]
+                E = sig[2]
             continue
 
 
