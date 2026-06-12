@@ -71,64 +71,41 @@ def _num_eq(v, name, app_node, i):
         app_node)
 
 
-def _prim_num_eq(ctx, env, args, app_node):
-    prev = _num_eq(args[0], '=', app_node, 1)
+def _num_compare(name, args, app_node, extract, op):
+    """Monotonic pairwise comparison chain shared by =, <, >, <=, >=.
+    extract pulls a comparable Python number from each arg (the real-only _num,
+    or _num_eq which also admits complex for =); op is the pairwise predicate.
+    Mirrors chars.py _char_compare / strings.py _string_compare, with the
+    extractor parameterized since = admits complex numbers and the others don't."""
+    prev = extract(args[0], name, app_node, 1)
     i = 1
     while i < len(args):
-        cur = _num_eq(args[i], '=', app_node, i + 1)
-        if prev != cur:
+        cur = extract(args[i], name, app_node, i + 1)
+        if not op(prev, cur):
             return make_boolean(False)
         prev = cur
         i = i + 1
     return make_boolean(True)
+
+
+def _prim_num_eq(ctx, env, args, app_node):
+    return _num_compare('=', args, app_node, _num_eq, lambda a, b: a == b)
 
 
 def _prim_num_lt(ctx, env, args, app_node):
-    prev = _num(args[0], '<', app_node, 1)
-    i = 1
-    while i < len(args):
-        cur = _num(args[i], '<', app_node, i + 1)
-        if not (prev < cur):
-            return make_boolean(False)
-        prev = cur
-        i = i + 1
-    return make_boolean(True)
+    return _num_compare('<', args, app_node, _num, lambda a, b: a < b)
 
 
 def _prim_num_gt(ctx, env, args, app_node):
-    prev = _num(args[0], '>', app_node, 1)
-    i = 1
-    while i < len(args):
-        cur = _num(args[i], '>', app_node, i + 1)
-        if not (prev > cur):
-            return make_boolean(False)
-        prev = cur
-        i = i + 1
-    return make_boolean(True)
+    return _num_compare('>', args, app_node, _num, lambda a, b: a > b)
 
 
 def _prim_num_le(ctx, env, args, app_node):
-    prev = _num(args[0], '<=', app_node, 1)
-    i = 1
-    while i < len(args):
-        cur = _num(args[i], '<=', app_node, i + 1)
-        if not (prev <= cur):
-            return make_boolean(False)
-        prev = cur
-        i = i + 1
-    return make_boolean(True)
+    return _num_compare('<=', args, app_node, _num, lambda a, b: a <= b)
 
 
 def _prim_num_ge(ctx, env, args, app_node):
-    prev = _num(args[0], '>=', app_node, 1)
-    i = 1
-    while i < len(args):
-        cur = _num(args[i], '>=', app_node, i + 1)
-        if not (prev >= cur):
-            return make_boolean(False)
-        prev = cur
-        i = i + 1
-    return make_boolean(True)
+    return _num_compare('>=', args, app_node, _num, lambda a, b: a >= b)
 
 
 def register():
