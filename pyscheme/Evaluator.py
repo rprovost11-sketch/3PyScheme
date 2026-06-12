@@ -2808,52 +2808,23 @@ def _cek_loop(expr, env, ctx):
                         E = saved_env
                         break
 
-                    if ftag == FRAME_COND_ARROW:
-                        test_value = frame[1]
+                    if ftag == FRAME_COND_ARROW or ftag == FRAME_CASE_ARROW:
+                        # (cond (test => recv)) / (case key (... => recv)): apply
+                        # the receiver to the single value (test / key, held in
+                        # frame[1]) through the one unified application path
+                        # (_enter_proc), so primitives, continuations, parameters,
+                        # record accessors/mutators, and frame-driven HOFs behave
+                        # exactly as they do in operator position -- rather than
+                        # the old inline ladder that mishandled the last two.
+                        arg_value = frame[1]
                         saved_env = frame[2]
-                        if is_continuation(V):
-                            K.append((FRAME_WIND_STEP,
-                                      _compute_wind_ops(
-                                          ctx, as_continuation_wind(V)),
-                                      0, V, _continuation_value(V, [test_value])))
+                        sig = _apply_enter_result(
+                            _enter_proc(V, [arg_value], ctx, saved_env, None), K, V)
+                        if sig[0] == 'apply':
+                            V = sig[1]
                             continue
-                        pv = _apply_parameter_if(V, 1, None)
-                        if pv is not None:
-                            V = pv
-                            continue
-                        if is_primitive(V):
-                            V = as_primitive_fn(V)(
-                                ctx, saved_env, [test_value], None)
-                            continue
-                        r = _apply_value(V, [test_value], None)
-                        E = r.new_env
-                        C = r.body.car
-                        if is_cons(r.body.cdr):
-                            K.append((FRAME_SEQ, r.body.cdr, r.new_env))
-                        break
-
-                    if ftag == FRAME_CASE_ARROW:
-                        key_value = frame[1]
-                        saved_env = frame[2]
-                        if is_continuation(V):
-                            K.append((FRAME_WIND_STEP,
-                                      _compute_wind_ops(
-                                          ctx, as_continuation_wind(V)),
-                                      0, V, _continuation_value(V, [key_value])))
-                            continue
-                        pv = _apply_parameter_if(V, 1, None)
-                        if pv is not None:
-                            V = pv
-                            continue
-                        if is_primitive(V):
-                            V = as_primitive_fn(V)(
-                                ctx, saved_env, [key_value], None)
-                            continue
-                        r = _apply_value(V, [key_value], None)
-                        E = r.new_env
-                        C = r.body.car
-                        if is_cons(r.body.cdr):
-                            K.append((FRAME_SEQ, r.body.cdr, r.new_env))
+                        C = sig[1]
+                        E = sig[2]
                         break
 
                     if ftag == FRAME_CASE:
