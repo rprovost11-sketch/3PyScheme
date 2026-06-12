@@ -399,31 +399,47 @@ def _trunc_div(n, d):
     return n // d
 
 
-def _prim_quotient(ctx, env, args, app_node):
-    n = _check_int_x(args[0], 'quotient', app_node, 1)
-    d = _check_int_x(args[1], 'quotient', app_node, 2)
+def _int_div1(name, args, app_node, divzero, fn):
+    """Shared body for the single-result integer division ops (quotient,
+    remainder, modulo, floor-/truncate- quotient & remainder).  Extracts two
+    integers, checks the divisor, applies fn(n_re, d_re) -> int, and wraps the
+    result with the operands' exactness.  divzero is the divide-by-zero message
+    text (kept per-op: the original trio says 'division by zero', the R7RS group
+    'divide by zero' -- both are pinned by feature test020)."""
+    n = _check_int_x(args[0], name, app_node, 1)
+    d = _check_int_x(args[1], name, app_node, 2)
     if d.re == 0:
-        raise SchemeTypeError('quotient: division by zero', app_node)
-    r = _trunc_div(n.re, d.re)
+        raise SchemeTypeError(name + ': ' + divzero, app_node)
+    r = fn(n.re, d.re)
     return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+
+
+def _int_div2(name, args, app_node, divzero, fn):
+    """Shared body for the two-result integer division ops (floor/, truncate/).
+    fn(n_re, d_re) -> (q, r); returns (values q r) with the operands' exactness."""
+    n = _check_int_x(args[0], name, app_node, 1)
+    d = _check_int_x(args[1], name, app_node, 2)
+    if d.re == 0:
+        raise SchemeTypeError(name + ': ' + divzero, app_node)
+    q, r = fn(n.re, d.re)
+    if not n.exact or not d.exact:
+        return make_multi_values([make_real(float(q)), make_real(float(r))])
+    return make_multi_values([make_integer(q), make_integer(r)])
+
+
+def _prim_quotient(ctx, env, args, app_node):
+    return _int_div1('quotient', args, app_node, 'division by zero',
+                     lambda nn, dd: _trunc_div(nn, dd))
 
 
 def _prim_remainder(ctx, env, args, app_node):
-    n = _check_int_x(args[0], 'remainder', app_node, 1)
-    d = _check_int_x(args[1], 'remainder', app_node, 2)
-    if d.re == 0:
-        raise SchemeTypeError('remainder: division by zero', app_node)
-    r = n.re - d.re * _trunc_div(n.re, d.re)
-    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    return _int_div1('remainder', args, app_node, 'division by zero',
+                     lambda nn, dd: nn - dd * _trunc_div(nn, dd))
 
 
 def _prim_modulo(ctx, env, args, app_node):
-    n = _check_int_x(args[0], 'modulo', app_node, 1)
-    d = _check_int_x(args[1], 'modulo', app_node, 2)
-    if d.re == 0:
-        raise SchemeTypeError('modulo: division by zero', app_node)
-    r = n.re % d.re
-    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    return _int_div1('modulo', args, app_node, 'division by zero',
+                     lambda nn, dd: nn % dd)
 
 
 def _prim_min(ctx, env, args, app_node):
@@ -864,63 +880,33 @@ def _floor_mod(n, d):
 
 
 def _prim_floor_quotient(ctx, env, args, app_node):
-    n = _check_int_x(args[0], 'floor-quotient', app_node, 1)
-    d = _check_int_x(args[1], 'floor-quotient', app_node, 2)
-    if d.re == 0:
-        raise SchemeTypeError('floor-quotient: divide by zero', app_node)
-    r = n.re // d.re
-    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    return _int_div1('floor-quotient', args, app_node, 'divide by zero',
+                     lambda nn, dd: nn // dd)
 
 
 def _prim_floor_remainder(ctx, env, args, app_node):
-    n = _check_int_x(args[0], 'floor-remainder', app_node, 1)
-    d = _check_int_x(args[1], 'floor-remainder', app_node, 2)
-    if d.re == 0:
-        raise SchemeTypeError('floor-remainder: divide by zero', app_node)
-    r = n.re % d.re
-    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    return _int_div1('floor-remainder', args, app_node, 'divide by zero',
+                     lambda nn, dd: nn % dd)
 
 
 def _prim_floor_div(ctx, env, args, app_node):
-    n = _check_int_x(args[0], 'floor/', app_node, 1)
-    d = _check_int_x(args[1], 'floor/', app_node, 2)
-    if d.re == 0:
-        raise SchemeTypeError('floor/: divide by zero', app_node)
-    q = n.re // d.re
-    r = n.re % d.re
-    if not n.exact or not d.exact:
-        return make_multi_values([make_real(float(q)), make_real(float(r))])
-    return make_multi_values([make_integer(q), make_integer(r)])
+    return _int_div2('floor/', args, app_node, 'divide by zero',
+                     lambda nn, dd: (nn // dd, nn % dd))
 
 
 def _prim_truncate_quotient(ctx, env, args, app_node):
-    n = _check_int_x(args[0], 'truncate-quotient', app_node, 1)
-    d = _check_int_x(args[1], 'truncate-quotient', app_node, 2)
-    if d.re == 0:
-        raise SchemeTypeError('truncate-quotient: divide by zero', app_node)
-    r = _trunc_div(n.re, d.re)
-    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    return _int_div1('truncate-quotient', args, app_node, 'divide by zero',
+                     lambda nn, dd: _trunc_div(nn, dd))
 
 
 def _prim_truncate_remainder(ctx, env, args, app_node):
-    n = _check_int_x(args[0], 'truncate-remainder', app_node, 1)
-    d = _check_int_x(args[1], 'truncate-remainder', app_node, 2)
-    if d.re == 0:
-        raise SchemeTypeError('truncate-remainder: divide by zero', app_node)
-    r = n.re - _trunc_div(n.re, d.re) * d.re
-    return make_real(float(r)) if not n.exact or not d.exact else make_integer(r)
+    return _int_div1('truncate-remainder', args, app_node, 'divide by zero',
+                     lambda nn, dd: nn - _trunc_div(nn, dd) * dd)
 
 
 def _prim_truncate_div(ctx, env, args, app_node):
-    n = _check_int_x(args[0], 'truncate/', app_node, 1)
-    d = _check_int_x(args[1], 'truncate/', app_node, 2)
-    if d.re == 0:
-        raise SchemeTypeError('truncate/: divide by zero', app_node)
-    q = _trunc_div(n.re, d.re)
-    r = n.re - q * d.re
-    if not n.exact or not d.exact:
-        return make_multi_values([make_real(float(q)), make_real(float(r))])
-    return make_multi_values([make_integer(q), make_integer(r)])
+    return _int_div2('truncate/', args, app_node, 'divide by zero',
+                     lambda nn, dd: (_trunc_div(nn, dd), nn - _trunc_div(nn, dd) * dd))
 
 
 def _prim_exact_integer_sqrt(ctx, env, args, app_node):
