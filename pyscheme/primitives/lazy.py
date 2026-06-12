@@ -5,20 +5,13 @@ stubs make them visible in (help).  force, make-promise, and promise? are
 real primitives.
 """
 
-from pyscheme.primitives import register_primitive
+from pyscheme.primitives import register_primitive, _stub
 from pyscheme.AST import is_promise, make_boolean, make_promise_done
 from pyscheme.Environment import SchemeTypeError
 
 
 CATEGORY = 'lazy'
 _SPECIAL = 'special'
-
-
-def _stub(form_name):
-    raise RuntimeError(
-        repr(form_name) + ' is a special form, not a procedure; it cannot be '
-        'applied as a first-class value.  This stub exists only to carry '
-        'documentation into the help system.')
 
 
 def _form_delay(ctx, env, args, app_node):

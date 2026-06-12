@@ -8,7 +8,7 @@ bytevector-u8-ref, bytevector-u8-set!, bytevector-copy, bytevector-copy!,
 bytevector-append, utf8->string, string->utf8.
 """
 
-from pyscheme.primitives import register_primitive
+from pyscheme.primitives import register_primitive, _check_index
 from pyscheme.AST import (
     VOID_VALUE,
     is_integer, is_string, is_bytevector,
@@ -40,17 +40,6 @@ def _check_u8(v, name, app_node):
             '%s: byte %d out of u8 range (0..255)' % (name, n),
             src_of(app_node))
     return n
-
-
-def _check_index(v, name, length, app_node):
-    if not is_integer(v):
-        raise SchemeTypeError(
-            '%s: index must be an integer' % name, src_of(app_node))
-    k = as_integer(v)
-    if k < 0 or k >= length:
-        raise SchemeTypeError(
-            '%s: index %d out of range' % (name, k), src_of(app_node))
-    return k
 
 
 def _prim_bytevector_p(ctx, env, args, app_node):

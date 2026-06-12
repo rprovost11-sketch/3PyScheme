@@ -4,18 +4,11 @@ All forms here are handled by the Expander, not as primitives.  Stubs make
 them visible in (help) and (apropos).
 """
 
-from pyscheme.primitives import register_primitive
+from pyscheme.primitives import register_primitive, _stub
 
 
 CATEGORY = 'macros'
 _SPECIAL = 'special'
-
-
-def _stub(form_name):
-    raise RuntimeError(
-        repr(form_name) + ' is a special form, not a procedure; it cannot be '
-        'applied as a first-class value.  This stub exists only to carry '
-        'documentation into the help system.')
 
 
 def _form_define_syntax(ctx, env, args, app_node):
