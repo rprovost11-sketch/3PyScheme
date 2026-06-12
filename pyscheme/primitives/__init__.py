@@ -138,6 +138,33 @@ def _check_index(v, name, length, app_node):
     return k
 
 
+def parse_start_end(args, base_idx, length, name, app_node,
+                    range_msg='start/end out of range'):
+    """Parse the optional [start [end]] arguments at args[base_idx] /
+    args[base_idx+1] for a sequence slice, defaulting to the full [0, length)
+    range.  Validates that each given bound is an integer and that
+    0 <= start <= end <= length, then returns (start, end).  The single
+    implementation of the slice-bounds idiom shared across strings / vectors /
+    bytevectors / ports.  range_msg is the out-of-range error text -- it differs
+    per primitive and is test-pinned (e.g. 'start/end out of range' vs
+    'range out of bounds')."""
+    start = 0
+    end = length
+    if len(args) > base_idx:
+        if not is_integer(args[base_idx]):
+            raise SchemeTypeError(
+                '%s: start must be an integer' % name, src_of(app_node))
+        start = as_integer(args[base_idx])
+    if len(args) > base_idx + 1:
+        if not is_integer(args[base_idx + 1]):
+            raise SchemeTypeError(
+                '%s: end must be an integer' % name, src_of(app_node))
+        end = as_integer(args[base_idx + 1])
+    if start < 0 or end > length or start > end:
+        raise SchemeTypeError(name + ': ' + range_msg, src_of(app_node))
+    return (start, end)
+
+
 # Category display titles and ordering.  Categories not named in the
 # ordering list appear after these in alphabetical order.
 CATEGORY_TITLES = {

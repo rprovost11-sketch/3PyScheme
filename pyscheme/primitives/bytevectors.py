@@ -8,7 +8,7 @@ bytevector-u8-ref, bytevector-u8-set!, bytevector-copy, bytevector-copy!,
 bytevector-append, utf8->string, string->utf8.
 """
 
-from pyscheme.primitives import register_primitive, _check_index
+from pyscheme.primitives import register_primitive, _check_index, parse_start_end
 from pyscheme.AST import (
     VOID_VALUE,
     is_integer, is_string, is_bytevector,
@@ -93,21 +93,8 @@ def _prim_bytevector_u8_set(ctx, env, args, app_node):
 
 def _prim_bytevector_copy(ctx, env, args, app_node):
     bs = _check_bv(args[0], 'bytevector-copy', app_node)
-    start = 0
-    end = len(bs)
-    if len(args) >= 2:
-        if not is_integer(args[1]):
-            raise SchemeTypeError(
-                'bytevector-copy: start must be an integer', src_of(app_node))
-        start = as_integer(args[1])
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'bytevector-copy: end must be an integer', src_of(app_node))
-        end = as_integer(args[2])
-    if start < 0 or end > len(bs) or start > end:
-        raise SchemeTypeError(
-            'bytevector-copy: range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 1, len(bs), 'bytevector-copy', app_node,
+                                 range_msg='range out of bounds')
     return make_bytevector(bytearray(bs[start:end]))
 
 
@@ -122,20 +109,9 @@ def _prim_bytevector_copy_bang(ctx, env, args, app_node):
             'bytevector-copy!: at must be an integer', src_of(app_node))
     at = as_integer(args[1])
     src = _check_bv(args[2], 'bytevector-copy!', app_node, 3)
-    start = 0
-    end = len(src)
-    if len(args) >= 4:
-        if not is_integer(args[3]):
-            raise SchemeTypeError(
-                'bytevector-copy!: start must be an integer', src_of(app_node))
-        start = as_integer(args[3])
-    if len(args) >= 5:
-        if not is_integer(args[4]):
-            raise SchemeTypeError(
-                'bytevector-copy!: end must be an integer', src_of(app_node))
-        end = as_integer(args[4])
-    if (at < 0 or start < 0 or end > len(src) or start > end
-            or at + (end - start) > len(dst)):
+    start, end = parse_start_end(args, 3, len(src), 'bytevector-copy!', app_node,
+                                 range_msg='range out of bounds')
+    if at < 0 or at + (end - start) > len(dst):
         raise SchemeTypeError(
             'bytevector-copy!: range out of bounds', src_of(app_node))
     if dst is src and at > start:
@@ -163,21 +139,8 @@ def _prim_bytevector_append(ctx, env, args, app_node):
 
 def _prim_utf8_to_string(ctx, env, args, app_node):
     bs = _check_bv(args[0], 'utf8->string', app_node)
-    start = 0
-    end = len(bs)
-    if len(args) >= 2:
-        if not is_integer(args[1]):
-            raise SchemeTypeError(
-                'utf8->string: start must be an integer', src_of(app_node))
-        start = as_integer(args[1])
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'utf8->string: end must be an integer', src_of(app_node))
-        end = as_integer(args[2])
-    if start < 0 or end > len(bs) or start > end:
-        raise SchemeTypeError(
-            'utf8->string: range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 1, len(bs), 'utf8->string', app_node,
+                                 range_msg='range out of bounds')
     try:
         return make_string(bytes(bs[start:end]).decode('utf-8'))
     except UnicodeDecodeError as e:
@@ -190,21 +153,8 @@ def _prim_string_to_utf8(ctx, env, args, app_node):
         raise SchemeTypeError(
             'string->utf8: argument must be a string', src_of(app_node))
     s = as_string(args[0])
-    start = 0
-    end = len(s)
-    if len(args) >= 2:
-        if not is_integer(args[1]):
-            raise SchemeTypeError(
-                'string->utf8: start must be an integer', src_of(app_node))
-        start = as_integer(args[1])
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'string->utf8: end must be an integer', src_of(app_node))
-        end = as_integer(args[2])
-    if start < 0 or end > len(s) or start > end:
-        raise SchemeTypeError(
-            'string->utf8: range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 1, len(s), 'string->utf8', app_node,
+                                 range_msg='range out of bounds')
     return make_bytevector(bytearray(s[start:end].encode('utf-8')))
 
 

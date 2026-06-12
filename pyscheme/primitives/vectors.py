@@ -12,7 +12,7 @@ vector-copy!, vector-append, vector->string, string->vector,
 vector-for-each, vector-map.
 """
 
-from pyscheme.primitives import register_primitive, _check_index
+from pyscheme.primitives import register_primitive, _check_index, parse_start_end
 from pyscheme.AST import (
     alloc_cons, NIL_VALUE, VOID_VALUE,
     is_cons, is_nil, is_integer, is_string, is_character, is_vector,
@@ -79,21 +79,8 @@ def _prim_vector_set(ctx, env, args, app_node):
 
 def _prim_vector_to_list(ctx, env, args, app_node):
     items = _check_vector(args[0], 'vector->list', app_node)
-    start = 0
-    end = len(items)
-    if len(args) >= 2:
-        if not is_integer(args[1]):
-            raise SchemeTypeError(
-                'vector->list: start must be an integer', src_of(app_node))
-        start = as_integer(args[1])
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'vector->list: end must be an integer', src_of(app_node))
-        end = as_integer(args[2])
-    if start < 0 or end > len(items) or start > end:
-        raise SchemeTypeError(
-            'vector->list: range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 1, len(items), 'vector->list', app_node,
+                                 range_msg='range out of bounds')
     result = NIL_VALUE
     i = end - 1
     while i >= start:
@@ -122,21 +109,8 @@ def _prim_vector_fill(ctx, env, args, app_node):
         raise SchemeTypeError(
             'vector-fill!: argument is an immutable literal', src_of(app_node))
     fill = args[1]
-    start = 0
-    end = len(items)
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'vector-fill!: start must be an integer', src_of(app_node))
-        start = as_integer(args[2])
-    if len(args) >= 4:
-        if not is_integer(args[3]):
-            raise SchemeTypeError(
-                'vector-fill!: end must be an integer', src_of(app_node))
-        end = as_integer(args[3])
-    if start < 0 or end > len(items) or start > end:
-        raise SchemeTypeError(
-            'vector-fill!: range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 2, len(items), 'vector-fill!', app_node,
+                                 range_msg='range out of bounds')
     i = start
     while i < end:
         items[i] = fill
@@ -146,21 +120,8 @@ def _prim_vector_fill(ctx, env, args, app_node):
 
 def _prim_vector_copy(ctx, env, args, app_node):
     items = _check_vector(args[0], 'vector-copy', app_node)
-    start = 0
-    end = len(items)
-    if len(args) >= 2:
-        if not is_integer(args[1]):
-            raise SchemeTypeError(
-                'vector-copy: start must be an integer', src_of(app_node))
-        start = as_integer(args[1])
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'vector-copy: end must be an integer', src_of(app_node))
-        end = as_integer(args[2])
-    if start < 0 or end > len(items) or start > end:
-        raise SchemeTypeError(
-            'vector-copy: range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 1, len(items), 'vector-copy', app_node,
+                                 range_msg='range out of bounds')
     return make_vector(list(items[start:end]))
 
 
@@ -175,20 +136,9 @@ def _prim_vector_copy_bang(ctx, env, args, app_node):
             'vector-copy!: at must be an integer', src_of(app_node))
     at = as_integer(args[1])
     src = _check_vector(args[2], 'vector-copy!', app_node, 3)
-    start = 0
-    end = len(src)
-    if len(args) >= 4:
-        if not is_integer(args[3]):
-            raise SchemeTypeError(
-                'vector-copy!: start must be an integer', src_of(app_node))
-        start = as_integer(args[3])
-    if len(args) >= 5:
-        if not is_integer(args[4]):
-            raise SchemeTypeError(
-                'vector-copy!: end must be an integer', src_of(app_node))
-        end = as_integer(args[4])
-    if (at < 0 or start < 0 or end > len(src) or start > end
-            or at + (end - start) > len(dst)):
+    start, end = parse_start_end(args, 3, len(src), 'vector-copy!', app_node,
+                                 range_msg='range out of bounds')
+    if at < 0 or at + (end - start) > len(dst):
         raise SchemeTypeError(
             'vector-copy!: range out of bounds', src_of(app_node))
     # When src and dst alias and the source slice overlaps the destination,
@@ -219,21 +169,8 @@ def _prim_vector_append(ctx, env, args, app_node):
 
 def _prim_vector_to_string(ctx, env, args, app_node):
     items = _check_vector(args[0], 'vector->string', app_node)
-    start = 0
-    end = len(items)
-    if len(args) >= 2:
-        if not is_integer(args[1]):
-            raise SchemeTypeError(
-                'vector->string: start must be an integer', src_of(app_node))
-        start = as_integer(args[1])
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'vector->string: end must be an integer', src_of(app_node))
-        end = as_integer(args[2])
-    if start < 0 or end > len(items) or start > end:
-        raise SchemeTypeError(
-            'vector->string: range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 1, len(items), 'vector->string', app_node,
+                                 range_msg='range out of bounds')
     chars = []
     i = start
     while i < end:
@@ -252,21 +189,8 @@ def _prim_string_to_vector(ctx, env, args, app_node):
         raise SchemeTypeError(
             'string->vector: argument must be a string', src_of(app_node))
     s = as_string(args[0])
-    start = 0
-    end = len(s)
-    if len(args) >= 2:
-        if not is_integer(args[1]):
-            raise SchemeTypeError(
-                'string->vector: start must be an integer', src_of(app_node))
-        start = as_integer(args[1])
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'string->vector: end must be an integer', src_of(app_node))
-        end = as_integer(args[2])
-    if start < 0 or end > len(s) or start > end:
-        raise SchemeTypeError(
-            'string->vector: range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 1, len(s), 'string->vector', app_node,
+                                 range_msg='range out of bounds')
     chars = []
     i = start
     while i < end:

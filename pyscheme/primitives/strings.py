@@ -11,7 +11,7 @@ make-string, string, string->symbol, symbol->string,
 string-upcase, string-downcase.
 """
 
-from pyscheme.primitives import register_primitive, _check_index
+from pyscheme.primitives import register_primitive, _check_index, parse_start_end
 from pyscheme.AST import (
     alloc_cons, NIL_VALUE,
     is_cons, is_nil, is_string, is_character, is_integer, is_symbol,
@@ -79,22 +79,7 @@ def _prim_string_ge(ctx, env, args, app_node):
 
 def _prim_substring(ctx, env, args, app_node):
     s = _check_string(args[0], 'substring', app_node)
-    start = args[1]
-    end = args[2] if len(args) >= 3 else None
-    if not is_integer(start):
-        raise SchemeTypeError(
-            'substring: start must be an integer', src_of(app_node))
-    start_i = as_integer(start)
-    if end is None:
-        end_i = len(s)
-    else:
-        if not is_integer(end):
-            raise SchemeTypeError(
-                'substring: end must be an integer', src_of(app_node))
-        end_i = as_integer(end)
-    if start_i < 0 or end_i > len(s) or start_i > end_i:
-        raise SchemeTypeError(
-            'substring: start/end out of range', src_of(app_node))
+    start_i, end_i = parse_start_end(args, 1, len(s), 'substring', app_node)
     return make_string(s[start_i:end_i])
 
 
@@ -109,21 +94,7 @@ def _prim_string_append(ctx, env, args, app_node):
 
 def _prim_string_to_list(ctx, env, args, app_node):
     s = _check_string(args[0], 'string->list', app_node)
-    start = 0
-    end = len(s)
-    if len(args) >= 2:
-        if not is_integer(args[1]):
-            raise SchemeTypeError(
-                'string->list: start must be an integer', src_of(app_node))
-        start = as_integer(args[1])
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'string->list: end must be an integer', src_of(app_node))
-        end = as_integer(args[2])
-    if start < 0 or end > len(s) or start > end:
-        raise SchemeTypeError(
-            'string->list: start/end out of range', src_of(app_node))
+    start, end = parse_start_end(args, 1, len(s), 'string->list', app_node)
     result = NIL_VALUE
     i = end - 1
     while i >= start:
@@ -152,21 +123,7 @@ def _prim_list_to_string(ctx, env, args, app_node):
 
 def _prim_string_copy(ctx, env, args, app_node):
     s = _check_string(args[0], 'string-copy', app_node)
-    start_i = 0
-    end_i = len(s)
-    if len(args) >= 2:
-        if not is_integer(args[1]):
-            raise SchemeTypeError(
-                'string-copy: start must be an integer', src_of(app_node))
-        start_i = as_integer(args[1])
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'string-copy: end must be an integer', src_of(app_node))
-        end_i = as_integer(args[2])
-    if start_i < 0 or end_i > len(s) or start_i > end_i:
-        raise SchemeTypeError(
-            'string-copy: start/end out of range', src_of(app_node))
+    start_i, end_i = parse_start_end(args, 1, len(s), 'string-copy', app_node)
     return make_string(s[start_i:end_i])
 
 
@@ -336,21 +293,8 @@ def _prim_string_fill_bang(ctx, env, args, app_node):
             'string-fill!: second argument must be a character', src_of(app_node))
     ch = as_character(args[1])
     n = len(s._s)
-    start = 0
-    end = n
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'string-fill!: start must be an integer', src_of(app_node))
-        start = as_integer(args[2])
-    if len(args) >= 4:
-        if not is_integer(args[3]):
-            raise SchemeTypeError(
-                'string-fill!: end must be an integer', src_of(app_node))
-        end = as_integer(args[3])
-    if start < 0 or end > n or start > end:
-        raise SchemeTypeError(
-            'string-fill!: range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 2, n, 'string-fill!', app_node,
+                                 range_msg='range out of bounds')
     s._s = s._s[:start] + ch * (end - start) + s._s[end:]
     return VOID_VALUE
 
@@ -366,21 +310,8 @@ def _prim_string_copy_bang(ctx, env, args, app_node):
     frm = args[2]
     _check_string(frm, 'string-copy!', app_node, 3)
     n_from = len(frm._s)
-    start = 0
-    end = n_from
-    if len(args) >= 4:
-        if not is_integer(args[3]):
-            raise SchemeTypeError(
-                'string-copy!: start must be an integer', src_of(app_node))
-        start = as_integer(args[3])
-    if len(args) >= 5:
-        if not is_integer(args[4]):
-            raise SchemeTypeError(
-                'string-copy!: end must be an integer', src_of(app_node))
-        end = as_integer(args[4])
-    if start < 0 or end > n_from or start > end:
-        raise SchemeTypeError(
-            'string-copy!: source range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 3, n_from, 'string-copy!', app_node,
+                                 range_msg='source range out of bounds')
     chunk_len = end - start
     n_to = len(to._s)
     if at < 0 or at + chunk_len > n_to:

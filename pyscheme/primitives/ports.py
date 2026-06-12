@@ -24,7 +24,7 @@ Listener installs sys.stdin / sys.stdout as their initial values.
 
 import io as _pyio
 
-from pyscheme.primitives import register_primitive
+from pyscheme.primitives import register_primitive, parse_start_end
 from pyscheme.AST import (
     alloc_cons, NIL_VALUE, VOID_VALUE,
     is_cons, is_string, is_character, is_integer, is_port, is_eof,
@@ -596,21 +596,8 @@ def _prim_read_bytevector_bang(ctx, env, args, app_node):
     dst = as_bytevector_items(args[0])
     port_val = args[1] if len(args) >= 2 else _get_current_input(ctx)
     p = _check_binary_input(port_val, 'read-bytevector!', app_node)
-    start = 0
-    end = len(dst)
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'read-bytevector!: start must be an integer', src_of(app_node))
-        start = as_integer(args[2])
-    if len(args) >= 4:
-        if not is_integer(args[3]):
-            raise SchemeTypeError(
-                'read-bytevector!: end must be an integer', src_of(app_node))
-        end = as_integer(args[3])
-    if start < 0 or end > len(dst) or start > end:
-        raise SchemeTypeError(
-            'read-bytevector!: range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 2, len(dst), 'read-bytevector!', app_node,
+                                 range_msg='range out of bounds')
     want = end - start
     if p.pos >= len(p.buf) and want > 0:
         return make_eof()
@@ -672,21 +659,8 @@ def _prim_write_string(ctx, env, args, app_node):
     text = as_string(s)
     port_val = _resolve_output_port(ctx, args, 1)
     p = _check_textual_output(port_val, 'write-string', app_node, 2)
-    start = 0
-    end = len(text)
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'write-string: start must be an integer', src_of(app_node))
-        start = as_integer(args[2])
-    if len(args) >= 4:
-        if not is_integer(args[3]):
-            raise SchemeTypeError(
-                'write-string: end must be an integer', src_of(app_node))
-        end = as_integer(args[3])
-    if start < 0 or end > len(text) or start > end:
-        raise SchemeTypeError(
-            'write-string: range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 2, len(text), 'write-string', app_node,
+                                 range_msg='range out of bounds')
     _emit_to_port(p, text[start:end])
     return VOID_VALUE
 
@@ -713,21 +687,8 @@ def _prim_write_bytevector(ctx, env, args, app_node):
     src = as_bytevector_items(args[0])
     port_val = args[1] if len(args) >= 2 else _get_current_output(ctx)
     p = _check_binary_output(port_val, 'write-bytevector', app_node, 2)
-    start = 0
-    end = len(src)
-    if len(args) >= 3:
-        if not is_integer(args[2]):
-            raise SchemeTypeError(
-                'write-bytevector: start must be an integer', src_of(app_node))
-        start = as_integer(args[2])
-    if len(args) >= 4:
-        if not is_integer(args[3]):
-            raise SchemeTypeError(
-                'write-bytevector: end must be an integer', src_of(app_node))
-        end = as_integer(args[3])
-    if start < 0 or end > len(src) or start > end:
-        raise SchemeTypeError(
-            'write-bytevector: range out of bounds', src_of(app_node))
+    start, end = parse_start_end(args, 2, len(src), 'write-bytevector', app_node,
+                                 range_msg='range out of bounds')
     _emit_bytes_to_port(p, bytes(src[start:end]))
     return VOID_VALUE
 
