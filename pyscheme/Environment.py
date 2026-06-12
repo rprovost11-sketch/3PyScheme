@@ -9,7 +9,7 @@ from Environment - putting the errors here avoids a circular import.
 from pyscheme.AST import (
     SourceInfo, ConsCell, format_with_caret,
     make_error_object, make_file_error_object,
-    intern_symbol, symbol_name,
+    intern_symbol, symbol_name, gensym_display_name,
 )
 
 
@@ -162,19 +162,9 @@ def arity_mismatch_msg(name, lo, hi, n_provided):
 # Alpha-renaming in the Expander ensures distinct bindings have distinct names,
 # so a simple name -> value map is sufficient for resolution.
 
-_GENSYM_PFX = '\x01h.'
-
-
 def _display_name(sid: int) -> str:
-    """Strip hygiene gensym prefix for error messages.  \x01h.BASE.DIGITS -> BASE."""
-    name = symbol_name(sid)
-    if not name.startswith(_GENSYM_PFX):
-        return name
-    rest = name[len(_GENSYM_PFX):]
-    dot = rest.rfind('.')
-    if dot >= 0 and rest[dot + 1:].isdigit():
-        return rest[:dot]
-    return rest
+    """Gensym-stripped name for error messages (see AST.gensym_display_name)."""
+    return gensym_display_name(symbol_name(sid))
 
 
 class Environment:

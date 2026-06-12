@@ -37,7 +37,7 @@ from pyscheme.AST import (
     as_syntax_transformer_name, as_vector_items, as_bytevector_items,
     make_string,
     INTEGER, REAL, RATIONAL, BOOLEAN, CHARACTER, STRING, CLOSURE, SYMBOL,
-    NIL_VALUE,
+    NIL_VALUE, gensym_display_name,
 )
 
 
@@ -401,18 +401,9 @@ def pretty_print_shared(val):
     return _shared_render(val, labels, next_label, seen)
 
 
-_GENSYM_PFX = '\x01h.'
-
-
 def _display_symbol_name(name):
-    """Strip hygiene gensym prefix for display.  Format: \x01h.BASE.DIGITS -> BASE."""
-    if not name.startswith(_GENSYM_PFX):
-        return name
-    rest = name[len(_GENSYM_PFX):]
-    dot = rest.rfind('.')
-    if dot >= 0 and rest[dot + 1:].isdigit():
-        return rest[:dot]
-    return rest
+    """Gensym-stripped name for display (see AST.gensym_display_name)."""
+    return gensym_display_name(name)
 
 
 def _is_safe_symbol_initial(c):

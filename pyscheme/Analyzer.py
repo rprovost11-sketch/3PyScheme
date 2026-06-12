@@ -68,7 +68,7 @@ from pyscheme.AST import (
     is_string, is_character, is_boolean,
     as_symbol, as_integer, as_real, as_string, as_character, as_boolean,
     as_rational_num, as_rational_den, as_complex_real, as_complex_imag,
-    src_of,
+    src_of, gensym_display_name,
 )
 
 
@@ -126,18 +126,9 @@ def _cons_to_list(cell):
     return items
 
 
-_GENSYM_PFX = '\x01h.'
-
-
 def _display_name(name):
-    """Strip hygiene gensym prefix for error messages. \x01h.BASE.DIGITS -> BASE."""
-    if not name.startswith(_GENSYM_PFX):
-        return name
-    rest = name[len(_GENSYM_PFX):]
-    dot = rest.rfind('.')
-    if dot >= 0 and rest[dot + 1:].isdigit():
-        return rest[:dot]
-    return rest
+    """Gensym-stripped name for error messages (see AST.gensym_display_name)."""
+    return gensym_display_name(name)
 
 
 def _render(sexpr):

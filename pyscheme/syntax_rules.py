@@ -37,7 +37,7 @@ from pyscheme.AST import (
     alloc_cons, make_symbol, make_vector, list_from_items, src_of, eqv_atom,
     make_syntax_transformer, is_syntax_transformer,
     is_closure, is_primitive,
-    NIL_VALUE, SYMBOL,
+    NIL_VALUE, SYMBOL, GENSYM_PREFIX,
 )
 
 
@@ -63,19 +63,17 @@ _SYNTACTIC_KEYWORDS = {
 _GENSYM_COUNTER = 0
 
 
-_GENSYM_PREFIX = '\x01h.'
-
-
 def hygiene_gensym(base):
     """Generate a fresh symbol name unlikely to collide with user code.
-    Uses a non-printable marker byte so the PrettyPrinter can strip it.
-    If base is already a gensym (starts with the prefix), return it unchanged
-    to prevent double-gensymming when the Expander processes macro output."""
+    Uses a non-printable marker byte (AST.GENSYM_PREFIX) so the display paths
+    can strip it.  If base is already a gensym (starts with the prefix), return
+    it unchanged to prevent double-gensymming when the Expander processes macro
+    output.  The inverse decoder is AST.gensym_display_name."""
     global _GENSYM_COUNTER
-    if base.startswith(_GENSYM_PREFIX):
+    if base.startswith(GENSYM_PREFIX):
         return base
     _GENSYM_COUNTER = _GENSYM_COUNTER + 1
-    return _GENSYM_PREFIX + base + '.' + str(_GENSYM_COUNTER)
+    return GENSYM_PREFIX + base + '.' + str(_GENSYM_COUNTER)
 
 
 # ── SyntaxMatch: bindings produced by pattern matching ─────────────────────

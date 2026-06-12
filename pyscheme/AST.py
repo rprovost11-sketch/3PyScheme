@@ -345,6 +345,26 @@ def symbol_name(sid: int) -> str:
     return _SYMBOL_NAMES[sid]
 
 
+# Hygiene gensym name format: GENSYM_PREFIX + base + '.' + counter, where the
+# prefix is a non-printable marker byte so display / error paths can strip it.
+# The ENCODER (which owns the counter) lives in syntax_rules.hygiene_gensym;
+# this prefix and the DECODER below are the single source shared by the
+# Analyzer / Environment / PrettyPrinter display paths.
+GENSYM_PREFIX = '\x01h.'
+
+
+def gensym_display_name(name):
+    """Strip the hygiene gensym prefix for display / error messages:
+    '\x01h.BASE.DIGITS' -> 'BASE'.  A non-gensym name is returned unchanged."""
+    if not name.startswith(GENSYM_PREFIX):
+        return name
+    rest = name[len(GENSYM_PREFIX):]
+    dot = rest.rfind('.')
+    if dot >= 0 and rest[dot + 1:].isdigit():
+        return rest[:dot]
+    return rest
+
+
 def make_symbol(name, src=None):
     return (SYMBOL, intern_symbol(name), src)
 
