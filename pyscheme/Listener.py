@@ -59,6 +59,30 @@ _TCO_ITER_DEFAULT = 100000
 _TCO_ITER_VAR = '%MAX_TCO_ITER_COUNT%'
 
 
+# ANSI SGR escapes for the listener's colorized output, defined in one place.
+# The raw escape strings appear only here; _ansi() (and Listener._colors())
+# hand them out -- or '' when color is off -- so call sites never repeat them.
+_ANSI_CODES = {
+    'bold':       '\033[1;97m',   # bold white
+    'bold_green': '\033[1;92m',
+    'green':      '\033[92m',
+    'red':        '\033[91m',
+    'dim':        '\033[2m',
+    'cyan':       '\033[96m',
+    'reset':      '\033[0m',
+}
+
+
+def _ansi(on, *names):
+    """Return the ANSI escapes named in *names (keys of _ANSI_CODES), or '' for
+    each when `on` is false.  Lets a call site write
+        BOLD, GREEN, RESET = _ansi(color, 'bold', 'green', 'reset')
+    instead of repeating an if/else escape block."""
+    if not on:
+        return ('',) * len(names)
+    return tuple(_ANSI_CODES[n] for n in names)
+
+
 def _substring(s, start, end):
     """Return s[start:end] as an explicit char-by-char copy.  Ports to
     strncpy in C, std::string::substr in C++."""
@@ -295,14 +319,7 @@ class Listener:
     @staticmethod
     def _print_welcome_banner(use_color):
         """Short welcome banner printed by _banner and ]reboot."""
-        if use_color:
-            BOLD_GREEN = '\033[1;92m'
-            CYAN = '\033[96m'
-            RESET = '\033[0m'
-        else:
-            BOLD_GREEN = ''
-            CYAN = ''
-            RESET = ''
+        BOLD_GREEN, CYAN, RESET = _ansi(use_color, 'bold_green', 'cyan', 'reset')
         print('Enter any expression to have it evaluated by the interpreter.')
         print("Evaluate '" + CYAN + '(help)' + RESET + "' for online help.")
         print("Type  '" + CYAN + ']help' + RESET +
@@ -411,16 +428,12 @@ class Listener:
     def _use_color(self):
         return (self._emit_color_codes or sys.stdout.isatty()) and not self._output_to_file
 
+    def _colors(self, *names):
+        """Listener shorthand for _ansi(self._use_color(), *names)."""
+        return _ansi(self._use_color(), *names)
+
     def _banner(self):
-        color = self._use_color()
-        if color:
-            BOLD_WHITE = '\033[1;97m'
-            DIM = '\033[2m'
-            RESET = '\033[0m'
-        else:
-            BOLD_WHITE = ''
-            DIM = ''
-            RESET = ''
+        BOLD_WHITE, DIM, RESET = self._colors('bold', 'dim', 'reset')
         print(BOLD_WHITE + self._language + ' ' + self._version
               + ' by ' + self._author + RESET)
         print(DIM + 'Project home ' + self._project + RESET)
@@ -445,14 +458,7 @@ class Listener:
         if text is None:
             text = ''
         color = self._use_color()
-        if color:
-            GREEN = '\033[92m'
-            BOLD = '\033[1;97m'
-            RESET = '\033[0m'
-        else:
-            GREEN = ''
-            BOLD = ''
-            RESET = ''
+        GREEN, BOLD, RESET = self._colors('green', 'bold', 'reset')
         lines = text.splitlines()
         if not lines:
             lines = ['']
@@ -470,12 +476,7 @@ class Listener:
     def _writeErrorMsg(self, errMsg):
         """Render an error with the `%%% ` prefix and mirror to the log."""
         color = self._use_color()
-        if color:
-            RED = '\033[91m'
-            RESET = '\033[0m'
-        else:
-            RED = ''
-            RESET = ''
+        RED, RESET = self._colors('red', 'reset')
         lines = errMsg.splitlines()
         if not lines:
             lines = [errMsg]
@@ -585,10 +586,8 @@ class Listener:
             except ReplExit:
                 # (exit) at an interactive prompt: unwind to top level and note it
                 # quietly (dim), then carry on at the next '>>> '.
-                if self._use_color():
-                    print('\033[2m; (exit) ignored at REPL top level\033[0m')
-                else:
-                    print('; (exit) ignored at REPL top level')
+                DIM, RESET = self._colors('dim', 'reset')
+                print(DIM + '; (exit) ignored at REPL top level' + RESET)
             except KeyboardInterrupt:
                 self._writeErrorMsg('Interrupted.')
             except Exception as e:
@@ -649,19 +648,8 @@ class Listener:
         text = f.read()
         f.close()
 
-        color = self._use_color()
-        if color:
-            BOLD = '\033[1;97m'
-            DIM = '\033[2m'
-            GREEN = '\033[92m'
-            RED = '\033[91m'
-            RESET = '\033[0m'
-        else:
-            BOLD = ''
-            DIM = ''
-            GREEN = ''
-            RED = ''
-            RESET = ''
+        BOLD, DIM, GREEN, RED, RESET = self._colors(
+            'bold', 'dim', 'green', 'red', 'reset')
 
         entries = Listener._parse_log(text)
         n_pass = 0
@@ -812,15 +800,7 @@ class Listener:
                 raise ListenerCommandError('No help on "' + name + '".')
             print(fn.__doc__.strip())
             return
-        color = self._use_color()
-        if color:
-            BOLD = '\033[1;97m'
-            CYAN = '\033[96m'
-            RESET = '\033[0m'
-        else:
-            BOLD = ''
-            CYAN = ''
-            RESET = ''
+        BOLD, CYAN, RESET = self._colors('bold', 'cyan', 'reset')
         header = 'Listener Commands'
         names = []
         for name in self._commands:
@@ -863,13 +843,7 @@ class Listener:
         if self._logFile:
             raise ListenerCommandError(
                 'Please close the log file before rebooting (]close).')
-        color = self._use_color()
-        if color:
-            DIM = '\033[2m'
-            RESET = '\033[0m'
-        else:
-            DIM = ''
-            RESET = ''
+        DIM, RESET = self._colors('dim', 'reset')
         print(DIM + '- Initializing interpreter' + RESET)
         self._interp.reboot()
         print()
@@ -887,13 +861,7 @@ class Listener:
             self._interp.evalFile(filename)
         except FileNotFoundError:
             raise ListenerCommandError('File not found: ' + filename)
-        color = self._use_color()
-        if color:
-            GREEN = '\033[92m'
-            RESET = '\033[0m'
-        else:
-            GREEN = ''
-            RESET = ''
+        GREEN, RESET = self._colors('green', 'reset')
         print(GREEN + 'Source file read successfully:' + RESET + ' ' + filename)
 
     def _cmd_load(self, args):
@@ -916,13 +884,7 @@ class Listener:
             verbosity = 0
         filename = args[0]
         self.sessionLog_restore(filename, verbosity=verbosity)
-        color = self._use_color()
-        if color:
-            GREEN = '\033[92m'
-            RESET = '\033[0m'
-        else:
-            GREEN = ''
-            RESET = ''
+        GREEN, RESET = self._colors('green', 'reset')
         print(GREEN + 'Log file read successfully:' + RESET + ' ' + filename)
 
     def _cmd_log(self, args):
@@ -1056,17 +1018,7 @@ class Listener:
         `suite` is 'feature' | 'compliance' | 'regression'; it becomes part
         of the run-report filename: yyyy-mm-dd-hhmmss-<suite>-PyScheme.run.
         `tco_iters` is bound to %MAX_TCO_ITER_COUNT% after each file's reboot."""
-        color = self._use_color()
-        if color:
-            BOLD = '\033[1;97m'
-            GREEN = '\033[92m'
-            RED = '\033[91m'
-            RESET = '\033[0m'
-        else:
-            BOLD = ''
-            GREEN = ''
-            RED = ''
-            RESET = ''
+        BOLD, GREEN, RED, RESET = self._colors('bold', 'green', 'red', 'reset')
 
         testDir = os.path.abspath(testDir)
 
@@ -1406,11 +1358,7 @@ class Listener:
         if run_regression:
             plan.append('regression')
 
-        color = self._use_color()
-        BOLD = '\033[1;97m' if color else ''
-        GREEN = '\033[92m' if color else ''
-        RED = '\033[91m' if color else ''
-        RESET = '\033[0m' if color else ''
+        BOLD, GREEN, RED, RESET = self._colors('bold', 'green', 'red', 'reset')
 
         print()
         print(BOLD + '; running suites: ' + ', '.join(plan) + RESET)
@@ -1457,13 +1405,7 @@ class Listener:
         if not os.path.isdir(target):
             raise ListenerCommandError('Not a directory: ' + target)
         os.chdir(target)
-        color = self._use_color()
-        if color:
-            DIM = '\033[2m'
-            RESET = '\033[0m'
-        else:
-            DIM = ''
-            RESET = ''
+        DIM, RESET = self._colors('dim', 'reset')
         print(DIM + os.getcwd() + RESET)
 
     def _cmd_pwd(self, args):
