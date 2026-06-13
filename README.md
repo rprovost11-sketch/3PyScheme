@@ -48,6 +48,28 @@ python -m pyscheme <directory>
 
 # Evaluate a file and exit
 python -m pyscheme <file.scm>
+
+# Add library search directories (for resolving (import ...))
+python -m pyscheme -L <dir1;dir2> -I <dir3> <file.scm>
+```
+
+### Library search path
+
+`(import (a b))` is resolved to a file `a/b.sld`, searched across these
+directories in order: the current directory, then any `-L`/`-I`
+command-line directories, then the `SCHEME_LIBRARY_PATH` environment
+variable (`;`-separated on Windows, `:`-separated on Unix).
+
+- `-L <list>` / `--library-path <list>` — one path-separator-separated list.
+- `-I <dir>` — a single directory; may be repeated.
+
+From Scheme, the live search path is the `current-library-path` parameter:
+
+```scheme
+(current-library-path)                            ; => ("." ...)   read it
+(parameterize ((current-library-path '("/x")))    ; rebind for a dynamic extent
+  (import (mylib)))
+(set-library-path! '("/a" "/b"))                  ; replace it persistently
 ```
 
 ## Architecture

@@ -4,6 +4,16 @@ Run with:
     python -m pyscheme                    # interactive REPL in CWD
     python -m pyscheme <directory>        # REPL rooted at <directory>
     python -m pyscheme <file.scm>         # evaluate the file, then exit
+
+Library search path options (may precede the file/directory):
+    -L <dir;dir;...>  / --library-path <dir;...>   add directories (one
+                       argument, split on the OS path separator) to the
+                       front of the library search path
+    -I <dir>          add a single directory; repeatable
+
+Both prepend to the SCHEME_LIBRARY_PATH environment variable; the current
+directory is searched first.  The combined list seeds the global
+current-library-path parameter.
 """
 import os
 import signal
@@ -14,19 +24,74 @@ from pyscheme.Interpreter import Interpreter
 from pyscheme.Listener import Listener
 
 
+_USAGE = ('Usage: python -m pyscheme [-L <dir%s...>] [-I <dir>]... '
+          '[<directory> | <scheme-source-file>]' % os.pathsep)
+
+
+def _parse_args(argv):
+    """Split argv (without argv[0]) into (library_paths, target).
+
+    -L/--library-path takes one OS-pathsep-separated list; -I takes one
+    directory and may repeat; both contribute to library_paths in
+    command-line order.  At most one positional target (file or directory)
+    is allowed.  Exits with status 2 on a malformed option."""
+    library_paths = []
+    target = None
+
+    def _fail(msg):
+        print('pyscheme: ' + msg, file=sys.stderr)
+        print(_USAGE, file=sys.stderr)
+        sys.exit(2)
+
+    def _add_list(val):
+        for part in val.split(os.pathsep):
+            if part:
+                library_paths.append(part)
+
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == '-L' or a == '--library-path':
+            if i + 1 >= len(argv):
+                _fail('option ' + a + ' requires an argument')
+            _add_list(argv[i + 1])
+            i += 2
+        elif a.startswith('-L='):
+            _add_list(a[3:])
+            i += 1
+        elif a.startswith('--library-path='):
+            _add_list(a[len('--library-path='):])
+            i += 1
+        elif a == '-I':
+            if i + 1 >= len(argv):
+                _fail('option -I requires an argument')
+            if argv[i + 1]:
+                library_paths.append(argv[i + 1])
+            i += 2
+        elif a.startswith('-I='):
+            if a[3:]:
+                library_paths.append(a[3:])
+            i += 1
+        elif a == '-' or not a.startswith('-'):
+            if target is not None:
+                _fail('unexpected extra argument: ' + a)
+            target = a
+            i += 1
+        else:
+            _fail('unknown option: ' + a)
+
+    return library_paths, target
+
+
 def main():
     if hasattr(signal, 'SIGBREAK'):
         signal.signal(signal.SIGBREAK, signal.default_int_handler)
-    argc = len(sys.argv)
-    if argc > 2:
-        print('Usage: python -m pyscheme [<directory> | <scheme-source-file>]',
-              file=sys.stderr)
-        sys.exit(2)
 
-    interp = Interpreter()
+    library_paths, target = _parse_args(sys.argv[1:])
 
-    if argc == 2:
-        target = sys.argv[1]
+    interp = Interpreter(library_paths=library_paths)
+
+    if target is not None:
         # A directory: chdir there and drop to the REPL.
         if os.path.isdir(target):
             os.chdir(target)

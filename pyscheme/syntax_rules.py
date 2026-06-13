@@ -319,6 +319,46 @@ def _cbi_let_bindings(bindings, pvars, out):
             out.add(n)
 
 
+def collect_self_call_operand_intros(tmpl, macro_name, pvars, out):
+    """Collect non-pvar symbols passed as a direct operand to a recursive
+    self-invocation of the macro anywhere in a template.
+
+    Such an operand can land in a binding position in another rule of the same
+    macro -- miniKanren's `run` clause 1 passes an introduced `q` to a
+    recursive `run` call that clause 2 binds with `let` -- so it must be
+    gensymmed per application or it captures, or is captured by, a same-named
+    use-site identifier.  This is deliberately narrow: an introduced free
+    *reference* that is NOT threaded through a self-call -- e.g. the `y` in
+    `(define-syntax m (syntax-rules () ((_ n) (+ n y))))` -- is left as-is so
+    it still resolves at the use site (referential transparency).
+
+    NOTE: a heuristic, not full hygiene.  It does not catch a binder threaded
+    through *mutual* macro recursion; the principled fix is mark-based
+    (sets-of-scopes) resolution."""
+    if not is_cons(tmpl):
+        if is_vector(tmpl):
+            for item in as_vector_items(tmpl):
+                collect_self_call_operand_intros(item, macro_name, pvars, out)
+        return
+    if is_symbol(tmpl.car) and as_symbol(tmpl.car) == 'quote':
+        return
+    if is_symbol(tmpl.car) and as_symbol(tmpl.car) == macro_name:
+        # direct operands of a recursive self-call
+        cur = tmpl.cdr
+        while is_cons(cur):
+            if is_symbol(cur.car):
+                s = as_symbol(cur.car)
+                if s not in pvars:
+                    out.add(s)
+            cur = cur.cdr
+    # recurse everywhere to find nested self-calls
+    collect_self_call_operand_intros(tmpl.car, macro_name, pvars, out)
+    cur = tmpl.cdr
+    while is_cons(cur):
+        collect_self_call_operand_intros(cur.car, macro_name, pvars, out)
+        cur = cur.cdr
+
+
 # ── Pattern matching ────────────────────────────────────────────────────────
 
 def _list_length_approx(lst):
@@ -690,12 +730,14 @@ def apply_syntax_transformer(t, form):
     ellipsis_sym = t.ellipsis
     base_map = t.free_id_map if t.free_id_map is not None else {}
     use_src = src_of(form)
-    # Per-application gensym for intro_names in binding positions: ensures
-    # macro-introduced binders don't capture same-named use-site variables.
-    binding_intros = getattr(t, 'binding_intro_names', None)
-    if binding_intros:
+    # Per-application gensym for introduced hygienic temporaries (operand- and
+    # binding-position intro names): ensures macro-introduced identifiers don't
+    # capture, or get captured by, same-named use-site variables -- including
+    # ones that only become binders after a later recursive expansion.
+    hygienic_intros = getattr(t, 'hygienic_intro_names', None)
+    if hygienic_intros:
         free_id_map = dict(base_map)
-        for iname in binding_intros:
+        for iname in hygienic_intros:
             if iname not in free_id_map:
                 free_id_map[iname] = hygiene_gensym(iname)
     else:
@@ -789,6 +831,12 @@ def parse_syntax_rules(tail, def_env, name, form_src=None):
     binding_intros = set()
     for tmpl, pvars in templates:
         collect_binding_intros(tmpl, pvars, binding_intros)
+    # Collect introduced names threaded as operands through a recursive
+    # self-call: these may become binders in another rule of the macro, so they
+    # need a per-application gensym (see collect_self_call_operand_intros).
+    self_call_intros = set()
+    for tmpl, pvars in templates:
+        collect_self_call_operand_intros(tmpl, name, pvars, self_call_intros)
     # Build free_id_map and intro_names from def_env.
     free_id_map = {}
     intro_names = set()
@@ -802,8 +850,18 @@ def parse_syntax_rules(tail, def_env, name, form_src=None):
     else:
         for fid in free_ids:
             intro_names.add(fid)
-    # binding_intro_names = intro_names that appear in binding positions.
-    binding_intro_names = intro_names & binding_intros
+    # Hygienic temporaries needing a per-application gensym: introduced names
+    # that appear in any value position -- operands (intro_names - head_names)
+    # or binders (intro_names & binding_intros).  A name used purely as an
+    # operator head (a macro / procedure / special-form reference, e.g.
+    # `fresh`, `run`, `==`, including forward and self references) is left
+    # as-is so it resolves at the use site.  The binding-position union also
+    # re-admits a name used both as a head and a binder, e.g. `f` in
+    # `(lambda (f) (f x))`.  This catches operand-position temporaries that
+    # only become binders after a later (recursive) expansion -- the case
+    # miniKanren's `run` macro hits with its introduced query variable `q`.
+    hygienic_intro_names = (intro_names
+                            & (binding_intros | self_call_intros))
     # Bind each free_id alias in the GLOBAL runtime env so the alias persists
     # past any temporary body-scan child envs and is accessible at eval time.
     if free_id_map and def_env is not None:
@@ -818,7 +876,7 @@ def parse_syntax_rules(tail, def_env, name, form_src=None):
             pass
     t = make_syntax_transformer(name, literals, ellipsis_sym, rules,
                                 free_id_map, intro_names)
-    t.binding_intro_names = binding_intro_names
+    t.hygienic_intro_names = hygienic_intro_names
     return t
 
 

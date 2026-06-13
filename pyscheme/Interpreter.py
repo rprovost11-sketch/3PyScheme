@@ -25,7 +25,7 @@ from pyscheme.Expander import expand
 from pyscheme.Analyzer import (
     analyze, SchemeAnalysisError, extend_static_env_with_define,
 )
-from pyscheme.Evaluator import cek_eval, set_global_env
+from pyscheme.Evaluator import cek_eval, set_global_env, make_library_path_param
 from pyscheme.primitives.ports import reset_current_port_params
 from pyscheme.primitives import install_primitives, PRIMITIVE_ARITIES
 from pyscheme.Environment import Environment, SchemeRuntimeError
@@ -40,7 +40,11 @@ from pyscheme.Expander import set_runtime_env
 
 
 class Interpreter(InterpreterBase):
-    def __init__(self):
+    def __init__(self, library_paths=None):
+        # Extra library search-path directories from the command line
+        # (-L / -I), prepended to SCHEME_LIBRARY_PATH when the global
+        # current-library-path parameter is built in reboot().
+        self._cli_library_paths = list(library_paths) if library_paths else []
         self._env = None
         self._static_env = {}
         self._ctx = Context()
@@ -85,6 +89,12 @@ class Interpreter(InterpreterBase):
         # Extension loader needs the global env to install new primitives
         # from .py extension files at import time.
         set_global_env(self._env)
+        # current-library-path parameter: the .sld search path, seeded from
+        # '.' + CLI -L/-I paths + SCHEME_LIBRARY_PATH.  Bound in the global
+        # env so programs can read it or rebind it via parameterize;
+        # set-library-path! replaces it persistently.
+        self._env.bind('current-library-path',
+                       make_library_path_param(self._cli_library_paths))
         # Parallel static env: maps name -> (min, max) arity signature
         # for statically-known operators (primitives, top-level lambda
         # defines).  Seeded with primitives; extended per top-level

@@ -35,6 +35,18 @@ def _form_export(ctx, env, args, app_node):
     _stub('export')
 
 
+def _prim_set_library_path(ctx, env, args, app_node):
+    """Persistently replace the current-library-path parameter's value.
+    Validates the argument is a proper list of strings, then mutates the
+    parameter so subsequent (import ...) forms search the new path."""
+    from pyscheme.Evaluator import (
+        normalize_library_path_value, library_path_param_assign)
+    from pyscheme.AST import VOID_VALUE
+    normalized = normalize_library_path_value(args[0], app_node)
+    library_path_param_assign(normalized)
+    return VOID_VALUE
+
+
 def register():
     register_primitive('include', (1, None), _form_include,
                        usage='(include <filename>...)',
@@ -96,3 +108,17 @@ def register():
         "Valid only inside (define-library ...) as a declaration.  Each\n"
         "<spec> is a symbol or (rename <internal> <external>).  R7RS 5.6."),
         category=CATEGORY, kind=_SPECIAL)
+
+    register_primitive('set-library-path!', (1, 1), _prim_set_library_path,
+                       usage='(set-library-path! list-of-strings)',
+                       doc=(
+        "Persistently replace the library search path used to locate\n"
+        "libraries on disk for (import ...).  The argument is a list of\n"
+        "directory-name strings, searched in order: a library named\n"
+        "(a b) is sought at <dir>/a/b.sld in each directory.  This is the\n"
+        "persistent counterpart to rebinding the current-library-path\n"
+        "parameter with (parameterize ((current-library-path ...)) ...),\n"
+        "which only takes effect for a dynamic extent.  The startup value\n"
+        "is '.' followed by any -L/-I command-line directories and the\n"
+        "SCHEME_LIBRARY_PATH environment variable.  pyscheme extension."),
+        category=CATEGORY)

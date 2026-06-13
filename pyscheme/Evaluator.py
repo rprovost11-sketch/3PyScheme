@@ -920,21 +920,134 @@ def cek_eval(expr, env, ctx=None):
         raise
 
 
-def _library_load_path():
-    """Return the search path for .sld auto-discovery.  SCHEME_LIBRARY_PATH
-    environment variable is split on os.pathsep (':' on Unix, ';' on
-    Windows); the current working directory is always prepended so a
-    library file in cwd is found by default."""
+# --- Library search path -----------------------------------------------
+# The search path used for .sld auto-discovery is held in a `current-
+# library-path` parameter (an R7RS parameter object), so a program can
+# read it, rebind it for a dynamic extent with `parameterize`, or replace
+# it persistently with `set-library-path!`.  The loader reads the
+# parameter's *current* value, so all three take effect.  The parameter is
+# created per-interpreter in Interpreter.reboot via make_library_path_param
+# and registered here; until then (e.g. the Evaluator self-test) the loader
+# falls back to the default '.' + SCHEME_LIBRARY_PATH path.
+_library_path_param_ref = [None]
+
+
+def set_library_path_param(p):
+    """Install the current-library-path parameter as the loader's source
+    of truth.  Called by Interpreter.reboot."""
+    _library_path_param_ref[0] = p
+
+
+def _env_library_path_parts():
+    """The SCHEME_LIBRARY_PATH portion of the default load path: the env
+    var split on os.pathsep (';' on Windows, ':' on Unix), empties dropped."""
     import os
-    path_var = os.environ.get('SCHEME_LIBRARY_PATH', '')
-    raw = path_var.split(os.pathsep)
-    parts = ['.']
+    raw = os.environ.get('SCHEME_LIBRARY_PATH', '').split(os.pathsep)
+    parts = []
     i = 0
     while i < len(raw):
         if raw[i]:
             parts.append(raw[i])
         i = i + 1
     return parts
+
+
+def _default_library_path():
+    """Default search path when no current-library-path parameter is in
+    effect: current directory first, then SCHEME_LIBRARY_PATH entries."""
+    return ['.'] + _env_library_path_parts()
+
+
+def build_library_path_list(cli_paths):
+    """Build the initial library search path: current directory, then the
+    CLI -L/-I paths (in command-line order), then SCHEME_LIBRARY_PATH."""
+    parts = ['.']
+    i = 0
+    while i < len(cli_paths):
+        if cli_paths[i]:
+            parts.append(cli_paths[i])
+        i = i + 1
+    parts.extend(_env_library_path_parts())
+    return parts
+
+
+def _make_scheme_string_list(py_paths):
+    """Build a Scheme proper list of immutable strings from a Python list
+    of directory-name strings."""
+    result = NIL_VALUE
+    i = len(py_paths) - 1
+    while i >= 0:
+        s = make_string(py_paths[i])
+        s.immutable = True
+        result = alloc_cons(s, result)
+        i = i - 1
+    return result
+
+
+def normalize_library_path_value(val, app_node=None):
+    """Validate that `val` is a proper list of strings and return a fresh
+    Scheme list of immutable string copies.  Used as the current-library-
+    path parameter's converter (so parameterize is validated) and by
+    set-library-path!.  Raises SchemeTypeError on a non-list or a
+    non-string element."""
+    from pyscheme.Environment import SchemeTypeError
+    paths = []
+    cur = val
+    while is_cons(cur):
+        elt = cur.car
+        if not is_string(elt):
+            raise SchemeTypeError(
+                'library path must be a list of strings', src_of(app_node))
+        paths.append(as_string(elt))
+        cur = cur.cdr
+    if not is_nil(cur):
+        raise SchemeTypeError(
+            'library path must be a proper list', src_of(app_node))
+    return _make_scheme_string_list(paths)
+
+
+def _library_path_converter_fn(ctx, env, args, app_node):
+    return normalize_library_path_value(args[0], app_node)
+
+
+def make_library_path_param(cli_paths):
+    """Create the current-library-path parameter from '.' + CLI paths +
+    SCHEME_LIBRARY_PATH, install it as the loader's source of truth, and
+    return it so the caller can bind it into the global env."""
+    init_val = _make_scheme_string_list(
+        build_library_path_list(cli_paths))
+    converter = make_primitive('%library-path-converter',
+                               _library_path_converter_fn)
+    param = make_parameter(init_val, converter)
+    set_library_path_param(param)
+    return param
+
+
+def library_path_param_assign(normalized):
+    """Persistently replace the current-library-path parameter's value (the
+    engine behind set-library-path!)."""
+    param = _library_path_param_ref[0]
+    if param is not None:
+        set_parameter_value(param, normalized)
+
+
+def _library_load_path():
+    """Return the search path for .sld auto-discovery as a Python list of
+    directory strings.  When a current-library-path parameter is in effect
+    (a booted interpreter), its current value is used so parameterize and
+    set-library-path! take effect; otherwise falls back to the default
+    ('.' + SCHEME_LIBRARY_PATH)."""
+    param = _library_path_param_ref[0]
+    if param is None:
+        return _default_library_path()
+    paths = []
+    cur = as_parameter_value(param)
+    while is_cons(cur):
+        elt = cur.car
+        if is_string(elt):
+            paths.append(as_string(elt))
+        cur = cur.cdr
+    return paths
 
 
 def _load_py_extension(path):
