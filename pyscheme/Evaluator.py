@@ -1140,7 +1140,7 @@ def _process_one_lib_decl(decl, lib_env, export_names, eval_forms,
             resolved = os.path.join(
                 base_dir, requested) if base_dir else requested
             try:
-                f = open(resolved, 'r')
+                f = open(resolved, 'r', encoding='utf-8')
             except FileNotFoundError:
                 raise SchemeSyntaxError(
                     'include-library-declarations: file not found: ' + resolved,
@@ -1988,7 +1988,7 @@ def _cek_loop(expr, env, ctx):
                                   el_dirs, el_di + 1))
                         if _os.path.isfile(_sld):
                             from pyscheme.Parser import parse
-                            _fh = open(_sld, 'r')
+                            _fh = open(_sld, 'r', encoding='utf-8')
                             _src = _fh.read()
                             _fh.close()
                             K.append((FRAME_EVAL_FORMS, parse(_src, _sld),

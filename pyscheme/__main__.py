@@ -87,6 +87,15 @@ def main():
     if hasattr(signal, 'SIGBREAK'):
         signal.signal(signal.SIGBREAK, signal.default_int_handler)
 
+    # R7RS source and program output are Unicode.  On Windows, stdout/stderr
+    # default to the console code page (cp1252), which cannot encode non-Latin-1
+    # characters, so (display "λ") raises.  Force UTF-8 on both.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding='utf-8')
+        except (AttributeError, ValueError):
+            pass
+
     library_paths, target = _parse_args(sys.argv[1:])
 
     interp = Interpreter(library_paths=library_paths)

@@ -157,7 +157,7 @@ class Interpreter(InterpreterBase):
         file for source positions so include-resolution works regardless
         of the process CWD."""
         abs_path = os.path.abspath(filename)
-        f = open(abs_path, 'r')
+        f = open(abs_path, 'r', encoding='utf-8')
         source = f.read()
         f.close()
         self.rawEval(source, outStrm=outStrm, filename=abs_path)

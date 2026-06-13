@@ -1333,7 +1333,7 @@ def _read_and_expand_file(filename, src, fold):
     before expansion (include-ci semantics)."""
     from pyscheme.Parser import parse, SchemeSyntaxError
     try:
-        f = open(filename, 'r')
+        f = open(filename, 'r', encoding='utf-8')
     except FileNotFoundError:
         raise SchemeSyntaxError("include: file not found: " + filename, src)
     source = f.read()
