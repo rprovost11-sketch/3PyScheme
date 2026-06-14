@@ -1,0 +1,2 @@
+# The Unicode table generator emits LF output; keep the script itself LF too.
+tools/gen_cpp_unicode_tables.scm  text eol=lf
