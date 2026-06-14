@@ -167,6 +167,42 @@ def _display_name(sid: int) -> str:
     return gensym_display_name(symbol_name(sid))
 
 
+class _AliasCell:
+    """A macro free-identifier alias, stored as the *value* of a gensym binding.
+
+    A syntax-rules template's free reference to a binding that existed at macro
+    definition time is emitted as a fresh gensym (so a same-named use-site
+    binding cannot capture it -- hygiene).  That gensym is bound to one of these
+    instead of to a copy of the referent's value: resolving it prefers the LIVE
+    def-site binding (target in def_env), so set! through the macro writes
+    through and later mutations are seen (the A5 hygiene bug a value copy had);
+    if def_env no longer resolves target at eval time -- it was a transient
+    body-scan scope, as for library-internal helpers -- it falls back to `copy`,
+    the def-time snapshot that keeps such references reachable.
+
+    Stored in `_bindings` (not a side table) so it rides through the library
+    export/import machinery, which moves `_bindings`, with no special handling:
+    `lookup` resolves it to a plain value, so an exported macro's alias is
+    carried as the def-time value exactly as before."""
+
+    __slots__ = ('target', 'def_env', 'copy')
+
+    def __init__(self, target: int, def_env, copy):
+        self.target = target
+        self.def_env = def_env
+        self.copy = copy
+
+    def read(self):
+        v = self.def_env.lookup_optional_id(self.target)
+        return v if v is not None else self.copy
+
+    def write(self, value):
+        if self.def_env.lookup_optional_id(self.target) is not None:
+            self.def_env.set_id(self.target, value)
+        else:
+            self.copy = value
+
+
 class Environment:
     """Lexical environment: a binding table plus a parent pointer.
     The global scope is the root of the parent chain and every
@@ -208,6 +244,12 @@ class Environment:
     def getGlobalEnv(self):
         return self._global_env
 
+    def register_alias(self, gs_name: str, target_name: str, def_env, copy_value):
+        """Bind gs_name (a macro free-identifier gensym) in the global env to an
+        _AliasCell indirecting to target_name in def_env (see _AliasCell)."""
+        self._global_env._bindings[intern_symbol(gs_name)] = _AliasCell(
+            intern_symbol(target_name), def_env, copy_value)
+
     def lookup(self, key: str):
         """Walk the parent chain; return the value of the first binding found.
         Raises SchemeUnboundError if no binding is found."""
@@ -215,7 +257,8 @@ class Environment:
         scope = self
         while scope:
             if sid in scope._bindings:
-                return scope._bindings[sid]
+                v = scope._bindings[sid]
+                return v.read() if type(v) is _AliasCell else v
             scope = scope._parent
         raise SchemeUnboundError('unbound variable: ' + _display_name(sid))
 
@@ -223,7 +266,8 @@ class Environment:
         scope = self
         while scope:
             if sid in scope._bindings:
-                return scope._bindings[sid]
+                v = scope._bindings[sid]
+                return v.read() if type(v) is _AliasCell else v
             scope = scope._parent
         raise SchemeUnboundError('unbound variable: ' + _display_name(sid))
 
@@ -233,7 +277,8 @@ class Environment:
         scope = self
         while scope:
             if sid in scope._bindings:
-                return scope._bindings[sid]
+                v = scope._bindings[sid]
+                return v.read() if type(v) is _AliasCell else v
             scope = scope._parent
         return None
 
@@ -242,7 +287,8 @@ class Environment:
         scope = self
         while scope:
             if sid in scope._bindings:
-                return scope._bindings[sid]
+                v = scope._bindings[sid]
+                return v.read() if type(v) is _AliasCell else v
             scope = scope._parent
         return None
 
@@ -256,7 +302,11 @@ class Environment:
                 if scope._is_immutable:
                     raise SchemeTypeError(
                         "set! on '" + _display_name(sid) + "' in a frozen environment")
-                scope._bindings[sid] = value
+                v = scope._bindings[sid]
+                if type(v) is _AliasCell:
+                    v.write(value)
+                else:
+                    scope._bindings[sid] = value
                 return value
             scope = scope._parent
         raise SchemeUnboundError(
@@ -269,7 +319,11 @@ class Environment:
                 if scope._is_immutable:
                     raise SchemeTypeError(
                         "set! on '" + _display_name(sid) + "' in a frozen environment")
-                scope._bindings[sid] = value
+                v = scope._bindings[sid]
+                if type(v) is _AliasCell:
+                    v.write(value)
+                else:
+                    scope._bindings[sid] = value
                 return value
             scope = scope._parent
         raise SchemeUnboundError(

@@ -869,8 +869,14 @@ def parse_syntax_rules(tail, def_env, name, form_src=None):
     # miniKanren's `run` macro hits with its introduced query variable `q`.
     hygienic_intro_names = (intro_names
                             & (binding_intros | self_call_intros))
-    # Bind each free_id alias in the GLOBAL runtime env so the alias persists
-    # past any temporary body-scan child envs and is accessible at eval time.
+    # Wire each free_id alias into the GLOBAL runtime env so it persists past
+    # any temporary body-scan child envs and is reachable at eval time.  The
+    # alias is an INDIRECTION to the def-site binding (resolved live where that
+    # binding still exists -- e.g. a top-level global -- so set! through the
+    # macro writes through and later mutations are seen; the A5 hygiene bug),
+    # with the def-time VALUE snapshot as a fallback for references whose def env
+    # is a transient scan scope at eval time (library-internal helpers).  Either
+    # way a same-named use-site binding is bypassed (referential transparency).
     if free_id_map and def_env is not None:
         try:
             from pyscheme.Expander import get_runtime_env
@@ -878,7 +884,13 @@ def parse_syntax_rules(tail, def_env, name, form_src=None):
             if env is not None:
                 global_env = env.getGlobalEnv()
                 for fid, gs in free_id_map.items():
-                    global_env.bind(gs, def_env[fid])
+                    # A fid that is itself a hygiene gensym (hygiene_gensym
+                    # returned it unchanged, so gs == fid) was already wired up
+                    # by the macro that introduced it; re-aliasing it to itself
+                    # would build a cyclic _AliasCell.  Leave the existing binding.
+                    if fid.startswith(GENSYM_PREFIX):
+                        continue
+                    global_env.register_alias(gs, fid, env, def_env[fid])
         except ImportError:
             pass
     t = make_syntax_transformer(name, literals, ellipsis_sym, rules,
