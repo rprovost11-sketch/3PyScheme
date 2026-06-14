@@ -463,13 +463,17 @@ def _build_token(kind, text, src, fold_case=False):
     if kind == 'IDENT':
         if fold_case:
             text = text.lower()
-        if text == '+inf.0':
+        # The inf/nan tokens are case-insensitive per R7RS (independent of the
+        # fold-case directive): +InF.0, +NAN.0, -iNF.0 all denote the value, not
+        # a symbol.  (A symbol with such a name must be written |...|-quoted.)
+        low = text.lower()
+        if low == '+inf.0':
             return Token(TOK_REAL, float('inf'), src)
-        if text == '-inf.0':
+        if low == '-inf.0':
             return Token(TOK_REAL, float('-inf'), src)
-        if text == '+nan.0':
+        if low == '+nan.0':
             return Token(TOK_REAL, float('nan'), src)
-        if text == '-nan.0':
+        if low == '-nan.0':
             return Token(TOK_REAL, float('nan'), src)
         if text.endswith('i') and len(text) >= 2:
             tok = _try_parse_complex_literal(text, src)

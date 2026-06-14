@@ -172,6 +172,11 @@ def pretty_print(val):
         im = as_complex_imag(val)
         re_s = _format_float(re)
         im_s = _format_float(im)
+        # inf/nan imaginary parts already carry an explicit sign in im_s (e.g.
+        # "+inf.0"); emitting an extra connector '+' would double it
+        # ("+inf.0++inf.0i").  A leading sign in im_s means it is self-signed.
+        if im_s[:1] == '+' or im_s[:1] == '-':
+            return re_s + im_s + 'i'
         if _math.isnan(im) or im >= 0:
             return re_s + '+' + im_s + 'i'
         return re_s + im_s + 'i'
