@@ -90,9 +90,12 @@ def main():
     # R7RS source and program output are Unicode.  On Windows, stdout/stderr
     # default to the console code page (cp1252), which cannot encode non-Latin-1
     # characters, so (display "λ") raises.  Force UTF-8 on both.
+    # line_buffering=True also flushes on every newline even when stdout is a
+    # pipe/file (Python block-buffers those by default), so progress from a
+    # long-running program is visible as it runs instead of only at exit.
     for _stream in (sys.stdout, sys.stderr):
         try:
-            _stream.reconfigure(encoding='utf-8')
+            _stream.reconfigure(encoding='utf-8', line_buffering=True)
         except (AttributeError, ValueError):
             pass
 
