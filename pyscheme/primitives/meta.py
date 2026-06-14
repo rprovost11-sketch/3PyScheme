@@ -523,6 +523,11 @@ def _prim_get_environment_variables(ctx, env, args, app_node):
     return result
 
 
+def _prim_unicode_version(ctx, env, args, app_node):
+    import unicodedata as _ud
+    return make_string(_ud.unidata_version)
+
+
 def _prim_runtime(ctx, env, args, app_node):
     import time as _time
     return make_real(_time.process_time())
@@ -711,6 +716,13 @@ def register():
                        doc=('(get-environment-variables) returns an alist of (name . value) '
                             'strings for all OS environment variables.  '
                             'R7RS §6.14 / (scheme process-context).'),
+                       category=CATEGORY)
+
+    register_primitive('unicode-version', (0, 0), _prim_unicode_version,
+                       doc=('(unicode-version) returns the version string of the Unicode '
+                            'character database backing char/string operations (e.g. '
+                            '"16.0.0").  Not in R7RS; pyscheme reports the host Python\'s '
+                            'unicodedata.unidata_version.'),
                        category=CATEGORY)
 
     register_primitive('syntax-expand', (1, 1), _prim_syntax_expand,
