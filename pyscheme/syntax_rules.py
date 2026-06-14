@@ -37,6 +37,7 @@ from pyscheme.AST import (
     alloc_cons, make_symbol, make_vector, list_from_items, src_of, eqv_atom,
     make_syntax_transformer, is_syntax_transformer,
     is_closure, is_primitive,
+    paint_mark, strip_marks,
     NIL_VALUE, SYMBOL, GENSYM_PREFIX,
 )
 
@@ -62,6 +63,15 @@ _SYNTACTIC_KEYWORDS = {
 # Module-level counter for hygiene gensyms.  Shared by all transformers.
 _GENSYM_COUNTER = 0
 
+# Per-expansion hygiene MARK (A1/A3 prototype).  apply_syntax_transformer mints a
+# fresh mark and sets _current_mark around its instantiation; _instantiate paints
+# template-introduced identifiers with it (see AST.paint_mark).  Instantiation is
+# not re-entrant within a single application (nested macros expand later, via the
+# Expander, each with its own mark), so a module global suffices; it is
+# save/restored defensively.  None => no painting (direct _instantiate calls).
+_MARK_COUNTER = 0
+_current_mark = None
+
 
 def hygiene_gensym(base):
     """Generate a fresh symbol name unlikely to collide with user code.
@@ -72,6 +82,11 @@ def hygiene_gensym(base):
     global _GENSYM_COUNTER
     if base.startswith(GENSYM_PREFIX):
         return base
+    # Strip any hygiene marks so the mark byte is never embedded in a gensym
+    # name (which strip_marks would later mis-cut).  Callers that need to tell
+    # two same-base marked names apart key on the full marked name in their
+    # rename table; the gensym value just needs to be unique and mark-free.
+    base = strip_marks(base)
     _GENSYM_COUNTER = _GENSYM_COUNTER + 1
     return GENSYM_PREFIX + base + '.' + str(_GENSYM_COUNTER)
 
@@ -569,13 +584,22 @@ def _instantiate(tmpl, match, ellipsis_sym, use_src, free_id_map):
     resolve in the use-site environment as expected.
 
     use_src is carried to synthesized cons cells."""
+    global _current_mark
     if is_symbol(tmpl):
         s = as_symbol(tmpl)
         if s in match.scalars:
             return match.scalars[s]
         if s in free_id_map:
             return make_symbol(free_id_map[s], src_of(tmpl))
-        return tmpl
+        # A template-introduced identifier (not a pattern var, not a def-site
+        # free ref).  Paint it with this expansion's mark so two same-named
+        # identifiers from different expansion sites stay distinct for literal
+        # matching / bound-identifier=? (A3).  Syntactic keywords are left bare
+        # so they stay recognizable; the mark resolves away (strip) for variable
+        # references and is removed wholesale before analysis.
+        if _current_mark is None or s in _SYNTACTIC_KEYWORDS:
+            return tmpl
+        return make_symbol(paint_mark(s, _current_mark), src_of(tmpl))
     if is_cons(tmpl):
         # R7RS §4.3.2 escape: (ellipsis inner) disables ellipsis inside inner.
         # This takes priority over quote so '(... ...) in a template yields '...
@@ -583,6 +607,18 @@ def _instantiate(tmpl, match, ellipsis_sym, use_src, free_id_map):
                 and is_cons(tmpl.cdr) and is_nil(tmpl.cdr.cdr)):
             return _instantiate(tmpl.cdr.car, match,
                                 '\x00no-ellipsis\x00', use_src, free_id_map)
+        # Inside (quote ...) introduced identifiers are literal data, not code:
+        # suppress painting so the quoted datum stays mark-free (and the strip
+        # pass can skip quoted data wholesale, never traversing deep/circular
+        # quoted lists).  Pattern-variable substitutions are unaffected.
+        if is_symbol(tmpl.car) and as_symbol(tmpl.car) == 'quote':
+            saved_q = _current_mark
+            _current_mark = None
+            try:
+                return _instantiate_list(tmpl, match, ellipsis_sym, use_src,
+                                         free_id_map)
+            finally:
+                _current_mark = saved_q
         if is_symbol(tmpl.car) and as_symbol(tmpl.car) == 'syntax-error':
             _raise_syntax_error(
                 tmpl.cdr, match, ellipsis_sym, use_src, free_id_map)
@@ -746,6 +782,12 @@ def apply_syntax_transformer(t, form):
     else:
         free_id_map = base_map
     form_tail = form.cdr if is_cons(form) else NIL_VALUE
+    # Mint a fresh per-application mark; _instantiate paints introduced
+    # identifiers with it.  Save/restore defensively in case instantiation ever
+    # re-enters (it should not within one application).
+    global _MARK_COUNTER, _current_mark
+    _MARK_COUNTER = _MARK_COUNTER + 1
+    this_mark = _MARK_COUNTER
     i = 0
     while i < len(t.rules):
         pattern = t.rules[i][0]
@@ -754,8 +796,13 @@ def apply_syntax_transformer(t, form):
             match = _SyntaxMatch()
             if _match_list_pattern(pattern.cdr, form_tail, literals,
                                    ellipsis_sym, match):
-                return _instantiate(template, match, ellipsis_sym, use_src,
-                                    free_id_map)
+                saved_mark = _current_mark
+                _current_mark = this_mark
+                try:
+                    return _instantiate(template, match, ellipsis_sym, use_src,
+                                        free_id_map)
+                finally:
+                    _current_mark = saved_mark
         i = i + 1
     raise SchemeSyntaxError(
         "syntax-rules: no matching pattern for '" + t.name + "'", use_src)

@@ -40,6 +40,7 @@ from pyscheme.AST import (
     as_symbol, as_string, src_of,
     make_symbol, ConsCell, REPL_FILENAME,
     intern_symbol, symbol_name,
+    strip_marks,
     SYMBOL, VOID,
 )
 from pyscheme.syntax_rules import (
@@ -80,11 +81,13 @@ _expand_depth = [0]
 
 
 def _lookup_macro(sym):
-    """Return the SyntaxTransformer bound to sym, or None."""
+    """Return the SyntaxTransformer bound to sym, or None.  Hygiene marks are
+    stripped for the lookup so a mark-painted macro / forward reference still
+    resolves by its base name (referential transparency)."""
     env = _runtime_env_ref[0]
     if env is None:
         return None
-    val = env.lookup_optional(as_symbol(sym))
+    val = env.lookup_optional(strip_marks(as_symbol(sym)))
     if val is not None and is_syntax_transformer(val):
         return val
     return None
@@ -107,17 +110,93 @@ def _current_macro_env():
 
 
 def expand(sexpr):
-    """Expand sugar and macros.  Returns an S-expression."""
+    """Expand sugar and macros.  Returns an S-expression.
+
+    Hygiene marks (AST.paint_mark) painted on macro-introduced identifiers live
+    only during expansion; the OUTERMOST expand call (depth 1) strips them from
+    its result before it reaches the analyzer, so resolution/analysis/eval never
+    see a marked name.  Nested expand calls (depth >= 2) leave marks intact so
+    they survive across nested macro expansions within one top-level form."""
     from pyscheme.Parser import SchemeSyntaxError
     _expand_depth[0] = _expand_depth[0] + 1
     if _expand_depth[0] > _MAX_EXPAND_DEPTH:
+        _expand_depth[0] = _expand_depth[0] - 1
         raise SchemeSyntaxError(
             'macro expansion depth exceeded - possible mutually-recursive macro loop',
             src_of(sexpr))
     try:
-        return _expand_inner(sexpr)
+        result = _expand_inner(sexpr)
+        if _expand_depth[0] == 1:
+            result = _strip_marks_deep(result)
+        return result
     finally:
         _expand_depth[0] = _expand_depth[0] - 1
+
+
+def _strip_marks_deep(form, seen=None):
+    """Return form with every identifier's hygiene marks stripped (base name).
+    Used once, by the outermost expand(), to clean macro output before analysis.
+    Returns the same object when nothing changed (cheap no-op for mark-free code).
+
+    Cycle-safe: a quoted datum can be circular / shared (datum labels, e.g.
+    '#0=(1 . #0#)).  Such data is always mark-free (marks only land on
+    macro-introduced code identifiers), so on re-encountering a cons/vector we
+    return it unchanged rather than recursing forever."""
+    if is_symbol(form):
+        s = as_symbol(form)
+        base = strip_marks(s)
+        return form if base == s else make_symbol(base, src_of(form))
+    if is_vector(form):
+        if seen is None:
+            seen = set()
+        if id(form) in seen:
+            return form
+        seen.add(id(form))
+        items = as_vector_items(form)
+        new_items = []
+        changed = False
+        for it in items:
+            ni = _strip_marks_deep(it, seen)
+            new_items.append(ni)
+            if ni is not it:
+                changed = True
+        return make_vector(new_items) if changed else form
+    if not is_cons(form):
+        return form
+    # (quote DATUM): the datum is literal and mark-free (instantiation does not
+    # paint inside quote), and it may be deep or circular (datum labels), so do
+    # not traverse it at all.
+    if is_symbol(form.car) and as_symbol(form.car) == 'quote':
+        return form
+    # Cons: walk the cdr-spine ITERATIVELY (long quoted lists can be tens of
+    # thousands deep -- recursing the spine overflows the stack), recursing only
+    # into each car and the final tail.  The seen-set keeps it cycle-safe.
+    if seen is None:
+        seen = set()
+    if id(form) in seen:
+        return form
+    spine = []
+    cur = form
+    while is_cons(cur) and id(cur) not in seen:
+        seen.add(id(cur))
+        spine.append(cur)
+        cur = cur.cdr
+    new_tail = _strip_marks_deep(cur, seen)
+    changed = new_tail is not cur
+    new_cars = []
+    for c in spine:
+        nc = _strip_marks_deep(c.car, seen)
+        new_cars.append(nc)
+        if nc is not c.car:
+            changed = True
+    if not changed:
+        return form
+    out = new_tail
+    i = len(spine) - 1
+    while i >= 0:
+        out = alloc_cons(new_cars[i], out, spine[i].src)
+        i = i - 1
+    return out
 
 
 def _expand_inner(sexpr):
@@ -689,6 +768,15 @@ def _rename_refs_in_form(form, rename_table):
     if is_symbol(form):
         name = as_symbol(form)
         new_name = rename_table.get(name)
+        if new_name is None:
+            # A macro-introduced reference carries a hygiene mark (name^mark);
+            # it still names the same binding as its base, so match on the
+            # stripped name.  (Def-site-bound free refs go through free_id_map
+            # gensym aliases instead and are never painted, so they don't match
+            # here -- no accidental capture.)
+            base = strip_marks(name)
+            if base != name:
+                new_name = rename_table.get(base)
         if new_name is not None:
             return make_symbol(new_name, src_of(form))
         return form

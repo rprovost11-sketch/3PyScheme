@@ -353,9 +353,38 @@ def symbol_name(sid: int) -> str:
 GENSYM_PREFIX = '\x01h.'
 
 
+# ── Hygiene marks (A1/A3 prototype) ────────────────────────────────────────
+# A *mark* is a per-macro-expansion stamp painted onto template-INTRODUCED
+# identifiers, encoded as a suffix `\x02<mark-id>` (possibly several, accumulated
+# across nested expansions).  Unlike a gensym RENAME (which changes a binder's
+# resolved identity), a mark does NOT change how an identifier resolves -- it
+# only distinguishes two identifiers that share a base name but came from
+# different expansion sites, which is exactly what syntax-rules literal matching
+# and bound-identifier=? need (the A3 case).  Marks live only during expansion;
+# the outermost expand() strips them before analysis, so the evaluator never
+# sees them.  Resolution / display strip marks (base name); literal matching and
+# bound-identifier=? compare the FULL marked name.
+MARK_PREFIX = '\x02'
+
+
+def paint_mark(name, mark_id):
+    """Append an expansion mark to an identifier name."""
+    return name + MARK_PREFIX + str(mark_id)
+
+
+def strip_marks(name):
+    """Remove all expansion marks, returning the base (resolution) name.  Marks
+    are always a contiguous suffix, so cut at the first marker byte.  A gensym
+    rename prefix (if any) is preserved -- marks and gensyms are orthogonal."""
+    i = name.find(MARK_PREFIX)
+    return name if i < 0 else name[:i]
+
+
 def gensym_display_name(name):
-    """Strip the hygiene gensym prefix for display / error messages:
-    '\x01h.BASE.DIGITS' -> 'BASE'.  A non-gensym name is returned unchanged."""
+    """Strip hygiene marks and the gensym prefix for display / error messages:
+    '\x01h.BASE.DIGITS' (optionally mark-suffixed) -> 'BASE'.  Other names are
+    returned with marks stripped."""
+    name = strip_marks(name)
     if not name.startswith(GENSYM_PREFIX):
         return name
     rest = name[len(GENSYM_PREFIX):]
