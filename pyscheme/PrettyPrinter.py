@@ -418,6 +418,19 @@ def _is_safe_symbol_subsequent(c):
 def _needs_vertical_bars(name):
     if not name:
         return True
+    # A lone dot, or a name that would re-read as a NUMBER rather than this
+    # symbol, must be bar-quoted so write emits a re-readable token.  Mirrors
+    # chibi-scheme's heuristic: a leading sign followed by a digit, '.', 'i'
+    # (covers both +i and +inf.0), or a case-insensitive "nan" prefix lexes as a
+    # number.  (A leading digit is already caught by the safe-initial check.)
+    if name == '.':
+        return True
+    if len(name) > 1 and name[0] in '+-':
+        c1 = name[1]
+        if (('0' <= c1 <= '9') or c1 == '.' or c1 == 'i' or
+                (len(name) > 3 and name[1].lower() == 'n'
+                 and name[2].lower() == 'a' and name[3].lower() == 'n')):
+            return True
     if not _is_safe_symbol_initial(name[0]) and name[0] not in '+-@.':
         return True
     i = 0
