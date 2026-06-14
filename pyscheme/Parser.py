@@ -946,6 +946,13 @@ class Parser:
             # A list whose dotted tail is already read accepts only its closer.
             if top is not None and top.kind == _F_LIST and top.tail_filled:
                 tok = self._peek()
+                if tok.kind == TOK_DATUM_COMMENT:
+                    # A datum comment after the dotted tail (e.g. (a . b #;c))
+                    # discards the following datum; the closer is still expected
+                    # afterwards.  R7RS section 2.2.
+                    self._advance()
+                    stack.append(_ParseFrame(_F_DISCARD))
+                    continue
                 if tok.kind == top.closer:
                     self._advance()
                     built = Parser._build_list(
