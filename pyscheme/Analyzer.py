@@ -239,8 +239,20 @@ def _app_operator_arity(fn_sexpr, static_env):
 
 
 def _check_app_arity(fn_sexpr, args, static_env, app_sexpr):
-    """Raise SchemeArityError if the application's arg count is
-    inconsistent with a statically knowable operator arity."""
+    """Statically enforce arity ONLY for syntactic keywords -- special forms /
+    macros (e.g. define-record-type) that reach application analysis without a
+    dedicated handler.  Those have no runtime apply step, so a wrong argument
+    count is a syntax error and must be caught here (it is how, for instance, the
+    R6RS `(define-record-type name (fields ...))` shape is rejected).
+
+    For ordinary PROCEDURE calls (primitives, intrinsics, closures) arity is left
+    to the evaluator's apply path, which raises an identical but *catchable*
+    Scheme condition (same message text).  R7RS treats a procedure-call arity
+    mismatch as a runtime error, so (test-error (apply +)) and
+    (guard (e (#t ...)) (car)) must be able to catch it -- they could not when
+    this raised during analysis, before any runtime handler is installed."""
+    if not (is_symbol(fn_sexpr) and as_symbol(fn_sexpr) in _SYNTACTIC_KEYWORDS):
+        return
     info = _app_operator_arity(fn_sexpr, static_env)
     if info is None:
         return
