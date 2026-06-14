@@ -37,7 +37,7 @@ from pyscheme.AST import (
     alloc_cons, make_symbol, make_vector, list_from_items, src_of, eqv_atom,
     make_syntax_transformer, is_syntax_transformer,
     is_closure, is_primitive,
-    paint_mark, strip_marks,
+    paint_mark, strip_marks, gensym_display_name,
     NIL_VALUE, SYMBOL, GENSYM_PREFIX,
 )
 
@@ -73,13 +73,22 @@ _MARK_COUNTER = 0
 _current_mark = None
 
 
-def hygiene_gensym(base):
+def hygiene_gensym(base, force=False):
     """Generate a fresh symbol name unlikely to collide with user code.
     Uses a non-printable marker byte (AST.GENSYM_PREFIX) so the display paths
     can strip it.  If base is already a gensym (starts with the prefix), return
     it unchanged to prevent double-gensymming when the Expander processes macro
-    output.  The inverse decoder is AST.gensym_display_name."""
+    output -- UNLESS force=True, which always produces a fresh gensym from the
+    base's display name.  force is used for per-application template binders that
+    may arrive already gensym'd (a binder name threaded in from an enclosing
+    binding); they must be freshened per application so they don't capture a
+    same-named use-site reference (A1f).  The inverse decoder is
+    AST.gensym_display_name."""
     global _GENSYM_COUNTER
+    if force:
+        base = gensym_display_name(base)
+        _GENSYM_COUNTER = _GENSYM_COUNTER + 1
+        return GENSYM_PREFIX + base + '.' + str(_GENSYM_COUNTER)
     if base.startswith(GENSYM_PREFIX):
         return base
     # Strip any hygiene marks so the mark byte is never embedded in a gensym
@@ -778,7 +787,12 @@ def apply_syntax_transformer(t, form):
         free_id_map = dict(base_map)
         for iname in hygienic_intros:
             if iname not in free_id_map:
-                free_id_map[iname] = hygiene_gensym(iname)
+                # force=True when iname is already a gensym (a binder threaded in
+                # from an enclosing binding): it must be freshened per application
+                # so the generated binder doesn't capture a same-named use-site
+                # reference (A1f).  hygiene_gensym otherwise passes gensyms through.
+                free_id_map[iname] = hygiene_gensym(
+                    iname, force=iname.startswith(GENSYM_PREFIX))
     else:
         free_id_map = base_map
     form_tail = form.cdr if is_cons(form) else NIL_VALUE
@@ -914,6 +928,17 @@ def parse_syntax_rules(tail, def_env, name, form_src=None):
     # `(lambda (f) (f x))`.  This catches operand-position temporaries that
     # only become binders after a later (recursive) expansion -- the case
     # miniKanren's `run` macro hits with its introduced query variable `q`.
+    # A1f spike: a binding-position identifier is ALWAYS a fresh per-application
+    # binder, even if its name happens to be bound in the def-env.  A template
+    # binder introduces a NEW binding, not a reference, so it must never be
+    # aliased to the def-site -- otherwise a generated macro whose binder name
+    # collides with an enclosing binding (e.g. foo's `y` = the outer `x`) reuses
+    # that binding and captures a same-named use-site reference.  Pull binders
+    # out of free_id_map and route them through the fresh-gensym path.
+    for _b in binding_intros:
+        if _b in free_id_map:
+            del free_id_map[_b]
+        intro_names.add(_b)
     hygienic_intro_names = (intro_names
                             & (binding_intros | self_call_intros))
     # Wire each free_id alias into the GLOBAL runtime env so it persists past
