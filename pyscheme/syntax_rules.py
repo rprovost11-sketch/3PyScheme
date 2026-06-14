@@ -400,11 +400,12 @@ def _match_pattern(pat, form, literals, ellipsis_sym, out):
     """Match one pattern node against one form node.  Returns True and fills
     `out`, or False.  Literal matching uses plain string equality: a
     use-site identifier that has been alpha-renamed will have a gensym name
-    and will not match the literal's plain name."""
+    and will not match the literal's plain name.
+
+    Literals are checked before the `_` wildcard so that `_` declared in the
+    literals list matches literally (R7RS 4.3.2 literal-priority rule)."""
     if is_symbol(pat):
         s = as_symbol(pat)
-        if s == '_':
-            return True
         i = 0
         while i < len(literals):
             if s == literals[i]:
@@ -412,6 +413,8 @@ def _match_pattern(pat, form, literals, ellipsis_sym, out):
                     return False
                 return True
             i = i + 1
+        if s == '_':
+            return True
         out.scalars[s] = form
         return True
     if is_cons(pat):
@@ -798,12 +801,16 @@ def parse_syntax_rules(tail, def_env, name, form_src=None):
             raise SchemeSyntaxError(
                 'syntax-rules: literal must be a symbol', src_of(cur.car))
         lit_name = as_symbol(cur.car)
-        if lit_name == '_' or lit_name == ellipsis_sym:
-            raise SchemeSyntaxError(
-                "syntax-rules: '" + lit_name + "' cannot appear in literals list",
-                src_of(cur.car))
         literals.append(lit_name)
         cur = cur.cdr
+    # R7RS 4.3.2 literal-priority: an identifier in <literals> is always a
+    # literal, overriding any role as `_` (wildcard) or as the ellipsis.  If the
+    # ellipsis symbol is itself declared a literal, ellipsis matching is disabled
+    # (the elli-lit case); swap in a sentinel that no real symbol can equal so
+    # every ellipsis test below sees "no active ellipsis" while the literal
+    # itself still matches/instantiates verbatim via the literals list.
+    if ellipsis_sym in literals:
+        ellipsis_sym = '\x00no-ellipsis\x00'
     rules = []
     pvars_union = set()
     templates = []
