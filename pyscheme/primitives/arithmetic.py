@@ -725,7 +725,16 @@ def _format_num_str(f):
     if f == float('-inf'):
         return '-inf.0'
     s = repr(f)
-    if '.' not in s and 'e' not in s:
+    if 'e' in s:
+        # Exponent form: ensure the mantissa carries a decimal point so the
+        # written value is unambiguously a real ("5.0e-324" not "5e-324"); both
+        # read back to the same value.  Matches PrettyPrinter._format_float so
+        # number->string and write agree.
+        mant, _e, exp = s.partition('e')
+        if '.' not in mant:
+            mant = mant + '.0'
+        s = mant + 'e' + exp
+    elif '.' not in s:
         s = s + '.0'
     return s
 
@@ -818,16 +827,7 @@ def _prim_number_to_string(ctx, env, args, app_node):
                 'number->string: only radix 10 is supported for inexact numbers',
                 app_node)
         f = as_real(v)
-        if f != f:
-            return make_string('+nan.0')
-        if f == float('inf'):
-            return make_string('+inf.0')
-        if f == float('-inf'):
-            return make_string('-inf.0')
-        s = repr(f)
-        if '.' not in s and 'e' not in s:
-            s = s + '.0'
-        return make_string(s)
+        return make_string(_format_num_str(f))
     if is_rational(v):
         n = as_rational_num(v)
         d = as_rational_den(v)

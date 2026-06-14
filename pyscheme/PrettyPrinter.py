@@ -50,7 +50,15 @@ def _format_float(f):
     if f == float('-inf'):
         return '-inf.0'
     s = repr(f)
-    if '.' not in s and 'e' not in s:
+    if 'e' in s:
+        # Exponent form: ensure the mantissa carries a decimal point so the
+        # written value is unambiguously a real (R7RS/chibi prefer "5.0e-324"
+        # over "5e-324"; both read back to the same value).
+        mant, _e, exp = s.partition('e')
+        if '.' not in mant:
+            mant = mant + '.0'
+        s = mant + 'e' + exp
+    elif '.' not in s:
         s = s + '.0'
     return s
 
