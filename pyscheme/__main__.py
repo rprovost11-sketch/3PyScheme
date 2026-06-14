@@ -127,15 +127,18 @@ def main():
         os.path.dirname(os.path.dirname(
             os.path.dirname(os.path.abspath(__file__)))),
         'scheme-tests')
+    # The .log REPL-transcript suites live under scheme-tests/log-tests/ (they
+    # were grouped there to distinguish them from the application-tests suites).
+    _log_tests = os.path.join(_scheme_tests, 'log-tests')
     listener = Listener(
         interp,
-        testdir=os.path.join(_scheme_tests, 'feature-tests'),
+        testdir=os.path.join(_log_tests, 'feature-tests'),
         language='pyscheme',
         version=__version__,
         author='Ron Provost/Longo',
         project='https://github.com/rprovost11/pyscheme',
-        compliancedir=os.path.join(_scheme_tests, 'R7RS-Compliance-Tests'),
-        regressiondir=os.path.join(_scheme_tests, 'regression-tests'),
+        compliancedir=os.path.join(_log_tests, 'R7RS-Compliance-Tests'),
+        regressiondir=os.path.join(_log_tests, 'regression-tests'),
         runsdir=os.path.join(_scheme_tests, 'runs'),
     )
     try:
