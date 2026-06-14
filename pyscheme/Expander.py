@@ -254,15 +254,19 @@ def _expand_let_syntax(sexpr, is_letrec):
                     if fid_sid in child_env._bindings:
                         global_env.bind(gs, child_env._bindings[fid_sid])
         _runtime_env_ref[0] = child_env
-        if is_cons(body.cdr):
-            body_items = [make_symbol('begin', src)]
-            bcur = body
-            while is_cons(bcur):
-                body_items.append(bcur.car)
-                bcur = bcur.cdr
-            wrapped = list_from_items(body_items, src)
-        else:
-            wrapped = body.car
+        # Wrap the body in (let () body...) -- NOT (begin body...).  A begin in a
+        # definition context splices its internal defines into the *enclosing*
+        # body; R7RS 4.2.6 makes the let-syntax/letrec-syntax body its own region
+        # ("definitions spliced as in let/letrec bodies"), so an internal define
+        # must stay local.  (let () ...) reuses the body-scanner's letrec* lowering
+        # to give exactly that new scope.  Confirmed against chibi:
+        #   (let () (define x 1) (let-syntax () (define x 2) #f) x) => 1
+        body_items = [make_symbol('let', src), NIL_VALUE]
+        bcur = body
+        while is_cons(bcur):
+            body_items.append(bcur.car)
+            bcur = bcur.cdr
+        wrapped = list_from_items(body_items, src)
         if let_rename_table:
             wrapped = _rename_refs_in_form(wrapped, let_rename_table)
         return expand(wrapped)
