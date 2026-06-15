@@ -688,14 +688,15 @@ def _try_parse_prefixed_number(text, src):
             return Token(TOK_REAL, f, src)
         except ValueError:
             pass
-        # Decimal-prefixed complex: #d10+11i, #d1.0+1.0i.  Only when no
-        # exactness prefix is present (matches chibi; #e/#i complex are not
-        # supported, and #x/#o/#b complex are rejected -- 'i'/'e' clash with
-        # the digit alphabets).
-        if exact == -1 and rest[-1] in 'iI':
-            tok = _try_parse_complex_literal(rest, src)
-            if tok is not None:
-                return tok
+    # Prefixed complex: #x10+11i, #o10+11i, #b10+11i, #d10+11i, #e1.0+1.0i,
+    # #i1.0+1.0i, ...  R7RS 7.1.1 defines <complex R> for every radix (only
+    # <decimal R> points/exponents are radix-10-only), and exactness applies to
+    # the whole number.  The imaginary 'i' is never a digit in any radix, so
+    # this is unambiguous.
+    if rest[-1] in 'iI':
+        tok = _try_parse_complex_literal(rest, src, radix, exact)
+        if tok is not None:
+            return tok
     raise SchemeSyntaxError("invalid prefixed number: %r" % text, src)
 
 
@@ -742,22 +743,62 @@ def _component_to_scheme(v, src):
     return make_rational(v.numerator, v.denominator, src)
 
 
-def _try_parse_complex_literal(text, src):
+def _parse_complex_comp_radix(s, radix):
+    """Parse one complex component (integer or rational) in a non-decimal
+    radix.  R7RS 7.1.1: <complex R> is defined for every radix, but <decimal R>
+    (points/exponents) is radix-10-only, so components in radix 2/8/16 are just
+    <uinteger R> or a ratio.  Returns int, _Rat, or None."""
+    if not s:
+        return None
+    try:
+        return int(s, radix)
+    except ValueError:
+        pass
+    if '/' in s:
+        slash = s.index('/')
+        try:
+            num = int(_substring(s, 0, slash), radix)
+            den = int(_substring(s, slash + 1, len(s)), radix)
+            if den != 0:
+                return _Rat(num, den)
+        except ValueError:
+            pass
+    return None
+
+
+def _exact_component_from_str(s, val, radix):
+    """Convert a complex component to exact for an #e prefix.  Exact values
+    (int/_Rat) pass through; an inexact radix-10 decimal is converted to its
+    exact decimal value from the source string (matching the #e real path)."""
+    if _is_exact_component(val):
+        return val
+    if '/' in s:
+        slash = s.index('/')
+        return _Rat(int(_substring(s, 0, slash)),
+                    int(_substring(s, slash + 1, len(s))))
+    return _decimal_str_to_rat(s)
+
+
+def _try_parse_complex_literal(text, src, radix=10, exact=-1):
     """Parse a+bi / a-bi / +bi / -bi / +i / -i complex literals.
-    text ends in 'i' and has length >= 2.
-    Produces an exact complex token when both components are exact."""
+    text ends in 'i'/'I' and has length >= 2.  radix is the reader radix
+    (2/8/10/16) and exact is the #e/#i exactness (-1 unspecified, 1 exact,
+    0 inexact).  Produces an exact complex token when both components are
+    exact and no #i forces inexactness."""
     body = _substring(text, 0, len(text) - 1)
     if not body:
         return None   # bare 'i' is an identifier
 
-    # Find the rightmost +/- that is not an exponent sign
-    # (i.e. not preceded by 'e' or 'E').
+    # Find the rightmost +/- that separates real and imaginary parts.  In
+    # radix 10 a sign that is part of an exponent (preceded by e/s/f/d/l) is
+    # skipped; in other radixes those letters are ordinary digits (e.g. hex
+    # #x1e+2i = 30+2i), so no sign is skipped.
     split = -1
     j = len(body) - 1
     while j >= 0:
         c = body[j]
         if c == '+' or c == '-':
-            if j > 0 and body[j - 1].lower() in 'esfdl':
+            if radix == 10 and j > 0 and body[j - 1].lower() in 'esfdl':
                 j = j - 1
                 continue
             split = j
@@ -770,10 +811,15 @@ def _try_parse_complex_literal(text, src):
     real_str = _substring(body, 0, split)
     sign_imag = _substring(body, split, len(body))
 
+    def parse_comp(s):
+        if radix == 10:
+            return _parse_number_for_complex(s)
+        return _parse_complex_comp_radix(s, radix)
+
     if real_str == '':
         re_val = 0
     else:
-        re_val = _parse_number_for_complex(real_str)
+        re_val = parse_comp(real_str)
         if re_val is None:
             return None
 
@@ -782,9 +828,17 @@ def _try_parse_complex_literal(text, src):
     elif sign_imag == '-':
         im_val = -1
     else:
-        im_val = _parse_number_for_complex(sign_imag)
+        im_val = parse_comp(sign_imag)
         if im_val is None:
             return None
+
+    if exact == 1:
+        re_val = _exact_component_from_str(real_str if real_str else '0',
+                                           re_val, radix)
+        im_val = _exact_component_from_str(sign_imag, im_val, radix)
+    elif exact == 0:
+        re_val = float(re_val)
+        im_val = float(im_val)
 
     if _is_exact_component(re_val) and _is_exact_component(im_val):
         re_scheme = _component_to_scheme(re_val, src)
