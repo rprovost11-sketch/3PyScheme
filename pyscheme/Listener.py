@@ -332,7 +332,8 @@ class Listener:
                  project='https://example/pyscheme',
                  compliancedir='',
                  regressiondir='',
-                 runsdir=''):
+                 runsdir='',
+                 show_banner=True):
         self._interp = anInterpreter
         # A live Listener means an interactive REPL session: (exit) should abort
         # to the prompt, not terminate the process (batch evalFile never builds a
@@ -393,7 +394,11 @@ class Listener:
             'toggle-tty-color': self._cmd_toggle_tty_color,
             'tty-color':        self._cmd_tty_color,
         }
-        self._banner()
+        # The startup banner is interactive-REPL chrome.  -e/--evaluate builds
+        # the Listener only to reuse its REPL transcript formatting, so it
+        # suppresses the banner (the first line should be the '>>> ' echo).
+        if show_banner:
+            self._banner()
 
     # ---- readline setup ----
 
@@ -599,6 +604,44 @@ class Listener:
                 self._writeErrorMsg(Listener._format_error(e))
 
             print()
+
+    def eval_and_exit(self, expressions):
+        """Evaluate each -e/--evaluate expression as a full REPL transcript and
+        return a process exit status.  For every expression the input is echoed
+        with the REPL prompts ('>>> ' on the first line, '... ' on
+        continuations), the expression is evaluated (so display/write output
+        appears in place), and the value is shown as '==> <value>' -- or an
+        error as '%%% ...'.  Mirrors readEvalPrintLoop's per-entry handling so
+        `-e <expr>` looks exactly like typing <expr> at the prompt.  Returns 1
+        if any expression raised, else 0."""
+        status = 0
+        for expr in expressions:
+            # Echo the input with the REPL's prompts.
+            lines = expr.split('\n')
+            i = 0
+            while i < len(lines):
+                print(('>>> ' if i == 0 else '... ') + lines[i])
+                i = i + 1
+            try:
+                stripped = expr.strip()
+                if stripped and stripped[0] == ']':
+                    self._runListenerCommand(stripped)
+                else:
+                    result = self._interp.eval(expr)
+                    self._writeResult(result)
+            except StopIteration:
+                break
+            except ReplExit:
+                DIM, RESET = self._colors('dim', 'reset')
+                print(DIM + '; (exit) ignored at REPL top level' + RESET)
+            except KeyboardInterrupt:
+                self._writeErrorMsg('Interrupted.')
+                status = 1
+            except Exception as e:
+                self._writeErrorMsg(Listener._format_error(e))
+                status = 1
+            print()
+        return status
 
     # ---- session-log parser and runner ----
 
