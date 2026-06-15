@@ -360,6 +360,11 @@ class Listener:
         # Forces color OFF even when _emit_color_codes is set, so report files
         # stay clean text (mirrors cppscheme2's _output_to_file).
         self._output_to_file = False
+        # When ]suites runs several suites, it opens ONE shared .run report and
+        # parks the handle here; each _runTestFiles appends its section instead
+        # of opening (and closing) its own file.  None for individual commands.
+        self._shared_run_file = None
+        self._shared_run_filename = ''
         self._init_readline()
         # Wire the Listener's prompt function into the interpreter's debugger
         # so debug> prompts use the same readline session as the REPL.
@@ -1043,20 +1048,33 @@ class Listener:
 
         testDir = os.path.abspath(testDir)
 
-        # Prepare a run report file for every run.
-        runFile = None
-        runFilename = ''
-        runsDir = self._runsdir if self._runsdir else os.path.join(
-            testDir, 'runs')
-        try:
-            os.makedirs(runsDir, exist_ok=True)
-            timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
-            runFilename = os.path.join(
-                runsDir, timestamp + '-' + suite + '-PyScheme.run')
-            runFile = open(runFilename, 'w', encoding='utf-8')
-        except OSError:
+        # Prepare a run report file.  When ]suites has opened a shared report,
+        # append this suite's section to it (and leave it open for the caller to
+        # close); otherwise open our own file.  The filename carries only the
+        # timestamp -- no suite type -- so all suites can share one file.
+        owns_run_file = self._shared_run_file is None
+        if not owns_run_file:
+            runFile = self._shared_run_file
+            runFilename = self._shared_run_filename
+        else:
             runFile = None
             runFilename = ''
+            runsDir = self._runsdir if self._runsdir else os.path.join(
+                testDir, 'runs')
+            try:
+                os.makedirs(runsDir, exist_ok=True)
+                timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
+                runFilename = os.path.join(
+                    runsDir, timestamp + '-PyScheme.run')
+                runFile = open(runFilename, 'w', encoding='utf-8')
+            except OSError:
+                runFile = None
+                runFilename = ''
+
+        # Label this suite's section in the report (the suite type is no longer
+        # in the filename, and several sections may share one file).
+        if runFile is not None:
+            print('========== suite: ' + suite + ' ==========', file=runFile)
 
         grand_pass = 0
         grand_fail = 0
@@ -1155,16 +1173,20 @@ class Listener:
                 report.append('Elapsed time: ' + elapsed_str)
                 for reportLine in report:
                     print(reportLine, file=runFile)
-                runFile.close()
-                print()
-                print('Test output: ' + runFilename)
+                # When ]suites owns the file, leave it open (and silent) for the
+                # next suite's section; only close/announce our own file.
+                if owns_run_file:
+                    runFile.close()
+                    print()
+                    print('Test output: ' + runFilename)
         else:
             # Single-file run: still report how long it took.
             print(BOLD + 'Elapsed: ' + elapsed_str + RESET)
             if runFile is not None:
                 print('', file=runFile)
                 print('Elapsed time: ' + elapsed_str, file=runFile)
-                runFile.close()
+                if owns_run_file:
+                    runFile.close()
 
         return (grand_pass, grand_fail)
 
@@ -1387,16 +1409,36 @@ class Listener:
         print(BOLD + '; running suites: ' + ', '.join(plan) + RESET)
         print()
 
+        # Open ONE shared run report for the whole batch; each suite's section is
+        # appended to it (filename carries only the timestamp, no suite type).
+        runsDir = self._runsdir if self._runsdir else os.path.join(
+            self._testdir if self._testdir else '.', 'runs')
+        shared_filename = ''
+        try:
+            os.makedirs(runsDir, exist_ok=True)
+            timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
+            shared_filename = os.path.join(runsDir, timestamp + '-PyScheme.run')
+            self._shared_run_file = open(shared_filename, 'w', encoding='utf-8')
+            self._shared_run_filename = shared_filename
+        except OSError:
+            self._shared_run_file = None
+            self._shared_run_filename = ''
+
         results = []   # (label, n_pass, n_fail)
-        for name in plan:
-            if name == 'feature':
-                p, f = self._cmd_feature([])
-            elif name == 'compliance-quick':
-                p, f = self._cmd_compliance([])
-            else:   # 'regression'
-                p, f = self._cmd_regression([])
-            results.append((name, p, f))
-            print()
+        try:
+            for name in plan:
+                if name == 'feature':
+                    p, f = self._cmd_feature([])
+                elif name == 'compliance-quick':
+                    p, f = self._cmd_compliance([])
+                else:   # 'regression'
+                    p, f = self._cmd_regression([])
+                results.append((name, p, f))
+                print()
+        finally:
+            shared = self._shared_run_file
+            self._shared_run_file = None
+            self._shared_run_filename = ''
 
         total_fail = sum(entry[2] for entry in results)
         total_cases = sum(entry[1] + entry[2] for entry in results)
@@ -1413,6 +1455,26 @@ class Listener:
             print(BOLD + GREEN + '  ALL SUITES PASSED' + RESET)
         else:
             print(BOLD + RED + '  SUITE FAILURES: ' + str(total_fail) + RESET)
+
+        # Append the combined verdict to the shared report, then close it.
+        if shared is not None:
+            print('', file=shared)
+            print('===== SUITES COMPLETE =====', file=shared)
+            for label, p, f in results:
+                if f == 0:
+                    detail = str(p) + ' passed'
+                else:
+                    detail = '%d of %d failed' % (f, p + f)
+                print('  ' + label.ljust(18) + ' ' + detail, file=shared)
+            print('  ' + 'Total test cases'.ljust(18) + ' '
+                  + str(total_cases), file=shared)
+            if total_fail == 0:
+                print('  ALL SUITES PASSED', file=shared)
+            else:
+                print('  SUITE FAILURES: ' + str(total_fail), file=shared)
+            shared.close()
+            print()
+            print('Test output: ' + shared_filename)
         return (sum(e[1] for e in results), total_fail)
 
     def _cmd_cd(self, args):
