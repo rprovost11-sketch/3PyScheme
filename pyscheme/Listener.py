@@ -639,8 +639,13 @@ class Listener:
 
         Returns a TestResult.  Each entry is compared on three axes:
         return value, printed output, and error message.  All three must
-        match the log's expectation for the entry to pass.  verbosity 2
-        prints a running counter, 3 prints each entry line."""
+        match the log's expectation for the entry to pass.
+
+        Output is FAILURE-ONLY by default: passing entries write nothing, and
+        the per-file header is emitted lazily on the first failure, so a clean
+        file produces no output at all (this keeps the .run reports small).
+        verbosity 3 restores the verbose mode (header up front + a PASS line
+        per entry + a 'TESTS PASSED' footer)."""
         try:
             f = open(filename, 'r', encoding='utf-8')
         except FileNotFoundError:
@@ -658,9 +663,20 @@ class Listener:
         _expander_mod._include_fallback_dir = os.path.dirname(
             os.path.abspath(filename))
 
-        print()
-        print(BOLD + 'Test file:' + RESET + ' ' + filename)
-        print(BOLD + ('-' * (11 + len(filename))) + RESET)
+        # Emit the per-file header at most once.  Called lazily on the first
+        # failing entry so an all-pass file writes nothing (verbose mode prints
+        # it up front instead).
+        header_state = [False]
+
+        def emit_header():
+            if not header_state[0]:
+                print()
+                print(BOLD + 'Test file:' + RESET + ' ' + filename)
+                print(BOLD + ('-' * (11 + len(filename))) + RESET)
+                header_state[0] = True
+
+        if verbosity >= 3:
+            emit_header()
 
         k = 0
         while k < len(entries):
@@ -741,6 +757,7 @@ class Listener:
                     print(DIM + '  %3d. PASS  %s' % (i, label) + RESET)
             else:
                 n_fail = n_fail + 1
+                emit_header()
                 print(RED + '  %3d. FAIL  %s' % (i, label) + RESET)
                 if timed_out:
                     print('         *** evaluation timed out (treated as failure) ***')
@@ -764,11 +781,15 @@ class Listener:
 
         _expander_mod._include_fallback_dir = saved_fallback
         total = n_pass + n_fail
-        print()
-        if n_fail == 0:
-            print(GREEN + str(total) + ' TESTS PASSED' + RESET)
-        else:
+        # Failure-only reporting: print the per-file footer only when something
+        # failed (the header was already emitted lazily above).  The all-pass
+        # 'TESTS PASSED' line is verbose-mode only.
+        if n_fail > 0:
+            print()
             print(RED + ('%d of %d FAILED' % (n_fail, total)) + RESET)
+        elif verbosity >= 3:
+            print()
+            print(GREEN + str(total) + ' TESTS PASSED' + RESET)
         return TestResult(n_pass, n_fail)
 
     # ---- listener commands ----
@@ -1065,7 +1086,9 @@ class Listener:
                 if runFile is not None:
                     sys.stdout = runFile
                     self._output_to_file = True
-                r = self.sessionLog_test(filename, verbosity=3)
+                # verbosity=1: write only failing entries to the .run report
+                # (passing cases produce no output -> small reports).
+                r = self.sessionLog_test(filename, verbosity=1)
                 if runFile is not None:
                     sys.stdout = savedStdout
                     self._output_to_file = False
