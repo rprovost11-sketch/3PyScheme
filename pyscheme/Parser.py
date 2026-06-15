@@ -193,8 +193,8 @@ _TOKEN_RE = re.compile(r'''
     | (?P<FALSE>\#f(?:alse)?(?=[\s()\[\]'"`,;|]|$))
     | (?P<RATIONAL>[+-]?\d+/\d+(?=[\s()\[\]'"`,;|#]|$))
     | (?P<REAL>
-          [+-]?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?(?=[\s()\[\]'"`,;|#]|$)
-        | [+-]?\d+[eE][+-]?\d+(?=[\s()\[\]'"`,;|#]|$)
+          [+-]?(?:\d+\.\d*|\.\d+)(?:[eEsSfFdDlL][+-]?\d+)?(?=[\s()\[\]'"`,;|#]|$)
+        | [+-]?\d+[eEsSfFdDlL][+-]?\d+(?=[\s()\[\]'"`,;|#]|$)
       )
     | (?P<INT>[+-]?\d+(?=[\s()\[\]'"`,;|#]|$))
     | (?P<HASH_IDENT>\#[^\s()\[\]'"`,;|\\]*)
@@ -451,7 +451,7 @@ def _build_token(kind, text, src, fold_case=False):
     if kind == 'INT':
         return Token(TOK_INT, int(text), src)
     if kind == 'REAL':
-        return Token(TOK_REAL, float(text), src)
+        return Token(TOK_REAL, float(_normalize_decimal_exponent(text)), src)
     if kind == 'RATIONAL':
         parts = text.split('/')
         return Token(TOK_RATIONAL, (int(parts[0]), int(parts[1])), src)
@@ -475,7 +475,7 @@ def _build_token(kind, text, src, fold_case=False):
             return Token(TOK_REAL, float('nan'), src)
         if low == '-nan.0':
             return Token(TOK_REAL, float('nan'), src)
-        if text.endswith('i') and len(text) >= 2:
+        if len(text) >= 2 and text[-1] in 'iI':
             tok = _try_parse_complex_literal(text, src)
             if tok is not None:
                 return tok
@@ -505,9 +505,35 @@ def _starts_like_number(s):
     return False
 
 
+def _normalize_decimal_exponent(s):
+    """Rewrite an R5RS exponent marker (s/f/d/l, any case) to 'e' so the
+    string can be handed to float()/decimal parsing.  R7RS keeps only 'e',
+    but the s/f/d/l short/single/double/long markers are a universal
+    extension (R5RS, chibi, Chez, ...).  Only the marker that introduces an
+    exponent is touched: it must follow a digit or '.' and be followed by an
+    optional sign then a digit.  Port of C++ normalize_decimal_exponent."""
+    out = []
+    i = 0
+    n = len(s)
+    while i < n:
+        c = s[i]
+        if c in 'sSfFdDlL' and i > 0 and (s[i - 1].isdigit() or s[i - 1] == '.'):
+            j = i + 1
+            if j < n and (s[j] == '+' or s[j] == '-'):
+                j = j + 1
+            if j < n and s[j].isdigit():
+                out.append('e')
+                i = i + 1
+                continue
+        out.append(c)
+        i = i + 1
+    return ''.join(out)
+
+
 def _decimal_str_to_rat(s):
     """Parse a decimal string to _Rat without going through float.
     Port of C++ decimal_str_to_rat.  Handles sign, '.', and e/E exponent."""
+    s = _normalize_decimal_exponent(s)
     sign = 1
     i = 0
     if s and s[0] == '-':
@@ -650,7 +676,7 @@ def _try_parse_prefixed_number(text, src):
                 raise SchemeSyntaxError("#e cannot be applied to -nan.0", src)
             return Token(TOK_REAL, float('nan'), src)
         try:
-            f = float(rest)
+            f = float(_normalize_decimal_exponent(rest))
             if exact == 1:
                 if not _math.isfinite(f):
                     raise SchemeSyntaxError(
@@ -662,6 +688,14 @@ def _try_parse_prefixed_number(text, src):
             return Token(TOK_REAL, f, src)
         except ValueError:
             pass
+        # Decimal-prefixed complex: #d10+11i, #d1.0+1.0i.  Only when no
+        # exactness prefix is present (matches chibi; #e/#i complex are not
+        # supported, and #x/#o/#b complex are rejected -- 'i'/'e' clash with
+        # the digit alphabets).
+        if exact == -1 and rest[-1] in 'iI':
+            tok = _try_parse_complex_literal(rest, src)
+            if tok is not None:
+                return tok
     raise SchemeSyntaxError("invalid prefixed number: %r" % text, src)
 
 
@@ -688,7 +722,7 @@ def _parse_number_for_complex(s):
         except ValueError:
             pass
     try:
-        return float(s)
+        return float(_normalize_decimal_exponent(s))
     except ValueError:
         pass
     return None
@@ -723,7 +757,7 @@ def _try_parse_complex_literal(text, src):
     while j >= 0:
         c = body[j]
         if c == '+' or c == '-':
-            if j > 0 and body[j - 1].lower() == 'e':
+            if j > 0 and body[j - 1].lower() in 'esfdl':
                 j = j - 1
                 continue
             split = j
