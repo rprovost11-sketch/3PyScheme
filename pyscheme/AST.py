@@ -206,9 +206,13 @@ class Port:
                    fully supported yet but the flag distinguishes them).
        file_h    - underlying Python file handle for file ports, or None.
        name      - human-readable label (filename / '<stdin>' / '<string>').
-       is_open   - cleared by close-port; closed ports raise on use."""
+       is_open   - cleared by close-port; closed ports raise on use.
+       from_stdin- True for the <stdin> port whose buffer has not been filled
+                   yet: the first read slurps all of sys.stdin into buf (the
+                   up-front model open-input-file uses), then clears the flag."""
 
-    def __init__(self, buf, is_input, is_text, file_h=None, name=''):
+    def __init__(self, buf, is_input, is_text, file_h=None, name='',
+                 from_stdin=False):
         self.buf = buf
         self.pos = 0
         self.is_input = is_input
@@ -216,6 +220,7 @@ class Port:
         self.file_h = file_h
         self.name = name
         self.is_open = True
+        self.from_stdin = from_stdin
 
 
 class SyntaxTransformer:

@@ -69,8 +69,27 @@ def reset_current_port_params():
 
 def _stdin_port():
     import sys
-    p = Port('', is_input=True, is_text=True, file_h=sys.stdin, name='<stdin>')
+    p = Port('', is_input=True, is_text=True, file_h=sys.stdin, name='<stdin>',
+             from_stdin=True)
     return make_port(p)
+
+
+def _ensure_stdin_loaded(p):
+    """The first read from the <stdin> port slurps all of sys.stdin into the
+    port buffer -- the same read-it-all-up-front model open-input-file uses.
+    Done lazily (on first read, not at port creation) so merely fetching
+    (current-input-port) does not block, and one-shot via the from_stdin flag.
+    This lets a program read its data from redirected stdin (e.g. `prog <
+    input`), which the benchmark harness relies on."""
+    if p.from_stdin:
+        import sys
+        try:
+            data = sys.stdin.read()
+        except Exception:
+            data = ''
+        p.buf = data if data is not None else ''
+        p.pos = 0
+        p.from_stdin = False
 
 
 def _stdout_port():
@@ -136,6 +155,8 @@ def _check_input_port(v, name, app_node, idx=1):
         raise SchemeTypeError(
             '%s: argument %d must be an input port' % (name, idx),
             src_of(app_node))
+    # First actual read from the <stdin> port fills its buffer from sys.stdin.
+    _ensure_stdin_loaded(p)
     return p
 
 
