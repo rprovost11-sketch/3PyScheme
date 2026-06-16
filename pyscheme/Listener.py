@@ -47,7 +47,14 @@ from pyscheme.Utils import columnize, retrieveFileList, writeln_multiFile, paren
 import pyscheme.Expander as _expander_mod
 
 
-_DEFAULT_TEST_DIR = 'testing'
+# Suite subdirectories relative to the scheme-tests root.  Hardcoded for now;
+# a configuration file is the eventual home for these.  The root itself is NOT
+# hardcoded -- it comes from -T/--scheme-tests, $SCHEME_TESTS_DIR, or the
+# ]scheme-tests command (see Listener._set_scheme_tests_dir).
+_FEATURE_SUBDIR = os.path.join('log-tests', 'feature-tests')
+_COMPLIANCE_SUBDIR = os.path.join('log-tests', 'R7RS-Compliance-Tests')
+_REGRESSION_SUBDIR = os.path.join('log-tests', 'regression-tests')
+_RUNS_SUBDIR = 'runs'
 _HIST_FILE = os.path.expanduser('~/.pyscheme_history')
 
 # Default value the test runner binds to %MAX_TCO_ITER_COUNT% before each test
@@ -326,26 +333,29 @@ class Listener:
               "' to list Listener commands.")
         print(BOLD_GREEN + 'Welcome!' + RESET)
 
-    def __init__(self, anInterpreter, testdir=_DEFAULT_TEST_DIR,
+    def __init__(self, anInterpreter,
                  language='pyscheme', version='0.1',
                  author='pyscheme authors',
                  project='https://example/pyscheme',
-                 compliancedir='',
-                 regressiondir='',
-                 runsdir='',
+                 scheme_tests_dir=None,
+                 scheme_tests_source='unset',
                  show_banner=True):
         self._interp = anInterpreter
         # A live Listener means an interactive REPL session: (exit) should abort
         # to the prompt, not terminate the process (batch evalFile never builds a
         # Listener, so its (exit) still exits).  See primitives/meta.py:_prim_exit.
         self._interp.get_ctx().interactive = True
-        # Absolutify so ]cd doesn't break ]feature / ]compliance / ]regression.
-        self._testdir = os.path.abspath(testdir)
-        self._compliancedir = os.path.abspath(
-            compliancedir) if compliancedir else ''
-        self._regressiondir = os.path.abspath(
-            regressiondir) if regressiondir else ''
-        self._runsdir = os.path.abspath(runsdir) if runsdir else ''
+        # The scheme-tests root is not hardcoded -- it is supplied (or left
+        # unset) by the caller, who resolved -T/--scheme-tests vs $SCHEME_TESTS_DIR.
+        # The per-suite subdirectories are derived from it; ]scheme-tests can
+        # change it at runtime.  When unset, the test commands explain how to set it.
+        self._scheme_tests_dir = None
+        self._scheme_tests_source = 'unset'
+        self._testdir = ''
+        self._compliancedir = ''
+        self._regressiondir = ''
+        self._runsdir = ''
+        self._set_scheme_tests_dir(scheme_tests_dir, scheme_tests_source)
         self._logFile = None
         self._language = language
         self._version = version
@@ -387,6 +397,7 @@ class Listener:
             'compliance': self._cmd_compliance,
             'regression': self._cmd_regression,
             'suites':     self._cmd_suites,
+            'scheme-tests': self._cmd_scheme_tests,
             'cd':         self._cmd_cd,
             'pwd':      self._cmd_pwd,
             'lhistory': self._cmd_lhistory,
@@ -1012,6 +1023,69 @@ class Listener:
         self._writeLn(';;; Dribble resumed ' + ts)
         self._writeLn('')
 
+    # ---- scheme-tests directory resolution ----
+
+    def _set_scheme_tests_dir(self, path, source):
+        """Set (or clear, when `path` is falsy) the scheme-tests root and derive
+        the per-suite subdirectories from it.  `source` is a human-readable label
+        of where the value came from, shown by ]scheme-tests."""
+        if path:
+            base = os.path.abspath(os.path.expanduser(path))
+            self._scheme_tests_dir = base
+            self._testdir = os.path.join(base, _FEATURE_SUBDIR)
+            self._compliancedir = os.path.join(base, _COMPLIANCE_SUBDIR)
+            self._regressiondir = os.path.join(base, _REGRESSION_SUBDIR)
+            self._runsdir = os.path.join(base, _RUNS_SUBDIR)
+            self._scheme_tests_source = source
+        else:
+            self._scheme_tests_dir = None
+            self._testdir = ''
+            self._compliancedir = ''
+            self._regressiondir = ''
+            self._runsdir = ''
+            self._scheme_tests_source = 'unset'
+
+    @staticmethod
+    def _no_scheme_tests_message():
+        """Explain that the scheme-tests root is unset and how to set it."""
+        return ('the scheme-tests directory is not set, so tests cannot run.\n'
+                'Point it at the repo\'s scheme-tests folder (the one containing\n'
+                'log-tests/) in any of these ways (a later one overrides an earlier):\n'
+                '  1. environment variable:  SCHEME_TESTS_DIR=<path>/scheme-tests\n'
+                '  2. command-line option:   python -m pyscheme --scheme-tests <path>/scheme-tests\n'
+                '  3. listener command:      ]scheme-tests <path>/scheme-tests')
+
+    def _require_scheme_tests(self):
+        """Raise a helpful error if no scheme-tests root has been configured."""
+        if not self._scheme_tests_dir:
+            raise ListenerCommandError(Listener._no_scheme_tests_message())
+
+    def _cmd_scheme_tests(self, args):
+        """Usage: ]scheme-tests [<directory>]
+
+        With no argument, show the current scheme-tests root (and where it was
+        set from) plus the derived suite directories.  With a directory, set the
+        root for this session, overriding the -T/--scheme-tests option and the
+        SCHEME_TESTS_DIR environment variable.  No path is hardcoded; this is one
+        of the three ways to point the interpreter at the test suites."""
+        if args:
+            self._set_scheme_tests_dir(' '.join(args), 'listener command')
+            note = ('' if os.path.isdir(self._scheme_tests_dir)
+                    else '  (warning: directory does not exist)')
+            print('scheme-tests set to ' + self._scheme_tests_dir + note)
+            return
+        if not self._scheme_tests_dir:
+            print('scheme-tests: not set')
+            print(Listener._no_scheme_tests_message())
+            return
+        exists = '' if os.path.isdir(self._scheme_tests_dir) else '  (does not exist)'
+        print('scheme-tests: ' + self._scheme_tests_dir
+              + '  [' + self._scheme_tests_source + ']' + exists)
+        print('  feature:    ' + self._testdir)
+        print('  compliance: ' + self._compliancedir)
+        print('  regression: ' + self._regressiondir)
+        print('  runs:       ' + self._runsdir)
+
     def _cmd_feature(self, args):
         """Usage: ]feature [<filename>]   (legacy alias: ]test)
 
@@ -1048,9 +1122,10 @@ class Listener:
                 testDir = os.path.dirname(os.path.abspath(arg))
                 filenames = [arg]
         else:
+            self._require_scheme_tests()
             if not os.path.isdir(self._testdir):
                 raise ListenerCommandError(
-                    'No test directory: ' + repr(self._testdir))
+                    'feature test directory not found: ' + self._testdir)
             testDir = self._testdir
             filenames = retrieveFileList(self._testdir)
             if not filenames:
@@ -1267,10 +1342,8 @@ class Listener:
             raise ListenerCommandError(
                 'Please close the log before running compliance (]close).')
 
+        self._require_scheme_tests()
         compdir = self._compliancedir
-        if not compdir:
-            raise ListenerCommandError(
-                'No compliance directory configured.  Set compliancedir= at startup.')
         if not os.path.isdir(compdir):
             raise ListenerCommandError(
                 'Compliance directory not found: ' + compdir)
@@ -1308,10 +1381,8 @@ class Listener:
             raise ListenerCommandError(
                 'Please close the log before running regressions (]close).')
 
+        self._require_scheme_tests()
         regdir = self._regressiondir
-        if not regdir:
-            raise ListenerCommandError(
-                'No regression directory configured.  Set regressiondir= at startup.')
         if not os.path.isdir(regdir):
             raise ListenerCommandError(
                 'Regression directory not found: ' + regdir)
@@ -1398,6 +1469,7 @@ class Listener:
         if self._logFile:
             raise ListenerCommandError(
                 'Please close the log before running suites (]close).')
+        self._require_scheme_tests()
         if not args:
             raise ListenerCommandError(
                 'Usage: ]suites <suite> ...  '

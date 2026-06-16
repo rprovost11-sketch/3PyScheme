@@ -22,6 +22,14 @@ Library search path options (may precede the file/directory):
 Both prepend to the SCHEME_LIBRARY_PATH environment variable; the current
 directory is searched first.  The combined list seeds the global
 current-library-path parameter.
+
+Test-suite location (no path is hardcoded):
+    -T <dir>  / --scheme-tests <dir>   root of the "scheme-tests" folder (the
+                       one containing log-tests/).  Overrides the
+                       SCHEME_TESTS_DIR environment variable.  At runtime the
+                       ]scheme-tests command overrides both.  If none is set, the
+                       test commands (]feature/]compliance/]regression/]suites)
+                       print how to set it instead of running.
 """
 import os
 import signal
@@ -33,7 +41,8 @@ from pyscheme.Listener import Listener
 
 
 _USAGE = ('Usage: python -m pyscheme [-L <dir%s...>] [-I <dir>]... '
-          '[-e <expr>]... [<directory> | <scheme-source-file>]' % os.pathsep)
+          '[-T <scheme-tests-dir>] [-e <expr>]... '
+          '[<directory> | <scheme-source-file>]' % os.pathsep)
 
 
 def _parse_args(argv):
@@ -50,6 +59,7 @@ def _parse_args(argv):
     library_paths = []
     target = None
     eval_exprs = None
+    scheme_tests = None
 
     def _fail(msg):
         print('pyscheme: ' + msg, file=sys.stderr)
@@ -102,6 +112,17 @@ def _parse_args(argv):
         elif a.startswith('--evaluate='):
             _add_eval(a[len('--evaluate='):])
             i += 1
+        elif a == '-T' or a == '--scheme-tests':
+            if i + 1 >= len(argv):
+                _fail('option ' + a + ' requires an argument')
+            scheme_tests = argv[i + 1]
+            i += 2
+        elif a.startswith('-T='):
+            scheme_tests = a[3:]
+            i += 1
+        elif a.startswith('--scheme-tests='):
+            scheme_tests = a[len('--scheme-tests='):]
+            i += 1
         elif a == '-' or not a.startswith('-'):
             if target is not None:
                 _fail('unexpected extra argument: ' + a)
@@ -113,7 +134,7 @@ def _parse_args(argv):
     if eval_exprs is not None and target is not None:
         _fail('-e/--evaluate cannot be combined with a file or directory')
 
-    return library_paths, target, eval_exprs
+    return library_paths, target, eval_exprs, scheme_tests
 
 
 def main():
@@ -132,14 +153,29 @@ def main():
         except (AttributeError, ValueError):
             pass
 
-    library_paths, target, eval_exprs = _parse_args(sys.argv[1:])
+    library_paths, target, eval_exprs, scheme_tests_cli = _parse_args(sys.argv[1:])
+
+    # Resolve the scheme-tests root: the -T/--scheme-tests option overrides the
+    # SCHEME_TESTS_DIR environment variable; the ]scheme-tests listener command
+    # can override both at runtime.  Nothing is hardcoded -- if none is given,
+    # the test commands explain how to set it.
+    if scheme_tests_cli is not None:
+        scheme_tests_dir = scheme_tests_cli
+        scheme_tests_source = '--scheme-tests option'
+    elif os.environ.get('SCHEME_TESTS_DIR'):
+        scheme_tests_dir = os.environ['SCHEME_TESTS_DIR']
+        scheme_tests_source = 'SCHEME_TESTS_DIR env'
+    else:
+        scheme_tests_dir = None
+        scheme_tests_source = 'unset'
 
     interp = Interpreter(library_paths=library_paths)
 
     # -e/--evaluate: evaluate each expression as a REPL transcript, then exit.
     # The banner is suppressed so the first line is the '>>> ' echo.
     if eval_exprs is not None:
-        listener = _build_listener(interp, show_banner=False)
+        listener = _build_listener(interp, scheme_tests_dir, scheme_tests_source,
+                                   show_banner=False)
         sys.exit(listener.eval_and_exit(eval_exprs))
 
     if target is not None:
@@ -162,32 +198,26 @@ def main():
                   file=sys.stderr)
             sys.exit(1)
 
-    listener = _build_listener(interp)
+    listener = _build_listener(interp, scheme_tests_dir, scheme_tests_source)
     try:
         listener.readEvalPrintLoop()
     except StopIteration:
         pass
 
 
-def _build_listener(interp, show_banner=True):
-    """Construct the Listener wired to the scheme-tests suite directories."""
-    _scheme_tests = os.path.join(
-        os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.abspath(__file__)))),
-        'scheme-tests')
-    # The .log REPL-transcript suites live under scheme-tests/log-tests/ (they
-    # were grouped there to distinguish them from the application-tests suites).
-    _log_tests = os.path.join(_scheme_tests, 'log-tests')
+def _build_listener(interp, scheme_tests_dir, scheme_tests_source,
+                    show_banner=True):
+    """Construct the Listener.  The scheme-tests root is supplied by the caller
+    (resolved from -T/--scheme-tests or $SCHEME_TESTS_DIR), not hardcoded; the
+    Listener derives the per-suite subdirectories from it."""
     return Listener(
         interp,
-        testdir=os.path.join(_log_tests, 'feature-tests'),
         language='pyscheme',
         version=__version__,
         author='Ron Provost/Longo',
         project='https://github.com/rprovost11/pyscheme',
-        compliancedir=os.path.join(_log_tests, 'R7RS-Compliance-Tests'),
-        regressiondir=os.path.join(_log_tests, 'regression-tests'),
-        runsdir=os.path.join(_scheme_tests, 'runs'),
+        scheme_tests_dir=scheme_tests_dir,
+        scheme_tests_source=scheme_tests_source,
         show_banner=show_banner,
     )
 
