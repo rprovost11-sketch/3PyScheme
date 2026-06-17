@@ -722,6 +722,16 @@ def _expand_ellipsis_run(elem, match, num_ell, ellipsis_sym, use_src,
                 _audit('ellipsis-depth',
                        '%r collected as an ellipsis ref but has depth %d'
                        % (gensym_display_name(sv), d))
+    # R7RS 4.3.2: pattern variables combined under a single ellipsis must have
+    # matched the same number of times.  Unequal counts are "an error" -- raise
+    # a clean syntax error rather than indexing the shorter match sequence out
+    # of bounds (was F1: a host IndexError here; an OOB read/segfault in cpp).
+    for sv in ell_syms:
+        if len(match.ellipsis[sv]) != count:
+            from pyscheme.Parser import SchemeSyntaxError
+            raise SchemeSyntaxError(
+                'syntax-rules: ellipsis pattern variables matched '
+                'unequal numbers of times', use_src)
     k = 0
     while k < count:
         sub = _SyntaxMatch()
