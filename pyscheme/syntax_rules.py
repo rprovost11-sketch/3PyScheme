@@ -73,6 +73,34 @@ _MARK_COUNTER = 0
 _current_mark = None
 
 
+# ── Expander invariant auditing (#4a) ───────────────────────────────────────
+# Off by default.  When PYSCHEME_EXPANDER_AUDIT is set, the template
+# instantiator checks hygiene/expansion invariants and reports violations to
+# stderr *without changing expansion behavior*, so a full test run becomes a
+# white-box invariant sweep complementing the black-box cross-port harness.
+# Mirrored in cppScheme2 (CPPSCHEME2_EXPANDER_AUDIT).  See
+# scheme-tests/cross-port-tests/README.md.
+import os as _os
+import sys as _sys
+
+_EXPANDER_AUDIT = bool(_os.environ.get('PYSCHEME_EXPANDER_AUDIT'))
+_audit_violations = []
+
+
+def expander_audit_enabled():
+    return _EXPANDER_AUDIT
+
+
+def expander_audit_violations():
+    """The list of (kind, message) invariant violations seen so far."""
+    return list(_audit_violations)
+
+
+def _audit(kind, msg):
+    _audit_violations.append((kind, msg))
+    _sys.stderr.write('[EXPANDER-AUDIT] %s: %s\n' % (kind, msg))
+
+
 def hygiene_gensym(base, force=False):
     """Generate a fresh symbol name unlikely to collide with user code.
     Uses a non-printable marker byte (AST.GENSYM_PREFIX) so the display paths
@@ -678,6 +706,22 @@ def _expand_ellipsis_run(elem, match, num_ell, ellipsis_sym, use_src,
     if not ell_syms:
         return
     count = len(match.ellipsis[ell_syms[0]])
+    if _EXPANDER_AUDIT:
+        # Invariant: every ellipsis var combined in one run has the SAME match
+        # count (the loop indexes them all by k).  A violation is exactly the
+        # F1 bug -- it makes a later, shorter var get indexed out of bounds.
+        for sv in ell_syms:
+            n = len(match.ellipsis[sv])
+            if n != count:
+                _audit('ellipsis-length-mismatch',
+                       'run keyed on %r (len %d) but %r has len %d'
+                       % (gensym_display_name(ell_syms[0]), count,
+                          gensym_display_name(sv), n))
+            d = match.ell_depth.get(sv, 0)
+            if d < 1:
+                _audit('ellipsis-depth',
+                       '%r collected as an ellipsis ref but has depth %d'
+                       % (gensym_display_name(sv), d))
     k = 0
     while k < count:
         sub = _SyntaxMatch()
