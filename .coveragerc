@@ -1,0 +1,21 @@
+# Coverage configuration for the pyScheme test-coverage initiative (Phase 1).
+# Canonical baseline = branch coverage over the gated battery, driven by:
+#   printf ']suites all\n' | python -m coverage run -m pyscheme -T <scheme-tests> -L <SRFI>
+# then: python -m coverage report  /  python -m coverage html
+#
+# Interactive-only modules (Debugger.py, readline_win.py, primitives/debug.py)
+# are NOT omitted here on purpose: the full number stays honest. Use an ad-hoc
+# --omit on the report command for the "core interpreter" view instead.
+[run]
+source = pyscheme
+branch = True
+
+[report]
+precision = 1
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+
+[html]
+directory = htmlcov

@@ -8,6 +8,11 @@ __pycache__/
 testing/runs/
 feature-tests/runs/
 
+# Coverage artifacts (test-coverage initiative, Phase 1)
+.coverage
+.coverage.*
+htmlcov/
+
 # Editor / OS cruft
 *.swp
 *.swo
