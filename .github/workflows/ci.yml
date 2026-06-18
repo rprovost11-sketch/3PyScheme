@@ -37,7 +37,11 @@ jobs:
         run: |
           out="$(printf ']suites all\n' | python -m pyscheme -T ../scheme-tests 2>&1)"
           echo "$out" | tail -8
-          echo "$out" | grep -q 'ALL SUITES PASSED' || { echo '::error::battery failed'; exit 1; }
+          if ! echo "$out" | grep -q 'ALL SUITES PASSED'; then
+            echo "----- failure detail (.run report, failure-only) -----"
+            cat ../scheme-tests/runs/*.run 2>/dev/null | tail -120
+            echo '::error::battery failed'; exit 1
+          fi
 
       - name: CLI / process-boundary tests
         shell: bash
