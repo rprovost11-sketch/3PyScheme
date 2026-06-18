@@ -397,6 +397,7 @@ class Listener:
             'compliance': self._cmd_compliance,
             'regression': self._cmd_regression,
             'suites':     self._cmd_suites,
+            'tests':      self._cmd_tests,
             'scheme-tests': self._cmd_scheme_tests,
             'cd':         self._cmd_cd,
             'pwd':      self._cmd_pwd,
@@ -1438,6 +1439,42 @@ class Listener:
                     'No .log files at or after "' + args[0] + '"')
 
         return self._runTestFiles(filtered, suite_dir, suite_label, **kw)
+
+    def _cmd_tests(self, args):
+        """Usage: ]tests [--list | all | <name> ...]
+
+        Run any or all tests from the registry (scheme-tests/tests.manifest) via
+        run-tests.sh -- the WHOLE arsenal, not just the .log battery: it also
+        covers the external harnesses (cross-port differential, fuzzer, the
+        metamorphic property tests, gc_test).  Cherry's checklist drives this too.
+          ]tests --list        list registered tests (name, kind, ports)
+          ]tests <name> ...    run the named test(s)
+          ]tests   (or  all)   run every test
+        Delegates to run-tests.sh, so it needs a POSIX shell (git-bash) and, for
+        the cpp-side tests, a cppScheme2 Release build.  Known-open bugs are
+        reported as 'xfail' (expected) and do not fail the run.  (]suites stays
+        the fast in-process shortcut for just the .log battery.)
+        """
+        if self._logFile:
+            raise ListenerCommandError(
+                'Please close the log before running tests (]close).')
+        self._require_scheme_tests()
+        import subprocess
+        script = os.path.join(self._scheme_tests_dir, 'run-tests.sh')
+        if not os.path.isfile(script):
+            raise ListenerCommandError(']tests: run-tests.sh not found at ' + script)
+        try:
+            proc = subprocess.Popen(['bash', script] + list(args),
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT,
+                                    text=True, bufsize=1)
+        except FileNotFoundError:
+            raise ListenerCommandError(
+                ']tests needs a POSIX shell -- "bash" is not on PATH '
+                '(install/enable git-bash).')
+        for line in proc.stdout:
+            print(line, end='', flush=True)
+        proc.wait()
 
     def _cmd_suites(self, args):
         """Usage: ]suites <suite> [<suite> ...]
