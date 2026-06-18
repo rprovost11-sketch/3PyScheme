@@ -58,15 +58,22 @@ jobs:
           path: scheme-tests
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - name: Full battery (shrunk TCO soak) under coverage, single pass
+      - name: Full battery pass-check (shrunk TCO soak, no coverage)
+        shell: bash
+        working-directory: 3PyScheme
+        run: |
+          out="$(printf ']feature\n]regression\n]compliance -I:10000\n' | python -m pyscheme -T ../scheme-tests 2>&1)"
+          echo "$out" | grep -E 'passed across|FAILED|failed' | tail -8
+          if echo "$out" | grep -qE 'FAIL'; then
+            echo "$out"; find "$GITHUB_WORKSPACE" -name '*.run' -exec cat {} +; echo '::error::full battery failed'; exit 1
+          fi
+      - name: Coverage (soft floor)
         shell: bash
         working-directory: 3PyScheme
         run: |
           python -m pip install --quiet coverage
-          # One instrumented pass = battery result + coverage (no double run).
-          out="$(printf ']feature\n]regression\n]compliance -I:10000\n' | python -m coverage run -m pyscheme -T ../scheme-tests 2>&1)"
-          echo "$out" | grep -E 'passed across|FAILED|failed' | tail -10
-          if echo "$out" | grep -qE 'FAIL'; then
-            echo "$out"; find "$GITHUB_WORKSPACE" -name '*.run' -exec cat {} +; echo '::error::full battery failed'; exit 1
-          fi
+          # coverage.py traces every line execution, so a big TCO soak would generate
+          # millions of trace callbacks and hang. Use a TINY soak: the TCO lines still
+          # get covered (executed once), just not looped thousands of times.
+          printf ']feature\n]regression\n]compliance -I:50\n' | python -m coverage run -m pyscheme -T ../scheme-tests > /dev/null 2>&1
           python -m coverage report --fail-under=70
