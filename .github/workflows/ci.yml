@@ -36,10 +36,11 @@ jobs:
         working-directory: 3PyScheme
         run: |
           out="$(printf ']suites all\n' | python -m pyscheme -T ../scheme-tests 2>&1)"
-          echo "$out" | tail -8
-          if ! echo "$out" | grep -q 'ALL SUITES PASSED'; then
-            echo "----- failure detail (.run report, failure-only) -----"
-            cat ../scheme-tests/runs/*.run 2>/dev/null | tail -120
+          if echo "$out" | grep -q 'ALL SUITES PASSED'; then
+            echo "$out" | tail -6
+          else
+            echo "----- FULL battery output (failure) -----"
+            echo "$out"
             echo '::error::battery failed'; exit 1
           fi
 
