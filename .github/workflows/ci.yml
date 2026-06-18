@@ -1,65 +1,72 @@
 name: CI
 
-# Test-coverage initiative, Phase 2, wave 2 (GitHub Actions).
-# Runs the full gated battery + cli-tests, and tracks coverage with a soft floor.
-# Cross-repo checkout of the (private) scheme-tests repo uses the CROSS_REPO_TOKEN
-# secret (fine-grained PAT, read-only Contents on the three repos).
+# Test-coverage initiative, Phase 2. Tiered to keep every-push CI fast:
+#   fast (push/PR)        -- feature + regression + cli, NO compliance soak, NO coverage  (~1-2 min)
+#   full (nightly + manual) -- full battery with a shrunk TCO soak, under coverage in ONE pass
+# Cross-repo checkout of the private scheme-tests repo uses the CROSS_REPO_TOKEN secret.
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '0 7 * * *'   # nightly ~07:00 UTC
   workflow_dispatch:
 
 jobs:
-  battery:
+  fast:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: windows-latest
     steps:
-      - name: Checkout pyScheme
-        uses: actions/checkout@v4
-        with:
-          path: 3PyScheme
-      - name: Checkout scheme-tests (private)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { path: 3PyScheme }
+      - uses: actions/checkout@v4
         with:
           repository: rprovost11-sketch/Scheme-Tests
           token: ${{ secrets.CROSS_REPO_TOKEN }}
           path: scheme-tests
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Full gated battery (]suites all)
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Fast subset (feature + regression)
         shell: bash
         working-directory: 3PyScheme
         run: |
-          out="$(printf ']suites all\n' | python -m pyscheme -T ../scheme-tests 2>&1)"
-          if echo "$out" | grep -q 'ALL SUITES PASSED'; then
-            echo "$out" | tail -6
-          else
-            echo "$out" | tail -6
-            echo "===== DETAILED FAILURE REPORT (.run, failure-only) ====="
-            find "$GITHUB_WORKSPACE" -name '*.run' -exec cat {} +
-            echo "::error::battery failed"; exit 1
+          out="$(printf ']suites feature regression\n' | python -m pyscheme -T ../scheme-tests 2>&1)"
+          echo "$out" | tail -5
+          if ! echo "$out" | grep -q 'ALL SUITES PASSED'; then
+            echo "$out"; find "$GITHUB_WORKSPACE" -name '*.run' -exec cat {} +; echo '::error::fast subset failed'; exit 1
           fi
-
       - name: CLI / process-boundary tests
         shell: bash
-        env:
-          SCHEME_TESTS_DIR: ${{ github.workspace }}/scheme-tests
+        env: { SCHEME_TESTS_DIR: '${{ github.workspace }}/scheme-tests' }
         run: |
           out="$(PYTHONPATH=3PyScheme sh scheme-tests/cli-tests/run.sh 'python -m pyscheme' 2>&1)"
           echo "$out" | tail -3
           echo "$out" | grep -q '0 failed' || { echo '::error::cli-tests failed'; exit 1; }
 
-      - name: Coverage (soft floor)
+  full:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: 3PyScheme }
+      - uses: actions/checkout@v4
+        with:
+          repository: rprovost11-sketch/Scheme-Tests
+          token: ${{ secrets.CROSS_REPO_TOKEN }}
+          path: scheme-tests
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Full battery (shrunk TCO soak) under coverage, single pass
         shell: bash
         working-directory: 3PyScheme
         run: |
           python -m pip install --quiet coverage
-          printf ']suites all\n' | python -m coverage run -m pyscheme -T ../scheme-tests > /dev/null 2>&1
-          python -m coverage report
-          # Soft floor: baseline ~73% branch; fail only on a meaningful drop.
+          # One instrumented pass = battery result + coverage (no double run).
+          out="$(printf ']feature\n]regression\n]compliance -I:10000\n' | python -m coverage run -m pyscheme -T ../scheme-tests 2>&1)"
+          echo "$out" | grep -E 'passed across|FAILED|failed' | tail -10
+          if echo "$out" | grep -qE 'FAIL'; then
+            echo "$out"; find "$GITHUB_WORKSPACE" -name '*.run' -exec cat {} +; echo '::error::full battery failed'; exit 1
+          fi
           python -m coverage report --fail-under=70
