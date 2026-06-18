@@ -39,9 +39,10 @@ jobs:
           if echo "$out" | grep -q 'ALL SUITES PASSED'; then
             echo "$out" | tail -6
           else
-            echo "----- FULL battery output (failure) -----"
-            echo "$out"
-            echo '::error::battery failed'; exit 1
+            echo "$out" | tail -6
+            echo "===== DETAILED FAILURE REPORT (.run, failure-only) ====="
+            find "$GITHUB_WORKSPACE" -name '*.run' -exec cat {} +
+            echo "::error::battery failed"; exit 1
           fi
 
       - name: CLI / process-boundary tests
