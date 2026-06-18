@@ -1,0 +1,59 @@
+name: CI
+
+# Test-coverage initiative, Phase 2, wave 2 (GitHub Actions).
+# Runs the full gated battery + cli-tests, and tracks coverage with a soft floor.
+# Cross-repo checkout of the (private) scheme-tests repo uses the CROSS_REPO_TOKEN
+# secret (fine-grained PAT, read-only Contents on the three repos).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  battery:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout pyScheme
+        uses: actions/checkout@v4
+        with:
+          path: 3PyScheme
+      - name: Checkout scheme-tests (private)
+        uses: actions/checkout@v4
+        with:
+          repository: rprovost11-sketch/Scheme-Tests
+          token: ${{ secrets.CROSS_REPO_TOKEN }}
+          path: scheme-tests
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Full gated battery (]suites all)
+        shell: bash
+        working-directory: 3PyScheme
+        run: |
+          out="$(printf ']suites all\n' | python -m pyscheme -T ../scheme-tests 2>&1)"
+          echo "$out" | tail -8
+          echo "$out" | grep -q 'ALL SUITES PASSED' || { echo '::error::battery failed'; exit 1; }
+
+      - name: CLI / process-boundary tests
+        shell: bash
+        env:
+          SCHEME_TESTS_DIR: ${{ github.workspace }}/scheme-tests
+        run: |
+          out="$(PYTHONPATH=3PyScheme sh scheme-tests/cli-tests/run.sh 'python -m pyscheme' 2>&1)"
+          echo "$out" | tail -3
+          echo "$out" | grep -q '0 failed' || { echo '::error::cli-tests failed'; exit 1; }
+
+      - name: Coverage (soft floor)
+        shell: bash
+        working-directory: 3PyScheme
+        run: |
+          python -m pip install --quiet coverage
+          printf ']suites all\n' | python -m coverage run -m pyscheme -T ../scheme-tests > /dev/null 2>&1
+          python -m coverage report
+          # Soft floor: baseline ~73% branch; fail only on a meaningful drop.
+          python -m coverage report --fail-under=70
