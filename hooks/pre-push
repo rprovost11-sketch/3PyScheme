@@ -1,0 +1,32 @@
+#!/bin/sh
+# pre-push — fast regression gate (test-coverage initiative, Phase 2, wave 1).
+# Runs pyScheme's fast suite subset (feature + regression) plus cli-tests against
+# the sibling scheme-tests repo. Skips the 27s compliance soak (that runs in CI).
+# Bypass in an emergency with:  git push --no-verify
+#
+# Enable once per clone:  git config core.hooksPath hooks
+# (or run tools/install-hooks.sh)
+
+REPO="$(git rev-parse --show-toplevel)"
+LISP="$(dirname "$REPO")"
+TESTS="${SCHEME_TESTS_DIR:-$LISP/scheme-tests}"
+
+if [ ! -d "$TESTS/log-tests" ]; then
+    echo "pre-push: scheme-tests not found at '$TESTS' (set SCHEME_TESTS_DIR) -- skipping suite checks." >&2
+    exit 0
+fi
+
+fail() { echo "pre-push: $1 -- push BLOCKED (use --no-verify to override)" >&2; exit 1; }
+
+echo "pre-push: pyScheme fast subset (feature + regression)..."
+out="$(printf ']suites feature regression\n' | python -m pyscheme -T "$TESTS" 2>&1)"
+echo "$out" | grep -E 'passed|FAIL' | tail -4
+echo "$out" | grep -q 'ALL SUITES PASSED' || fail "suite failure"
+
+echo "pre-push: cli-tests..."
+cli="$(PYTHONPATH="$REPO" sh "$TESTS/cli-tests/run.sh" "python -m pyscheme" 2>&1)"
+echo "$cli" | tail -1
+echo "$cli" | grep -q '0 failed' || fail "cli-tests failure"
+
+echo "pre-push: OK"
+exit 0
