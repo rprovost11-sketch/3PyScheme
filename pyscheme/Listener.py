@@ -1031,9 +1031,17 @@ class Listener:
         if path:
             base = os.path.abspath(os.path.expanduser(path))
             self._scheme_tests_dir = base
-            self._testdir = os.path.join(base, _FEATURE_SUBDIR)
-            self._compliancedir = os.path.join(base, _COMPLIANCE_SUBDIR)
-            self._regressiondir = os.path.join(base, _REGRESSION_SUBDIR)
+            # The .log suite subdirectories come from test-suites.scm (the single
+            # source of truth -- the same feature/compliance/regression suites
+            # ]suites runs); the _*_SUBDIR constants are only a fallback for a
+            # tests root that has no (or an unreadable) registry.
+            reg = self._registry_log_paths()
+            self._testdir = os.path.join(
+                base, reg.get('feature', _FEATURE_SUBDIR))
+            self._compliancedir = os.path.join(
+                base, reg.get('compliance', _COMPLIANCE_SUBDIR))
+            self._regressiondir = os.path.join(
+                base, reg.get('regression', _REGRESSION_SUBDIR))
             self._runsdir = os.path.join(base, _RUNS_SUBDIR)
             self._scheme_tests_source = source
         else:
@@ -1629,6 +1637,19 @@ class Listener:
                 vd = {}
                 Listener._parse_props(vals[1:], vd)
                 into.setdefault('variants', {})[vals[0]] = vd
+
+    def _registry_log_paths(self):
+        """{suite-name: relative-path} for the log-kind suites in test-suites.scm,
+        or {} when the registry is absent/unreadable.  Tolerant (never raises):
+        the test commands fall back to the _*_SUBDIR defaults when it returns {}.
+        Lets feature/compliance/regression share the registry's paths instead of
+        hardcoding the subdirs in two places."""
+        try:
+            suites = self._load_suites()
+        except Exception:
+            return {}
+        return {s['name']: s['path'] for s in suites
+                if s.get('kind') == 'log' and s.get('path')}
 
     def _load_suites(self):
         """Parse test-suites.scm into a list of suite dicts, in registry order."""
