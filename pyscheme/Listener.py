@@ -1505,18 +1505,33 @@ class Listener:
             raise ListenerCommandError(
                 'Please close the log before running suites (]close).')
 
-        selected = self._resolve_suite_tokens(args, suites)
+        pairs = self._resolve_suite_tokens(args, suites)
         port = self._port_tag()
-        runnable = [s for s in selected if s['ports'] in ('both', port)]
-        skipped = [s for s in selected if s['ports'] not in ('both', port)]
+        runnable = []   # effective suite dicts, each carrying a '_label'
+        skipped = []    # (label, ports)
+        for suite, vname in pairs:
+            eff = dict(suite)
+            applied = 'quick'
+            vd = suite.get('variants', {}).get(vname)
+            # Apply the variant only if it exists AND is available on this port;
+            # otherwise the suite falls back to its base (quick) run.
+            if vname != 'quick' and vd is not None:
+                if vd.get('ports', suite['ports']) in ('both', port):
+                    eff.update(vd)
+                    applied = vname
+            label = suite['name'] + ('' if applied == 'quick' else ' (' + applied + ')')
+            if eff['ports'] in ('both', port):
+                eff['_label'] = label
+                runnable.append(eff)
+            else:
+                skipped.append((label, eff['ports']))
 
         BOLD, GREEN, RED, RESET = self._colors('bold', 'green', 'red', 'reset')
         print()
         print(BOLD + '; running suites: '
-              + ', '.join(s['name'] for s in runnable) + RESET)
-        for s in skipped:
-            print('  (skipping ' + s['name'] + ' -- ' + s['ports']
-                  + '-only on this port)')
+              + ', '.join(s['_label'] for s in runnable) + RESET)
+        for label, ports in skipped:
+            print('  (skipping ' + label + ' -- ' + ports + '-only on this port)')
         print()
 
         # A combined .run report is opened only when a .log (log-kind) suite is in
@@ -1545,7 +1560,7 @@ class Listener:
         results = []   # dicts: name, ok, npass, nfail, nxpass, note
         try:
             for s in runnable:
-                print(BOLD + '-- ' + s['name'] + ' (' + (s['kind'] or '?')
+                print(BOLD + '-- ' + s['_label'] + ' (' + (s['kind'] or '?')
                       + ') --' + RESET)
                 if s['kind'] == 'log':
                     results.append(self._run_log_suite(s))
@@ -1616,6 +1631,43 @@ class Listener:
         """Resolve a registry-relative path against the scheme-tests root."""
         return os.path.normpath(os.path.join(self._scheme_tests_dir, rel))
 
+    @staticmethod
+    def _parse_props(props, into):
+        """Fill the suite dict `into` from a list of (key value ...) prop forms.
+        Reused for a suite's base props and for a (variant ...) block's overrides
+        (which set only the keys they mention)."""
+        for prop in props:
+            if not isinstance(prop, list) or not prop:
+                continue
+            key, vals = prop[0], prop[1:]
+            if key == 'kind' and vals:
+                into['kind'] = vals[0]
+            elif key == 'alias':
+                into['alias'] = list(vals)
+            elif key == 'categories':
+                into['categories'] = list(vals)
+            elif key == 'ports' and vals:
+                into['ports'] = vals[0]
+            elif key == 'path' and vals:
+                into['path'] = vals[0]
+            elif key == 'libs':
+                into['libs'] = list(vals)
+            elif key == 'run':
+                into['run'] = list(vals)
+            elif key == 'cwd' and vals:
+                into['cwd'] = vals[0]
+            elif key == 'pass' and vals:
+                into['pass'] = vals[0]      # 'exit-0' or ['grep', 'REGEX']
+            elif key == 'desc' and vals:
+                into['desc'] = vals[0]
+            elif key == 'tco-soak' and vals:
+                into['tco-soak'] = ('calibrate' if vals[0] == 'calibrate'
+                                    else int(vals[0]))
+            elif key == 'variant' and vals:
+                vd = {}
+                Listener._parse_props(vals[1:], vd)
+                into.setdefault('variants', {})[vals[0]] = vd
+
     def _load_suites(self):
         """Parse test-suites.scm into a list of suite dicts, in registry order."""
         path = self._registry_path()
@@ -1629,52 +1681,52 @@ class Listener:
                 continue
             d = {'name': form[1], 'kind': None, 'alias': [], 'categories': [],
                  'ports': 'both', 'path': None, 'libs': [], 'run': None,
-                 'cwd': '.', 'pass': 'exit-0', 'tco-soak': None, 'desc': ''}
-            for prop in form[2:]:
-                if not isinstance(prop, list) or not prop:
-                    continue
-                key, vals = prop[0], prop[1:]
-                if key == 'kind' and vals:
-                    d['kind'] = vals[0]
-                elif key == 'alias':
-                    d['alias'] = list(vals)
-                elif key == 'categories':
-                    d['categories'] = list(vals)
-                elif key == 'ports' and vals:
-                    d['ports'] = vals[0]
-                elif key == 'path' and vals:
-                    d['path'] = vals[0]
-                elif key == 'libs':
-                    d['libs'] = list(vals)
-                elif key == 'run':
-                    d['run'] = list(vals)
-                elif key == 'cwd' and vals:
-                    d['cwd'] = vals[0]
-                elif key == 'pass' and vals:
-                    d['pass'] = vals[0]    # 'exit-0' or ['grep', 'REGEX']
-                elif key == 'tco-soak' and vals:
-                    d['tco-soak'] = int(vals[0])
-                elif key == 'desc' and vals:
-                    d['desc'] = vals[0]
+                 'cwd': '.', 'pass': 'exit-0', 'tco-soak': None, 'desc': '',
+                 'variants': {}}
+            Listener._parse_props(form[2:], d)
             suites.append(d)
         if not suites:
             raise ListenerCommandError(']suites: no suites found in ' + path)
         return suites
 
+    @staticmethod
+    def _selector_matches(sel, suites):
+        """Suite names matched by a bare selector: name / alias / category / all."""
+        return [s['name'] for s in suites
+                if sel == s['name'] or sel in s['alias']
+                or sel in s['categories'] or sel == 'all']
+
     def _resolve_suite_tokens(self, tokens, suites):
-        """Map tokens (name / alias / category, plus the implicit 'all' category)
-        to suites in REGISTRY order, deduped.  Raises on an unknown token."""
-        chosen = set()
+        """Map tokens to (suite, variant) pairs in REGISTRY order, deduped by
+        (name, variant).  A token resolves as a bare selector first (variant
+        'quick'); if that fails, a trailing -<variant> is stripped and the rest
+        re-resolved.  Variant names are 'quick'/'slow' plus any declared in the
+        registry.  Raises on an unknown token."""
+        known = {'quick', 'slow'}
+        for s in suites:
+            known.update(s.get('variants', {}).keys())
+        seen = set()
+        pairs = []
         for tok in tokens:
-            matched = [s['name'] for s in suites
-                       if tok == s['name'] or tok in s['alias']
-                       or tok in s['categories'] or tok == 'all']
-            if not matched:
+            variant = 'quick'
+            names = Listener._selector_matches(tok, suites)
+            if not names:
+                for v in known:
+                    suf = '-' + v
+                    if tok.endswith(suf) and len(tok) > len(suf):
+                        cand = Listener._selector_matches(tok[:-len(suf)], suites)
+                        if cand:
+                            names, variant = cand, v
+                            break
+            if not names:
                 raise ListenerCommandError(
-                    'unknown suite/category ' + repr(tok)
-                    + ' (try `]suites list`)')
-            chosen.update(matched)
-        return [s for s in suites if s['name'] in chosen]
+                    'unknown suite/category ' + repr(tok) + ' (try `]suites list`)')
+            nameset = set(names)
+            for s in suites:        # registry order
+                if s['name'] in nameset and (s['name'], variant) not in seen:
+                    seen.add((s['name'], variant))
+                    pairs.append((s, variant))
+        return pairs
 
     def _print_suite_list(self, suites):
         """Render the catalog for `]suites list` (and for Cherry to parse)."""
@@ -1700,18 +1752,18 @@ class Listener:
         """Run a .log directory suite in-process (reboot per file)."""
         path = self._suite_abspath(suite['path'])
         if not os.path.isdir(path):
-            return {'name': suite['name'], 'ok': False, 'npass': 0, 'nfail': 1,
+            return {'name': suite.get('_label', suite['name']), 'ok': False, 'npass': 0, 'nfail': 1,
                     'nxpass': 0, 'note': 'directory not found: ' + path}
         files = retrieveFileList(path)
         if not files:
-            return {'name': suite['name'], 'ok': False, 'npass': 0, 'nfail': 1,
+            return {'name': suite.get('_label', suite['name']), 'ok': False, 'npass': 0, 'nfail': 1,
                     'nxpass': 0, 'note': 'no .log files in ' + path}
         kw = {}
-        if suite['tco-soak'] is not None:
+        if isinstance(suite.get('tco-soak'), int):
             kw['tco_iters'] = suite['tco-soak']
         p, f = self._runTestFiles(files, path, suite['name'], **kw)
-        return {'name': suite['name'], 'ok': f == 0, 'npass': p, 'nfail': f,
-                'nxpass': 0, 'note': ''}
+        return {'name': suite.get('_label', suite['name']), 'ok': f == 0,
+                'npass': p, 'nfail': f, 'nxpass': 0, 'note': ''}
 
     def _scheme_child_argv(self, libs, fpath):
         """Build the invocation that runs <fpath> in a CHILD interpreter of this
@@ -1734,7 +1786,7 @@ class Listener:
         import subprocess
         fpath = self._suite_abspath(suite['path'])
         if not os.path.isfile(fpath):
-            return {'name': suite['name'], 'ok': False, 'npass': 0, 'nfail': 1,
+            return {'name': suite.get('_label', suite['name']), 'ok': False, 'npass': 0, 'nfail': 1,
                     'nxpass': 0, 'note': 'file not found: ' + fpath}
         libs = [self._suite_abspath(l) for l in suite['libs']]
         argv = self._scheme_child_argv(libs, fpath)
@@ -1747,17 +1799,17 @@ class Listener:
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, text=True)
         except (FileNotFoundError, OSError) as e:
-            return {'name': suite['name'], 'ok': False, 'npass': 0, 'nfail': 1,
+            return {'name': suite.get('_label', suite['name']), 'ok': False, 'npass': 0, 'nfail': 1,
                     'nxpass': 0, 'note': 'cannot launch: ' + str(e)}
         out = proc.stdout or ''
         for line in out.rstrip('\n').splitlines():
             print('    ' + line)
         npass, nfail, nxpass = Listener._parse_test_output(out)
         if nfail is None:
-            return {'name': suite['name'], 'ok': False, 'npass': npass,
-                    'nfail': 1, 'nxpass': 0, 'note': 'no test summary'}
-        return {'name': suite['name'], 'ok': nfail == 0, 'npass': npass,
-                'nfail': nfail, 'nxpass': nxpass, 'note': ''}
+            return {'name': suite.get('_label', suite['name']), 'ok': False,
+                    'npass': npass, 'nfail': 1, 'nxpass': 0, 'note': 'no test summary'}
+        return {'name': suite.get('_label', suite['name']), 'ok': nfail == 0,
+                'npass': npass, 'nfail': nfail, 'nxpass': nxpass, 'note': ''}
 
     def _run_external_suite(self, suite):
         """Spawn an external tool (the kind that can't be in-process) and judge
@@ -1765,7 +1817,7 @@ class Listener:
         import re
         import subprocess
         if suite['run'] is None:
-            return {'name': suite['name'], 'ok': False, 'npass': 0, 'nfail': 1,
+            return {'name': suite.get('_label', suite['name']), 'ok': False, 'npass': 0, 'nfail': 1,
                     'nxpass': 0, 'note': 'no (run ...) in registry'}
         cwd = self._suite_abspath(suite['cwd'])
         interp_cmd = 'python -m pyscheme'      # {interp} for this port
@@ -1781,7 +1833,7 @@ class Listener:
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, text=True)
         except (FileNotFoundError, OSError) as e:
-            return {'name': suite['name'], 'ok': False, 'npass': 0, 'nfail': 1,
+            return {'name': suite.get('_label', suite['name']), 'ok': False, 'npass': 0, 'nfail': 1,
                     'nxpass': 0, 'note': 'cannot launch: ' + str(e)}
         out = proc.stdout or ''
         cond = suite['pass']
@@ -1791,7 +1843,7 @@ class Listener:
             ok = (proc.returncode == 0)
         for ln in [x for x in out.splitlines() if x.strip()][-3:]:
             print('    ' + ln)
-        return {'name': suite['name'], 'ok': ok, 'npass': 0,
+        return {'name': suite.get('_label', suite['name']), 'ok': ok, 'npass': 0,
                 'nfail': 0 if ok else 1, 'nxpass': 0,
                 'note': '' if ok else 'exit ' + str(proc.returncode)}
 
