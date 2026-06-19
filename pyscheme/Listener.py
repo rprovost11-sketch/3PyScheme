@@ -1477,157 +1477,406 @@ class Listener:
         proc.wait()
 
     def _cmd_suites(self, args):
-        """Usage: ]suites <suite> [<suite> ...]
+        """Usage: ]suites [list | <name|alias|category> ... | all]
 
-        Run one or more test suites in sequence -- each fully rebooted between
-        files, exactly as the individual ]feature/]compliance/]regression
-        commands do -- then print one combined pass/fail verdict.  This is the
-        batch runner Cherry's "Run test suites" dialog drives; it is equally
-        usable headless.
+        The registry-driven test runner.  Reads every suite from
+        scheme-tests/test-suites.scm (the single source of truth) and runs the
+        ones you name -- .log batteries and SRFI-64 .scm suites IN-PROCESS,
+        external tools (gc_test, the differential/fuzz harnesses) as spawned
+        subprocesses.
 
-        Suite tokens (executed in the canonical order feature -> compliance ->
-        regression regardless of the order given; duplicates collapse):
-          feature             the feature suite
-          regression          the regression suite
-          compliance-quick    compliance with the default 100k TCO soak
-          compliance          alias for compliance-quick
-          all-quick           feature + compliance-quick + regression
-          all                 alias for all-quick
+          ]suites              show the catalog (same as ]suites list)
+          ]suites list         show the catalog
+          ]suites <tok> ...    run the suite(s) a token names: a suite name, a
+                               short alias (e.g. mc), or a category (e.g.
+                               metamorphic).  Selected suites run in registry
+                               order, deduped.
+          ]suites all          run every suite ('all' is an implicit category)
 
-        compliance-slow / all-slow are cppscheme2-only and are rejected here:
-        the slow run is a high-N soak whose payoff is stressing cppscheme2's
-        generational GC.  pyScheme has no custom GC, and bounded-space TCO is
-        already proven at small N by the quick run, so a slow run on pyScheme
-        buys nothing.
-
-        For a specific TCO iteration count use ]compliance -I:<count> directly;
-        ]suites exposes only the quick variant (and, on cppscheme2, slow).
+        Cherry's checklist is rendered from `]suites list`; adding a suite to the
+        registry makes it appear here and in Cherry automatically.
         """
+        self._require_scheme_tests()
+        suites = self._load_suites()
+        if not args or (len(args) == 1 and args[0].lower() == 'list'):
+            self._print_suite_list(suites)
+            return
         if self._logFile:
             raise ListenerCommandError(
                 'Please close the log before running suites (]close).')
-        self._require_scheme_tests()
-        if not args:
-            raise ListenerCommandError(
-                'Usage: ]suites <suite> ...  '
-                '(feature, regression, compliance[-quick], all[-quick])')
 
-        run_feature = False
-        run_regression = False
-        compliance_mode = [None]   # 'quick' (slow is cppscheme2-only)
-
-        def want_compliance(mode):
-            if compliance_mode[0] is not None and compliance_mode[0] != mode:
-                raise ListenerCommandError(
-                    'compliance-quick and compliance-slow are mutually exclusive')
-            compliance_mode[0] = mode
-
-        slow_msg = ('%s is cppscheme2-only: the slow run is a high-N GC-stress '
-                    'soak and pyScheme has no custom GC.  Use %s.')
-        for tok in args:
-            t = tok.lower()
-            if t == 'feature':
-                run_feature = True
-            elif t == 'regression':
-                run_regression = True
-            elif t in ('compliance', 'compliance-quick'):
-                want_compliance('quick')
-            elif t == 'compliance-slow':
-                raise ListenerCommandError(
-                    slow_msg % ('compliance-slow', 'compliance-quick'))
-            elif t in ('all', 'all-quick'):
-                run_feature = True
-                run_regression = True
-                want_compliance('quick')
-            elif t == 'all-slow':
-                raise ListenerCommandError(slow_msg % ('all-slow', 'all-quick'))
-            else:
-                raise ListenerCommandError(
-                    'unknown suite ' + repr(tok) + '.  Valid: feature, '
-                    'regression, compliance[-quick], all[-quick].')
-
-        # Canonical order: feature -> compliance -> regression.
-        plan = []
-        if run_feature:
-            plan.append('feature')
-        if compliance_mode[0] == 'quick':
-            plan.append('compliance-quick')
-        if run_regression:
-            plan.append('regression')
+        selected = self._resolve_suite_tokens(args, suites)
+        port = self._port_tag()
+        runnable = [s for s in selected if s['ports'] in ('both', port)]
+        skipped = [s for s in selected if s['ports'] not in ('both', port)]
 
         BOLD, GREEN, RED, RESET = self._colors('bold', 'green', 'red', 'reset')
-
         print()
-        print(BOLD + '; running suites: ' + ', '.join(plan) + RESET)
+        print(BOLD + '; running suites: '
+              + ', '.join(s['name'] for s in runnable) + RESET)
+        for s in skipped:
+            print('  (skipping ' + s['name'] + ' -- ' + s['ports']
+                  + '-only on this port)')
         print()
 
-        # Open ONE shared run report for the whole batch; each suite's section is
-        # appended to it (filename carries only the timestamp, no suite type).
-        runsDir = self._runsdir if self._runsdir else os.path.join(
-            self._testdir if self._testdir else '.', 'runs')
+        # A combined .run report is opened only when a .log (log-kind) suite is in
+        # the batch; those append their sections to it as before.  scheme/external
+        # suites don't use it.
+        have_log = any(s['kind'] == 'log' for s in runnable)
+        shared = None
         shared_filename = ''
-        try:
-            os.makedirs(runsDir, exist_ok=True)
-            timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
-            shared_filename = os.path.join(runsDir, timestamp + '-PyScheme.run')
-            self._shared_run_file = open(shared_filename, 'w', encoding='utf-8')
-            self._shared_run_filename = shared_filename
-        except OSError:
-            self._shared_run_file = None
-            self._shared_run_filename = ''
+        if have_log:
+            tag = 'CPPScheme2' if 'cpp' in self._language else 'PyScheme'
+            runsDir = self._runsdir if self._runsdir else os.path.join(
+                self._testdir if self._testdir else '.', 'runs')
+            try:
+                os.makedirs(runsDir, exist_ok=True)
+                timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
+                shared_filename = os.path.join(
+                    runsDir, timestamp + '-' + tag + '.run')
+                self._shared_run_file = open(shared_filename, 'w',
+                                             encoding='utf-8')
+                self._shared_run_filename = shared_filename
+                shared = self._shared_run_file
+            except OSError:
+                self._shared_run_file = None
+                self._shared_run_filename = ''
 
-        results = []   # (label, n_pass, n_fail)
+        results = []   # dicts: name, ok, npass, nfail, nxpass, note
         try:
-            for name in plan:
-                if name == 'feature':
-                    p, f = self._cmd_feature([])
-                elif name == 'compliance-quick':
-                    p, f = self._cmd_compliance([])
-                else:   # 'regression'
-                    p, f = self._cmd_regression([])
-                results.append((name, p, f))
+            for s in runnable:
+                print(BOLD + '-- ' + s['name'] + ' (' + (s['kind'] or '?')
+                      + ') --' + RESET)
+                if s['kind'] == 'log':
+                    results.append(self._run_log_suite(s))
+                elif s['kind'] == 'scheme':
+                    results.append(self._run_scheme_suite(s))
+                elif s['kind'] == 'external':
+                    results.append(self._run_external_suite(s))
+                else:
+                    results.append({'name': s['name'], 'ok': False, 'npass': 0,
+                                    'nfail': 1, 'nxpass': 0,
+                                    'note': 'unknown kind ' + repr(s['kind'])})
                 print()
         finally:
-            shared = self._shared_run_file
             self._shared_run_file = None
             self._shared_run_filename = ''
 
-        total_fail = sum(entry[2] for entry in results)
-        total_cases = sum(entry[1] + entry[2] for entry in results)
+        total_fail = sum(r['nfail'] for r in results)
+        total_pass = sum(r['npass'] for r in results)
+        total_xpass = sum(r['nxpass'] for r in results)
+
         print(BOLD + '===== SUITES COMPLETE =====' + RESET)
-        for label, p, f in results:
-            if f == 0:
-                detail = GREEN + str(p) + ' passed' + RESET
+        for r in results:
+            if not r['ok']:
+                note = ' -- ' + r['note'] if r['note'] else ''
+                detail = RED + 'FAILED' + note + RESET
+            elif r['nxpass'] > 0:
+                detail = (GREEN + 'passed' + RESET + ' ' + BOLD
+                          + ('(%d now-passing expect-fail -- promote it)'
+                             % r['nxpass']) + RESET)
+            elif r['npass']:
+                detail = GREEN + str(r['npass']) + ' passed' + RESET
             else:
-                detail = RED + ('%d of %d failed' % (f, p + f)) + RESET
-            print('  ' + label.ljust(18) + ' ' + detail)
-        print('  ' + 'Total test cases'.ljust(18) + ' '
-              + BOLD + str(total_cases) + RESET)
+                detail = GREEN + 'ok' + RESET
+            print('  ' + r['name'].ljust(22) + ' ' + detail)
         if total_fail == 0:
             print(BOLD + GREEN + '  ALL SUITES PASSED' + RESET)
         else:
             print(BOLD + RED + '  SUITE FAILURES: ' + str(total_fail) + RESET)
+        if total_xpass:
+            print(BOLD + '  (' + str(total_xpass) + ' known-open expect-fail '
+                  'case(s) now pass -- update the pins)' + RESET)
 
-        # Append the combined verdict to the shared report, then close it.
         if shared is not None:
             print('', file=shared)
             print('===== SUITES COMPLETE =====', file=shared)
-            for label, p, f in results:
-                if f == 0:
-                    detail = str(p) + ' passed'
-                else:
-                    detail = '%d of %d failed' % (f, p + f)
-                print('  ' + label.ljust(18) + ' ' + detail, file=shared)
-            print('  ' + 'Total test cases'.ljust(18) + ' '
-                  + str(total_cases), file=shared)
-            if total_fail == 0:
-                print('  ALL SUITES PASSED', file=shared)
-            else:
-                print('  SUITE FAILURES: ' + str(total_fail), file=shared)
+            for r in results:
+                detail = ('FAILED' if not r['ok']
+                          else (str(r['npass']) + ' passed' if r['npass']
+                                else 'ok'))
+                print('  ' + r['name'].ljust(22) + ' ' + detail, file=shared)
+            print('  ALL SUITES PASSED' if total_fail == 0
+                  else '  SUITE FAILURES: ' + str(total_fail), file=shared)
             shared.close()
             print()
             print('Test output: ' + shared_filename)
-        return (sum(e[1] for e in results), total_fail)
+        return (total_pass, total_fail)
+
+    # ---- registry-driven ]suites helpers (backlog #9) ----------------------
+
+    def _port_tag(self):
+        """'py' or 'cpp' -- used to filter suites by their (ports ...) field."""
+        return 'cpp' if 'cpp' in self._language else 'py'
+
+    def _registry_path(self):
+        return os.path.join(self._scheme_tests_dir, 'test-suites.scm')
+
+    def _suite_abspath(self, rel):
+        """Resolve a registry-relative path against the scheme-tests root."""
+        return os.path.normpath(os.path.join(self._scheme_tests_dir, rel))
+
+    def _load_suites(self):
+        """Parse test-suites.scm into a list of suite dicts, in registry order."""
+        path = self._registry_path()
+        if not os.path.isfile(path):
+            raise ListenerCommandError(']suites: registry not found: ' + path)
+        with open(path, 'r', encoding='utf-8') as fh:
+            forms = Listener._read_sexprs(fh.read())
+        suites = []
+        for form in forms:
+            if not isinstance(form, list) or len(form) < 2 or form[0] != 'suite':
+                continue
+            d = {'name': form[1], 'kind': None, 'alias': [], 'categories': [],
+                 'ports': 'both', 'path': None, 'libs': [], 'run': None,
+                 'cwd': '.', 'pass': 'exit-0', 'tco-soak': None, 'desc': ''}
+            for prop in form[2:]:
+                if not isinstance(prop, list) or not prop:
+                    continue
+                key, vals = prop[0], prop[1:]
+                if key == 'kind' and vals:
+                    d['kind'] = vals[0]
+                elif key == 'alias':
+                    d['alias'] = list(vals)
+                elif key == 'categories':
+                    d['categories'] = list(vals)
+                elif key == 'ports' and vals:
+                    d['ports'] = vals[0]
+                elif key == 'path' and vals:
+                    d['path'] = vals[0]
+                elif key == 'libs':
+                    d['libs'] = list(vals)
+                elif key == 'run':
+                    d['run'] = list(vals)
+                elif key == 'cwd' and vals:
+                    d['cwd'] = vals[0]
+                elif key == 'pass' and vals:
+                    d['pass'] = vals[0]    # 'exit-0' or ['grep', 'REGEX']
+                elif key == 'tco-soak' and vals:
+                    d['tco-soak'] = int(vals[0])
+                elif key == 'desc' and vals:
+                    d['desc'] = vals[0]
+            suites.append(d)
+        if not suites:
+            raise ListenerCommandError(']suites: no suites found in ' + path)
+        return suites
+
+    def _resolve_suite_tokens(self, tokens, suites):
+        """Map tokens (name / alias / category, plus the implicit 'all' category)
+        to suites in REGISTRY order, deduped.  Raises on an unknown token."""
+        chosen = set()
+        for tok in tokens:
+            matched = [s['name'] for s in suites
+                       if tok == s['name'] or tok in s['alias']
+                       or tok in s['categories'] or tok == 'all']
+            if not matched:
+                raise ListenerCommandError(
+                    'unknown suite/category ' + repr(tok)
+                    + ' (try `]suites list`)')
+            chosen.update(matched)
+        return [s for s in suites if s['name'] in chosen]
+
+    def _print_suite_list(self, suites):
+        """Render the catalog for `]suites list` (and for Cherry to parse)."""
+        BOLD, RESET = self._colors('bold', 'reset')
+        port = self._port_tag()
+        print(BOLD + 'Available test suites  (registry: '
+              + self._registry_path() + ')' + RESET)
+        print('  ' + 'NAME'.ljust(22) + 'ALIASES'.ljust(13)
+              + 'KIND'.ljust(10) + 'PORTS'.ljust(7) + 'DESCRIPTION')
+        cats = set()
+        for s in suites:
+            cats.update(s['categories'])
+            na = '' if s['ports'] in ('both', port) else '  (n/a here)'
+            print('  ' + s['name'].ljust(22)
+                  + ', '.join(s['alias']).ljust(13)
+                  + (s['kind'] or '?').ljust(10)
+                  + s['ports'].ljust(7) + (s['desc'] or '') + na)
+        print()
+        print('  Categories: ' + ', '.join(sorted(cats)) + '   (+ all)')
+        print('  Run:  ]suites <name|alias|category> ...   |   ]suites all')
+
+    def _run_log_suite(self, suite):
+        """Run a .log directory suite in-process (reboot per file)."""
+        path = self._suite_abspath(suite['path'])
+        if not os.path.isdir(path):
+            return {'name': suite['name'], 'ok': False, 'npass': 0, 'nfail': 1,
+                    'nxpass': 0, 'note': 'directory not found: ' + path}
+        files = retrieveFileList(path)
+        if not files:
+            return {'name': suite['name'], 'ok': False, 'npass': 0, 'nfail': 1,
+                    'nxpass': 0, 'note': 'no .log files in ' + path}
+        kw = {}
+        if suite['tco-soak'] is not None:
+            kw['tco_iters'] = suite['tco-soak']
+        p, f = self._runTestFiles(files, path, suite['name'], **kw)
+        return {'name': suite['name'], 'ok': f == 0, 'npass': p, 'nfail': f,
+                'nxpass': 0, 'note': ''}
+
+    def _scheme_child_argv(self, libs, fpath):
+        """Build the invocation that runs <fpath> in a CHILD interpreter of this
+        port with the given -L library paths.  Overridden per port (cppScheme2
+        uses its exe); pyScheme re-invokes `python -m pyscheme`."""
+        argv = [sys.executable, '-m', 'pyscheme']
+        for lib in libs:
+            argv += ['-L', lib]
+        argv.append(fpath)
+        return argv
+
+    def _run_scheme_suite(self, suite):
+        """Run a single .scm suite by spawning a CHILD interpreter (-L libs),
+        capturing its output and reading the SRFI-64 summary (pass = 0 failed; a
+        now-passing expect-fail shows as XPASS).  A child process is used rather
+        than the running interpreter because library state (e.g. the (srfi 64)
+        pass/fail counters) is process-global -- running several SRFI-64 suites
+        in ONE process would accumulate their counts.  Still bash-free and
+        cross-platform (it is the interpreter running the test, just a child)."""
+        import subprocess
+        fpath = self._suite_abspath(suite['path'])
+        if not os.path.isfile(fpath):
+            return {'name': suite['name'], 'ok': False, 'npass': 0, 'nfail': 1,
+                    'nxpass': 0, 'note': 'file not found: ' + fpath}
+        libs = [self._suite_abspath(l) for l in suite['libs']]
+        argv = self._scheme_child_argv(libs, fpath)
+        env = dict(os.environ)
+        pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        env['PYTHONPATH'] = (pkg_parent + os.pathsep + env['PYTHONPATH']
+                             if env.get('PYTHONPATH') else pkg_parent)
+        try:
+            proc = subprocess.run(argv, cwd=os.path.dirname(fpath), env=env,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, text=True)
+        except (FileNotFoundError, OSError) as e:
+            return {'name': suite['name'], 'ok': False, 'npass': 0, 'nfail': 1,
+                    'nxpass': 0, 'note': 'cannot launch: ' + str(e)}
+        out = proc.stdout or ''
+        for line in out.rstrip('\n').splitlines():
+            print('    ' + line)
+        npass, nfail, nxpass = Listener._parse_test_output(out)
+        if nfail is None:
+            return {'name': suite['name'], 'ok': False, 'npass': npass,
+                    'nfail': 1, 'nxpass': 0, 'note': 'no test summary'}
+        return {'name': suite['name'], 'ok': nfail == 0, 'npass': npass,
+                'nfail': nfail, 'nxpass': nxpass, 'note': ''}
+
+    def _run_external_suite(self, suite):
+        """Spawn an external tool (the kind that can't be in-process) and judge
+        pass by exit code or a (grep REGEX) of its output."""
+        import re
+        import subprocess
+        if suite['run'] is None:
+            return {'name': suite['name'], 'ok': False, 'npass': 0, 'nfail': 1,
+                    'nxpass': 0, 'note': 'no (run ...) in registry'}
+        cwd = self._suite_abspath(suite['cwd'])
+        interp_cmd = 'python -m pyscheme'      # {interp} for this port
+        argv = [a.replace('{interp}', interp_cmd) for a in suite['run']]
+        if '/' in argv[0] or '\\' in argv[0]:  # relative program -> resolve vs cwd
+            argv[0] = os.path.normpath(os.path.join(cwd, argv[0]))
+        env = dict(os.environ)
+        pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        env['PYTHONPATH'] = (pkg_parent + os.pathsep + env['PYTHONPATH']
+                             if env.get('PYTHONPATH') else pkg_parent)
+        try:
+            proc = subprocess.run(argv, cwd=cwd, env=env,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, text=True)
+        except (FileNotFoundError, OSError) as e:
+            return {'name': suite['name'], 'ok': False, 'npass': 0, 'nfail': 1,
+                    'nxpass': 0, 'note': 'cannot launch: ' + str(e)}
+        out = proc.stdout or ''
+        cond = suite['pass']
+        if isinstance(cond, list) and cond and cond[0] == 'grep':
+            ok = re.search(cond[1], out) is not None
+        else:
+            ok = (proc.returncode == 0)
+        for ln in [x for x in out.splitlines() if x.strip()][-3:]:
+            print('    ' + ln)
+        return {'name': suite['name'], 'ok': ok, 'npass': 0,
+                'nfail': 0 if ok else 1, 'nxpass': 0,
+                'note': '' if ok else 'exit ' + str(proc.returncode)}
+
+    @staticmethod
+    def _read_sexprs(text):
+        """Minimal S-expression reader for the suite registry: returns a list of
+        forms, each a nested Python list whose atoms (symbol/string/number) are
+        all plain str -- structure (list vs atom) carries the only distinction
+        the registry needs.  Handles ; line comments and "..." strings with \\
+        escapes.  Not a general Scheme reader -- just enough for test-suites.scm."""
+        i, n = 0, len(text)
+
+        def skip_ws():
+            nonlocal i
+            while i < n:
+                c = text[i]
+                if c == ';':
+                    while i < n and text[i] != '\n':
+                        i += 1
+                elif c in ' \t\r\n':
+                    i += 1
+                else:
+                    break
+
+        def read_form():
+            nonlocal i
+            skip_ws()
+            if i >= n:
+                return None            # EOF (top level only)
+            c = text[i]
+            if c == '(':
+                i += 1
+                lst = []
+                while True:
+                    skip_ws()
+                    if i >= n:
+                        raise ListenerCommandError(
+                            ']suites: malformed registry (unclosed paren)')
+                    if text[i] == ')':
+                        i += 1
+                        return lst
+                    lst.append(read_form())
+            if c == ')':
+                raise ListenerCommandError(
+                    ']suites: malformed registry (unexpected ")")')
+            if c == '"':
+                i += 1
+                buf = []
+                while i < n and text[i] != '"':
+                    if text[i] == '\\' and i + 1 < n:
+                        i += 1
+                        buf.append({'n': '\n', 't': '\t', 'r': '\r'}.get(
+                            text[i], text[i]))
+                    else:
+                        buf.append(text[i])
+                    i += 1
+                i += 1                 # closing quote
+                return ''.join(buf)
+            start = i                  # bare atom
+            while i < n and text[i] not in ' \t\r\n()";':
+                i += 1
+            return text[start:i]
+
+        forms = []
+        while True:
+            f = read_form()
+            if f is None:
+                break
+            forms.append(f)
+        return forms
+
+    @staticmethod
+    def _parse_test_output(out):
+        """Pull (npass, nfail, nxpass) from a suite program's stdout.  Works for
+        the SRFI-64 summary ('=== N passed, M failed ===' plus an optional
+        '(... K unexpected-pass ...)' line) and the older bespoke '<N> checks,
+        <M> failed' format.  nfail is None when no summary line was found."""
+        import re
+        fails = re.findall(r'(\d+)\s+failed', out)
+        nfail = int(fails[-1]) if fails else None
+        passes = re.findall(r'(\d+)\s+(?:passed|checks|datums)', out)
+        npass = int(passes[-1]) if passes else 0
+        xps = re.findall(r'(\d+)\s+unexpected-pass', out)
+        nxpass = int(xps[-1]) if xps else 0
+        return npass, nfail, nxpass
 
     def _cmd_cd(self, args):
         """Usage: ]cd <directory>
