@@ -845,6 +845,11 @@ def _prim_number_to_string(ctx, env, args, app_node):
         im = as_complex_imag(v)
         re_s = _format_num_str(re)
         im_s = _format_num_str(im)
+        # inf/nan imaginary parts already carry an explicit sign in im_s (e.g.
+        # "+inf.0"); a connector '+' would double it ("3.0++inf.0i").  Matches
+        # PrettyPrinter so number->string and write agree.
+        if im_s[:1] == '+' or im_s[:1] == '-':
+            return make_string(re_s + im_s + 'i')
         if math.isnan(im) or im >= 0:
             return make_string(re_s + '+' + im_s + 'i')
         return make_string(re_s + im_s + 'i')
