@@ -444,7 +444,14 @@ def _needs_vertical_bars(name):
                 (len(name) > 3 and name[1].lower() == 'n'
                  and name[2].lower() == 'a' and name[3].lower() == 'n')):
             return True
-    if not _is_safe_symbol_initial(name[0]) and name[0] not in '+-@.':
+    # A leading '.' followed by a digit (e.g. ".9t") lexes as a number, not this
+    # symbol, so it must be bar-quoted.  (A lone '.' is handled above; ".foo" and
+    # "..." are valid identifiers.)
+    if name[0] == '.' and len(name) > 1 and '0' <= name[1] <= '9':
+        return True
+    # '@' is a valid <special subsequent> but NOT a valid <initial> (R7RS 7.1.1),
+    # so an @-initial name (e.g. "@") is not a bare identifier and needs bars.
+    if not _is_safe_symbol_initial(name[0]) and name[0] not in '+-.':
         return True
     i = 0
     while i < len(name):
