@@ -170,6 +170,21 @@ def _prim_make_environment(ctx, env, args, app_node):
     return make_environment(result)  # deliberately NOT frozen -> mutable
 
 
+def _prim_directory_files(ctx, env, args, app_node):
+    # (directory-files path) -> sorted list of the bare entry names in PATH,
+    # excluding "." and ".." (os.listdir already does; dotfiles kept).  Models
+    # SRFI 170 directory-files; mirrors cppScheme2.
+    import os
+    if not is_string(args[0]):
+        raise SchemeTypeError(
+            'directory-files: argument must be a string', app_node)
+    try:
+        names = sorted(os.listdir(as_string(args[0])))
+    except OSError as e:
+        raise SchemeTypeError('directory-files: ' + str(e), app_node)
+    return list_from_items([make_string(n) for n in names])
+
+
 def _prim_interpreter_argv(ctx, env, args, app_node):
     # (interpreter-argv) -> the argv list (of strings) that relaunches THIS
     # interpreter, for spawning self / sibling interpreters via run-process.
@@ -687,6 +702,15 @@ def register():
         "defines are isolated to it.  With library-specs it holds the union of\n"
         "their exports, not frozen.  Use with `eval` to run a program in\n"
         "isolation.  cppScheme2/pyScheme extension."),
+        category=CATEGORY)
+
+    register_primitive('directory-files', (1, 1), _prim_directory_files,
+                       usage='(directory-files path)',
+                       doc=(
+        "Return a sorted list of the bare filenames in directory PATH, excluding\n"
+        "\".\" and \"..\" (dotfiles kept).  Names are strings, not full paths --\n"
+        "join with \"/\" to build a path.  Errors if PATH cannot be opened.\n"
+        "Models SRFI 170 directory-files.  cppScheme2/pyScheme extension."),
         category=CATEGORY)
 
     register_primitive('interpreter-argv', (0, 0), _prim_interpreter_argv,
