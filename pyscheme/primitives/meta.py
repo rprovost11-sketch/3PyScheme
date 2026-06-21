@@ -133,6 +133,43 @@ def _prim_environment(ctx, env, args, app_node):
     return make_environment(result)
 
 
+def _prim_make_environment(ctx, env, args, app_node):
+    # (make-environment <library-spec>...) -- the MUTABLE sibling of R7RS
+    # `environment`.  Returns a fresh top-level env that allows defines/mutations
+    # and isolates them.  With NO args it is a child of the global (REPL) env, so
+    # all default bindings are visible while new top-level defines stay local --
+    # the isolation neither `environment` (frozen) nor `interaction-environment`
+    # (the single shared global) can give.  With library-specs it holds the union
+    # of their exports (like `environment`, but not frozen).  Used with `eval` to
+    # run a program in a clean sandbox (e.g. one ecraven benchmark per fresh env).
+    from pyscheme.Environment import Environment
+    if len(args) == 0:
+        return make_environment(Environment(parent=env.getGlobalEnv()))
+    from pyscheme.library import library_name_to_key, library_lookup
+    from pyscheme.PrettyPrinter import pretty_print
+    result = Environment(parent=None)
+    i = 0
+    while i < len(args):
+        spec = args[i]
+        if not is_cons(spec):
+            raise SchemeTypeError(
+                'make-environment: argument must be a library-name list',
+                app_node)
+        try:
+            key = library_name_to_key(spec)
+        except ValueError as e:
+            raise SchemeTypeError('make-environment: ' + str(e), app_node)
+        lib_env = library_lookup(key)
+        if lib_env is None:
+            raise SchemeTypeError(
+                'make-environment: library not found: ' + pretty_print(spec),
+                app_node)
+        for sid, val in lib_env._bindings.items():
+            result.bind(symbol_name(sid), val)
+        i = i + 1
+    return make_environment(result)  # deliberately NOT frozen -> mutable
+
+
 def _prim_make_record_type(ctx, env, args, app_node):
     # (%make-record-type 'name '(field-name ...))
     name_arg = args[0]
@@ -588,6 +625,17 @@ def register():
         "integers identifying a registered library, e.g. '(scheme base).\n"
         "The returned environment is frozen: defining or set!'ing on it is\n"
         "an error.  R7RS 6.12; library (scheme eval)."),
+        category=CATEGORY)
+
+    register_primitive('make-environment', (0, None), _prim_make_environment,
+                       usage='(make-environment <library-spec>...)',
+                       doc=(
+        "Return a fresh MUTABLE top-level environment (the mutable sibling of\n"
+        "R7RS `environment`).  With no args it is a child of the global REPL\n"
+        "environment: all default bindings are visible, but new top-level\n"
+        "defines are isolated to it.  With library-specs it holds the union of\n"
+        "their exports, not frozen.  Use with `eval` to run a program in\n"
+        "isolation.  cppScheme2/pyScheme extension."),
         category=CATEGORY)
 
     # Record plumbing: emitted by the Expander for (define-record-type ...).
