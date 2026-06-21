@@ -217,16 +217,30 @@ def _prim_run_process(ctx, env, args, app_node):
         raise SchemeTypeError(
             'run-process: first argument must be a non-empty list of strings',
             app_node)
+    from pyscheme.AST import is_real, as_real
     stdin_data = None
     if len(args) >= 2 and not (is_boolean(args[1]) and as_boolean(args[1]) is False):
         if not is_string(args[1]):
             raise SchemeTypeError(
                 'run-process: stdin argument must be a string or #f', app_node)
         stdin_data = as_string(args[1]).encode('utf-8')
+    timeout = None   # None = no timeout
+    if len(args) >= 3 and not (is_boolean(args[2]) and as_boolean(args[2]) is False):
+        if not (is_integer(args[2]) or is_real(args[2])):
+            raise SchemeTypeError(
+                'run-process: timeout must be a number of seconds or #f', app_node)
+        timeout = as_real(args[2]) if is_real(args[2]) else as_integer(args[2])
     try:
         # shell=False (default) -> direct exec, no /bin/sh or cmd.exe.
         proc = subprocess.run(argv, input=stdin_data,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        # child killed for exceeding the timeout -> exit-code #f, partial output.
+        out = (e.stdout or b'').decode('utf-8', errors='replace')
+        err = (e.stderr or b'').decode('utf-8', errors='replace')
+        return make_multi_values([make_boolean(False),
+                                  make_string(out), make_string(err)])
     except (OSError, ValueError) as e:
         raise SchemeTypeError('run-process: ' + str(e), app_node)
     out = proc.stdout.decode('utf-8', errors='replace')
@@ -722,14 +736,16 @@ def register():
         "cppScheme2/pyScheme extension."),
         category=CATEGORY)
 
-    register_primitive('run-process', (1, 2), _prim_run_process,
-                       usage='(run-process argv [stdin-string])',
+    register_primitive('run-process', (1, 3), _prim_run_process,
+                       usage='(run-process argv [stdin-string [timeout-secs]])',
                        doc=(
         "Run argv (a non-empty list of strings; argv[0] searched on PATH) as a\n"
         "child process with NO shell, blocking until it exits.  Optional 2nd arg\n"
-        "= a string written to the child's stdin.  Returns THREE values:\n"
-        "exit-code (a negated signal number on POSIX signal-kill), captured\n"
-        "stdout string, captured stderr string.  cppScheme2/pyScheme extension."),
+        "= a string written to the child's stdin; optional 3rd arg = a timeout in\n"
+        "seconds (#f or omitted = no limit) after which the child is killed.\n"
+        "Returns THREE values: exit-code (a negated signal number on POSIX\n"
+        "signal-kill, or #f if it timed out), captured stdout, captured stderr.\n"
+        "cppScheme2/pyScheme extension."),
         category=CATEGORY)
 
     # Record plumbing: emitted by the Expander for (define-record-type ...).
