@@ -170,6 +170,47 @@ def _prim_make_environment(ctx, env, args, app_node):
     return make_environment(result)  # deliberately NOT frozen -> mutable
 
 
+def _prim_run_process(ctx, env, args, app_node):
+    # (run-process argv [stdin-string]) -> (values exit-code stdout stderr).
+    # argv is a non-empty list of strings (argv[0] = program, searched on PATH;
+    # direct exec, NO shell -> arguments verbatim and injection-safe).  Blocks until
+    # the child exits.  Optional 2nd arg = a string written to the child's stdin then
+    # EOF (#f or omitted = empty stdin).  Mirrors the cppScheme2 primitive (lockstep).
+    import subprocess
+    from pyscheme.AST import car, cdr, make_integer, make_multi_values, \
+        is_boolean, as_boolean
+    argv = []
+    cur = args[0]
+    while is_cons(cur):
+        head = car(cur)
+        if not is_string(head):
+            raise SchemeTypeError(
+                'run-process: argv elements must be strings', app_node)
+        argv.append(as_string(head))
+        cur = cdr(cur)
+    if len(argv) == 0:
+        raise SchemeTypeError(
+            'run-process: first argument must be a non-empty list of strings',
+            app_node)
+    stdin_data = None
+    if len(args) >= 2 and not (is_boolean(args[1]) and as_boolean(args[1]) is False):
+        if not is_string(args[1]):
+            raise SchemeTypeError(
+                'run-process: stdin argument must be a string or #f', app_node)
+        stdin_data = as_string(args[1]).encode('utf-8')
+    try:
+        # shell=False (default) -> direct exec, no /bin/sh or cmd.exe.
+        proc = subprocess.run(argv, input=stdin_data,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except (OSError, ValueError) as e:
+        raise SchemeTypeError('run-process: ' + str(e), app_node)
+    out = proc.stdout.decode('utf-8', errors='replace')
+    err = proc.stderr.decode('utf-8', errors='replace')
+    # proc.returncode is already a negated signal number on POSIX signal-kill.
+    return make_multi_values([make_integer(proc.returncode),
+                              make_string(out), make_string(err)])
+
+
 def _prim_make_record_type(ctx, env, args, app_node):
     # (%make-record-type 'name '(field-name ...))
     name_arg = args[0]
@@ -636,6 +677,16 @@ def register():
         "defines are isolated to it.  With library-specs it holds the union of\n"
         "their exports, not frozen.  Use with `eval` to run a program in\n"
         "isolation.  cppScheme2/pyScheme extension."),
+        category=CATEGORY)
+
+    register_primitive('run-process', (1, 2), _prim_run_process,
+                       usage='(run-process argv [stdin-string])',
+                       doc=(
+        "Run argv (a non-empty list of strings; argv[0] searched on PATH) as a\n"
+        "child process with NO shell, blocking until it exits.  Optional 2nd arg\n"
+        "= a string written to the child's stdin.  Returns THREE values:\n"
+        "exit-code (a negated signal number on POSIX signal-kill), captured\n"
+        "stdout string, captured stderr string.  cppScheme2/pyScheme extension."),
         category=CATEGORY)
 
     # Record plumbing: emitted by the Expander for (define-record-type ...).
