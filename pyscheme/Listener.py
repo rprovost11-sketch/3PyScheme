@@ -1803,9 +1803,24 @@ class Listener:
             return {'name': suite.get('_label', suite['name']), 'ok': False, 'npass': 0, 'nfail': 1,
                     'nxpass': 0, 'note': 'no (run ...) in registry'}
         cwd = self._suite_abspath(suite['cwd'])
-        interp_cmd = 'python -m pyscheme'      # {interp} for this port
-        argv = [a.replace('{interp}', interp_cmd) for a in suite['run']]
-        if '/' in argv[0] or '\\' in argv[0]:  # relative program -> resolve vs cwd
+        # {interp} = this port's launch invocation.  In the PROGRAM slot (run[0])
+        # it must expand to MULTIPLE argv tokens -- argv is spawned as a list, so
+        # a single "python -m pyscheme" string is not a findable executable (that
+        # was the WinError 2 a suite like `(run "{interp}" ...)` hit).  Splice the
+        # real launch there.  In an ARGUMENT slot {interp} is a string handed to
+        # another program (e.g. a shell wrapper) that re-splits it itself, so keep
+        # it joined as before.
+        run = suite['run']
+        argv = []
+        spliced_program = False
+        for idx, tok in enumerate(run):
+            if tok == '{interp}' and idx == 0:
+                argv.extend([sys.executable, '-m', 'pyscheme'])
+                spliced_program = True
+            else:
+                argv.append(tok.replace('{interp}', 'python -m pyscheme'))
+        if not spliced_program and ('/' in argv[0] or '\\' in argv[0]):
+            # a relative program path (e.g. a wrapper script) -> resolve vs cwd
             argv[0] = os.path.normpath(os.path.join(cwd, argv[0]))
         env = dict(os.environ)
         pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
