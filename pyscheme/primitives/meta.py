@@ -170,6 +170,16 @@ def _prim_make_environment(ctx, env, args, app_node):
     return make_environment(result)  # deliberately NOT frozen -> mutable
 
 
+def _prim_interpreter_argv(ctx, env, args, app_node):
+    # (interpreter-argv) -> the argv list (of strings) that relaunches THIS
+    # interpreter, for spawning self / sibling interpreters via run-process.
+    # pyScheme launches as `python -m pyscheme`; a LIST keeps parity with the
+    # cppScheme2 primitive (whose list is a single exe path).  Mirrors cppScheme2.
+    import sys
+    return list_from_items([make_string(sys.executable),
+                            make_string('-m'), make_string('pyscheme')])
+
+
 def _prim_run_process(ctx, env, args, app_node):
     # (run-process argv [stdin-string]) -> (values exit-code stdout stderr).
     # argv is a non-empty list of strings (argv[0] = program, searched on PATH;
@@ -677,6 +687,15 @@ def register():
         "defines are isolated to it.  With library-specs it holds the union of\n"
         "their exports, not frozen.  Use with `eval` to run a program in\n"
         "isolation.  cppScheme2/pyScheme extension."),
+        category=CATEGORY)
+
+    register_primitive('interpreter-argv', (0, 0), _prim_interpreter_argv,
+                       usage='(interpreter-argv)',
+                       doc=(
+        "Return the argv list (of strings) that relaunches THIS interpreter, for\n"
+        "spawning self / sibling interpreters via run-process.  pyScheme:\n"
+        "(python -m pyscheme); cppScheme2: a one-element list (the exe path).\n"
+        "cppScheme2/pyScheme extension."),
         category=CATEGORY)
 
     register_primitive('run-process', (1, 2), _prim_run_process,

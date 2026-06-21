@@ -18,15 +18,10 @@ fi
 
 fail() { echo "pre-push: $1 -- push BLOCKED (use --no-verify to override)" >&2; exit 1; }
 
-echo "pre-push: pyScheme fast subset (feature + regression)..."
-out="$(printf ']suites feature regression\n' | python -m pyscheme -T "$TESTS" 2>&1)"
-echo "$out" | grep -E 'passed|FAIL' | tail -4
+echo "pre-push: pyScheme fast subset (feature + regression + cli-tests)..."
+out="$(printf ']suites feature regression cli-tests\n' | python -m pyscheme -T "$TESTS" 2>&1)"
+echo "$out" | grep -E 'passed|FAIL|cli-tests' | tail -5
 echo "$out" | grep -q 'ALL SUITES PASSED' || fail "suite failure"
-
-echo "pre-push: cli-tests..."
-cli="$(PYTHONPATH="$REPO" sh "$TESTS/cli-tests/run.sh" "python -m pyscheme" 2>&1)"
-echo "$cli" | tail -1
-echo "$cli" | grep -q '0 failed' || fail "cli-tests failure"
 
 echo "pre-push: OK"
 exit 0

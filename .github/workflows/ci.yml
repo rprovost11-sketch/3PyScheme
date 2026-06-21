@@ -28,22 +28,15 @@ jobs:
           path: scheme-tests
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - name: Fast subset (feature + regression)
+      - name: Fast subset (feature + regression + cli-tests)
         shell: bash
         working-directory: 3PyScheme
         run: |
-          out="$(printf ']suites feature regression\n' | python -m pyscheme -T ../scheme-tests 2>&1)"
-          echo "$out" | tail -5
+          out="$(printf ']suites feature regression cli-tests\n' | python -m pyscheme -T ../scheme-tests 2>&1)"
+          echo "$out" | tail -6
           if ! echo "$out" | grep -q 'ALL SUITES PASSED'; then
             echo "$out"; find "$GITHUB_WORKSPACE" -name '*.run' -exec cat {} +; echo '::error::fast subset failed'; exit 1
           fi
-      - name: CLI / process-boundary tests
-        shell: bash
-        env: { SCHEME_TESTS_DIR: '${{ github.workspace }}/scheme-tests' }
-        run: |
-          out="$(PYTHONPATH=3PyScheme sh scheme-tests/cli-tests/run.sh 'python -m pyscheme' 2>&1)"
-          echo "$out" | tail -3
-          echo "$out" | grep -q '0 failed' || { echo '::error::cli-tests failed'; exit 1; }
 
   full:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
