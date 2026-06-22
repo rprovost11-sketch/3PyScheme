@@ -170,6 +170,25 @@ def _prim_make_environment(ctx, env, args, app_node):
     return make_environment(result)  # deliberately NOT frozen -> mutable
 
 
+def _prim_make_toplevel_environment(ctx, env, args, app_node):
+    # (make-toplevel-environment) -> a fresh MUTABLE env that is its OWN global:
+    # like make-environment (a CHILD of the global, so every inherited binding --
+    # incl. builtins reached via the parent chain such as `apply` -- is visible and
+    # new defines stay isolated), but rerooted so getGlobalEnv() returns IT.  Hence
+    # code run in it sees IT as (interaction-environment).  Matches a freshly
+    # rebooted interpreter's global env; used by the interpreter differ's host runner
+    # so meta-circular tests -- e.g. (define x 1) then (eval 'x
+    # (interaction-environment)) -- resolve against the SAME env, like the .log
+    # runner.  cppScheme2/pyScheme extension.
+    from pyscheme.Environment import Environment
+    g = env.getGlobalEnv()
+    fresh = Environment(parent=g)            # child of global: chain (apply ...) + isolation
+    for sid, val in g._bindings.items():
+        fresh.bind(symbol_name(sid), val)    # copy so help/apropos can introspect
+    fresh._global_env = fresh                 # but is its own global
+    return make_environment(fresh)
+
+
 def _prim_directory_files(ctx, env, args, app_node):
     # (directory-files path) -> sorted list of the bare entry names in PATH,
     # excluding "." and ".." (os.listdir already does; dotfiles kept).  Models
@@ -870,6 +889,19 @@ def register():
         "defines are isolated to it.  With library-specs it holds the union of\n"
         "their exports, not frozen.  Use with `eval` to run a program in\n"
         "isolation.  cppScheme2/pyScheme extension."),
+        category=CATEGORY)
+
+    register_primitive('make-toplevel-environment', (0, 0),
+                       _prim_make_toplevel_environment,
+                       usage='(make-toplevel-environment)',
+                       doc=(
+        "Return a fresh MUTABLE environment that is its OWN global -- like\n"
+        "make-environment but self-rooted, so code run in it sees IT as\n"
+        "(interaction-environment).  Populated with every current global top-level\n"
+        "binding, so all builtins are present.  Equivalent to a freshly rebooted\n"
+        "interpreter's global env; used by the interpreter differ's host runner so\n"
+        "meta-circular tests resolve against the same env.  cppScheme2/pyScheme\n"
+        "extension."),
         category=CATEGORY)
 
     register_primitive('directory-files', (1, 1), _prim_directory_files,
