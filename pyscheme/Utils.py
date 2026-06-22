@@ -215,3 +215,122 @@ def writeln_multiFile(outputString, fileList, flush=False):
     while i < len(fileList):
         print(outputString, end='\n', flush=flush, file=fileList[i])
         i = i + 1
+
+
+# --- session-log parsing + match semantics -----------------------------
+#
+# A second, free-standing implementation of the .log parser and the test
+# match semantics, used to back the (parse-log-file ...) and (log-match? ...)
+# primitives (and through them the Scheme-side universal interpreter differ,
+# which treats a .log file as a reference interpreter).  The Listener keeps
+# its OWN copy (Listener._parse_log / _match_retval / the test runner) for the
+# in-process harness; these are deliberately independent so differ work does
+# not disturb the existing harness.  The two must stay behaviourally identical.
+
+
+def parse_log(text):
+    """Parse a session log into a list of 5-tuples
+    (expr, output, retval, error, fold_case).
+
+    Each entry begins with a '>>> ' line; '... ' lines continue the
+    expression.  Lines before '==> ' (with no marker) are output; '==> '
+    gives the return value, '%%% ' the error message.  '#!fold-case' /
+    '#!no-fold-case' directives toggle case folding for following entries."""
+    lines = text.splitlines(keepends=True)
+    entries = []
+    idx = 0
+    n = len(lines)
+    fold_case = False
+    while idx < n:
+        while idx < n and not lines[idx].startswith('>>> '):
+            stripped = lines[idx].rstrip()
+            if stripped == '#!fold-case':
+                fold_case = True
+            elif stripped == '#!no-fold-case':
+                fold_case = False
+            idx = idx + 1
+        if idx >= n:
+            break
+        entry_fold_case = fold_case
+        expr = lines[idx][4:]
+        output = ''
+        retval = ''
+        error = ''
+        idx = idx + 1
+        while idx < n and lines[idx].startswith('... '):
+            expr = expr + lines[idx][4:]
+            idx = idx + 1
+        if idx < n and lines[idx].rstrip() == '...' and not lines[idx].startswith('... '):
+            idx = idx + 1
+        while idx < n:
+            line = lines[idx]
+            if line.startswith('==> ') or line.rstrip() == '==>':
+                break
+            if line.startswith('... ') or line.startswith('>>> ') or line.startswith('%%% '):
+                break
+            output = output + line
+            idx = idx + 1
+        if idx < n and (lines[idx].startswith('==> ') or lines[idx].rstrip() == '==>'):
+            line = lines[idx]
+            if len(line) > 4:
+                retval = line[4:]
+            idx = idx + 1
+            while idx < n:
+                line = lines[idx]
+                if line.startswith('==> ') or line.rstrip() == '==>':
+                    break
+                if line.startswith('... ') or line.startswith('>>> ') or line.startswith('%%% '):
+                    break
+                if line.startswith('#!'):
+                    break  # fold-case directive
+                if line.startswith(';'):
+                    expr = expr + line
+                else:
+                    retval = retval + line
+                idx = idx + 1
+        if idx < n and lines[idx].startswith('%%% '):
+            error = lines[idx][4:]
+            idx = idx + 1
+            while idx < n and lines[idx].startswith('%%% '):
+                error = error + lines[idx][4:]
+                idx = idx + 1
+        if expr:
+            entries.append(
+                (expr, output.rstrip(), retval.rstrip(), error.rstrip(), entry_fold_case))
+    return entries
+
+
+def match_retval(actual, expected):
+    """True if actual matches expected, honouring 'X or ==> Y' alternatives."""
+    if ' or ==> ' in expected:
+        parts = expected.split(' or ==> ')
+        i = 0
+        while i < len(parts):
+            if actual == parts[i].strip():
+                return True
+            i = i + 1
+        return False
+    return actual == expected
+
+
+def log_match(expected_output, expected_retval, expected_error,
+              actual_output, actual_retval, actual_error, timed_out):
+    """Apply the .log test match semantics, returning the triple
+    (output_ok, retval_ok, error_ok).
+
+    '%%% *' / '%%% %any-error%' accept any raised error; '%%% %optional-error%'
+    models R7RS 'it is an error' (passes whether or not an error is raised); a
+    timeout always fails."""
+    expected_output = expected_output.rstrip()
+    actual_output = actual_output.rstrip()
+    if timed_out:
+        return (False, False, False)
+    if expected_error.startswith('%optional-error%'):
+        return (True, True, True)
+    if expected_error == '*' or expected_error.startswith('%any-error%'):
+        error_ok = bool(actual_error)
+    else:
+        error_ok = actual_error == expected_error
+    retval_ok = match_retval(actual_retval, expected_retval)
+    output_ok = actual_output == expected_output
+    return (output_ok, retval_ok, error_ok)

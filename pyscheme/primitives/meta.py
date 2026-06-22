@@ -250,6 +250,63 @@ def _prim_run_process(ctx, env, args, app_node):
                               make_string(out), make_string(err)])
 
 
+def _prim_parse_log_file(ctx, env, args, app_node):
+    # (parse-log-file path) -> a list of entries parsed from the .log session-log
+    # file at PATH.  Each entry is a 5-element list
+    #   (input output retval error fold-case?)
+    # the four strings recorded for one REPL cycle plus a fold-case boolean.
+    # Treats a .log file as a reference interpreter for the Scheme-side universal
+    # interpreter differ.  cppScheme2/pyScheme extension.
+    from pyscheme import Utils
+    if not is_string(args[0]):
+        raise SchemeTypeError(
+            'parse-log-file: argument must be a string', app_node)
+    path = as_string(args[0])
+    try:
+        f = open(path, 'r', encoding='utf-8')
+        try:
+            text = f.read()
+        finally:
+            f.close()
+    except OSError as e:
+        raise SchemeTypeError('parse-log-file: ' + str(e), app_node)
+    entries = Utils.parse_log(text)
+    result = []
+    i = 0
+    while i < len(entries):
+        expr, output, retval, error, fold_case = entries[i]
+        result.append(list_from_items([
+            make_string(expr), make_string(output), make_string(retval),
+            make_string(error), make_boolean(fold_case)]))
+        i = i + 1
+    return list_from_items(result)
+
+
+def _prim_log_match_p(ctx, env, args, app_node):
+    # (log-match? exp-output exp-retval exp-error
+    #             act-output act-retval act-error timed-out?)
+    # -> #t if the actual output/return/error match the expected (golden) ones
+    # under the .log test match semantics: '==> X or ==> Y' return alternatives;
+    # '%%% *'/'%%% %any-error%' accept any raised error; '%%% %optional-error%'
+    # models R7RS "it is an error" (passes whether or not an error is raised); a
+    # true TIMED-OUT? always fails.  Backs reference-mode comparison in the
+    # interpreter differ.  cppScheme2/pyScheme extension.
+    from pyscheme import Utils
+    from pyscheme.AST import is_boolean, as_boolean
+    i = 0
+    while i < 6:
+        if not is_string(args[i]):
+            raise SchemeTypeError(
+                'log-match?: arguments 1-6 must be strings', app_node)
+        i = i + 1
+    # Scheme truthiness: only #f is false.
+    timed_out = not (is_boolean(args[6]) and not as_boolean(args[6]))
+    output_ok, retval_ok, error_ok = Utils.log_match(
+        as_string(args[0]), as_string(args[1]), as_string(args[2]),
+        as_string(args[3]), as_string(args[4]), as_string(args[5]), timed_out)
+    return make_boolean(output_ok and retval_ok and error_ok)
+
+
 def _prim_make_record_type(ctx, env, args, app_node):
     # (%make-record-type 'name '(field-name ...))
     name_arg = args[0]
@@ -746,6 +803,29 @@ def register():
         "Returns THREE values: exit-code (a negated signal number on POSIX\n"
         "signal-kill, or #f if it timed out), captured stdout, captured stderr.\n"
         "cppScheme2/pyScheme extension."),
+        category=CATEGORY)
+
+    register_primitive('parse-log-file', (1, 1), _prim_parse_log_file,
+                       usage='(parse-log-file path)',
+                       doc=(
+        "Parse the .log session-log file at PATH into a list of entries.  Each\n"
+        "entry is a 5-element list (input output retval error fold-case?): the\n"
+        "input expression, recorded output, return value and error message\n"
+        "(strings) for one REPL cycle, plus a fold-case boolean.  Treats a .log\n"
+        "file as a reference interpreter for the universal interpreter differ.\n"
+        "cppScheme2/pyScheme extension."),
+        category=CATEGORY)
+
+    register_primitive('log-match?', (7, 7), _prim_log_match_p,
+                       usage='(log-match? exp-output exp-retval exp-error '
+                             'act-output act-retval act-error timed-out?)',
+                       doc=(
+        "Return #t if the actual output/return/error (args 4-6) match the\n"
+        "expected golden ones (args 1-3) under the .log test match semantics:\n"
+        "'==> X or ==> Y' return alternatives; '%%% *' / '%%% %any-error%'\n"
+        "accept any raised error; '%%% %optional-error%' models R7RS \"it is an\n"
+        "error\" (passes either way); a true TIMED-OUT? always fails.  Args 1-6\n"
+        "are strings.  cppScheme2/pyScheme extension."),
         category=CATEGORY)
 
     # Record plumbing: emitted by the Expander for (define-record-type ...).
