@@ -307,6 +307,103 @@ def _prim_log_match_p(ctx, env, args, app_node):
     return make_boolean(output_ok and retval_ok and error_ok)
 
 
+def _prim_eval_cycle(ctx, env, args, app_node):
+    # (eval-cycle input env [timeout-secs]) -> (values output retval error timed-out?)
+    # Evaluate INPUT as ONE REPL cycle in ENV (a make-environment env; state persists
+    # across cycles), capturing exactly what the .log test runner captures: stdout, the
+    # REPL-formatted return value (write form; void -> ""; multiple values space-joined),
+    # and -- on error -- the SAME formatted error text the runner records (via
+    # Listener._format_error).  Optional 3rd arg = a timeout in seconds (#f/omitted =
+    # none).  Host port's in-process live runner for the interpreter differ; it shares
+    # the runner's parse/expand/eval/format path so results are byte-identical (analyze
+    # is a checking pass cek_eval does not need, mirroring eval).  cppScheme2/pyScheme ext.
+    import io
+    import time
+    from pyscheme.AST import (is_environment, as_environment, is_void,
+                              is_multi_values, as_multi_values_list, is_real, as_real,
+                              is_boolean, as_boolean, make_multi_values, src_of)
+    from pyscheme.Parser import parse
+    from pyscheme.Expander import expand
+    from pyscheme.Evaluator import cek_eval
+    from pyscheme.Analyzer import (analyze, extend_static_env_with_define,
+                                   PRIMITIVE_ARITIES)
+    from pyscheme.PrettyPrinter import pretty_print
+    from pyscheme.Environment import ReplExit, SchemeRuntimeError
+    from pyscheme.Listener import Listener
+    if not is_string(args[0]):
+        raise SchemeTypeError('eval-cycle: first argument must be a string', app_node)
+    if not is_environment(args[1]):
+        raise SchemeTypeError(
+            'eval-cycle: second argument must be an environment', app_node)
+    target = as_environment(args[1])
+    source = as_string(args[0])
+    timeout = None
+    if len(args) >= 3 and not (is_boolean(args[2]) and not as_boolean(args[2])):
+        if not (is_integer(args[2]) or is_real(args[2])):
+            raise SchemeTypeError(
+                'eval-cycle: timeout must be a number of seconds or #f', app_node)
+        timeout = as_real(args[2]) if is_real(args[2]) else as_integer(args[2])
+
+    # eval-cycle runs NESTED inside the differ's own evaluation, so save every bit of
+    # ctx we transiently repurpose and restore it afterwards (mirrors Interpreter.rawEval).
+    prev_out = ctx.outStrm
+    prev_deadline = ctx.timeout_at
+    saved_shadow = list(ctx.shadow_stack)
+    saved_handlers = list(ctx.handler_stack)
+    out_capture = io.StringIO()
+    ctx.outStrm = out_capture
+    ctx.shadow_stack.clear()
+    if timeout is not None:
+        ctx.timeout_at = time.monotonic() + timeout
+
+    retval = ''
+    errstr = ''
+    timed_out = False
+    form = None
+    try:
+        forms = parse(source, None)
+        # Mirror Interpreter.rawEval: analyze (a checking pass -- its result is
+        # discarded; cek_eval runs the un-analyzed form) then accumulate user defines
+        # so cross-form arity checks fire, exactly as the .log runner does.  The static
+        # env is seeded with the primitive/special-form arities.
+        senv = dict(PRIMITIVE_ARITIES)
+        last = None
+        have = False
+        i = 0
+        while i < len(forms):
+            form = forms[i]
+            expanded = expand(form)
+            analyze(expanded, senv)
+            extend_static_env_with_define(senv, expanded)
+            last = cek_eval(expanded, target, ctx)
+            have = True
+            i = i + 1
+        if have and last is not None and not is_void(last):
+            if is_multi_values(last):
+                retval = ' '.join(pretty_print(v)
+                                  for v in as_multi_values_list(last))
+            else:
+                retval = pretty_print(last)
+    except ReplExit:
+        errstr = '(exit)'
+    except RecursionError:
+        errstr = Listener._format_error(
+            SchemeRuntimeError('recursion depth exceeded', src_of(form)))
+    except Exception as e:
+        errstr = Listener._format_error(e)
+        if 'Evaluation timed out.' in errstr:
+            timed_out = True
+    finally:
+        ctx.outStrm = prev_out
+        ctx.timeout_at = prev_deadline
+        ctx.shadow_stack[:] = saved_shadow
+        ctx.handler_stack[:] = saved_handlers
+
+    return make_multi_values([make_string(out_capture.getvalue().rstrip()),
+                              make_string(retval), make_string(errstr),
+                              make_boolean(timed_out)])
+
+
 def _prim_make_record_type(ctx, env, args, app_node):
     # (%make-record-type 'name '(field-name ...))
     name_arg = args[0]
@@ -826,6 +923,20 @@ def register():
         "accept any raised error; '%%% %optional-error%' models R7RS \"it is an\n"
         "error\" (passes either way); a true TIMED-OUT? always fails.  Args 1-6\n"
         "are strings.  cppScheme2/pyScheme extension."),
+        category=CATEGORY)
+
+    register_primitive('eval-cycle', (2, 3), _prim_eval_cycle,
+                       usage='(eval-cycle input env [timeout-secs])',
+                       doc=(
+        "Evaluate the Scheme source string INPUT as one REPL cycle in environment\n"
+        "ENV (typically a make-environment env; state persists across cycles).\n"
+        "Returns FOUR values: captured standard output, the REPL-formatted return\n"
+        "value (write form; void -> \"\"; multiple values space-joined), the\n"
+        "formatted error text (exception class + source location + message, exactly\n"
+        "as the .log test runner records it) or \"\" if none, and a timed-out?\n"
+        "boolean.  Optional 3rd arg = a timeout in seconds (#f or omitted = none).\n"
+        "The host port's in-process live runner for the interpreter differ.\n"
+        "cppScheme2/pyScheme extension."),
         category=CATEGORY)
 
     # Record plumbing: emitted by the Expander for (define-record-type ...).
