@@ -41,7 +41,7 @@ from pyscheme.Listener import Listener
 
 
 _USAGE = ('Usage: python -m pyscheme [-L <dir%s...>] [-I <dir>]... '
-          '[-T <scheme-tests-dir>] [-e <expr>]... '
+          '[-T <scheme-tests-dir>] [-e <expr>]... [--no-rc] '
           '[<directory> | <scheme-source-file>]' % os.pathsep)
 
 
@@ -60,6 +60,7 @@ def _parse_args(argv):
     target = None
     eval_exprs = None
     scheme_tests = None
+    no_rc = False
 
     def _fail(msg):
         print('pyscheme: ' + msg, file=sys.stderr)
@@ -123,6 +124,9 @@ def _parse_args(argv):
         elif a.startswith('--scheme-tests='):
             scheme_tests = a[len('--scheme-tests='):]
             i += 1
+        elif a == '--no-rc':
+            no_rc = True
+            i += 1
         elif a == '-' or not a.startswith('-'):
             if target is not None:
                 _fail('unexpected extra argument: ' + a)
@@ -134,7 +138,7 @@ def _parse_args(argv):
     if eval_exprs is not None and target is not None:
         _fail('-e/--evaluate cannot be combined with a file or directory')
 
-    return library_paths, target, eval_exprs, scheme_tests
+    return library_paths, target, eval_exprs, scheme_tests, no_rc
 
 
 def main():
@@ -153,7 +157,7 @@ def main():
         except (AttributeError, ValueError):
             pass
 
-    library_paths, target, eval_exprs, scheme_tests_cli = _parse_args(sys.argv[1:])
+    library_paths, target, eval_exprs, scheme_tests_cli, no_rc = _parse_args(sys.argv[1:])
 
     # Resolve the scheme-tests root: the -T/--scheme-tests option overrides the
     # SCHEME_TESTS_DIR environment variable; the ]scheme-tests listener command
@@ -169,7 +173,7 @@ def main():
         scheme_tests_dir = None
         scheme_tests_source = 'unset'
 
-    interp = Interpreter(library_paths=library_paths)
+    interp = Interpreter(library_paths=library_paths, load_rc=not no_rc)
 
     # -e/--evaluate: evaluate each expression as a REPL transcript, then exit.
     # The banner is suppressed so the first line is the '>>> ' echo.

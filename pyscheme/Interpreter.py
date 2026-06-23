@@ -40,7 +40,7 @@ from pyscheme.Expander import set_runtime_env
 
 
 class Interpreter(InterpreterBase):
-    def __init__(self, library_paths=None):
+    def __init__(self, library_paths=None, load_rc=True):
         # Extra library search-path directories from the command line
         # (-L / -I), prepended to SCHEME_LIBRARY_PATH when the global
         # current-library-path parameter is built in reboot().
@@ -52,7 +52,10 @@ class Interpreter(InterpreterBase):
         self._ctx.tracer = tracer
         tracer._ctx = self._ctx
         self._wire_ctx_leval()
-        self.reboot()
+        # load_rc=False (the --no-rc CLI flag) boots a pristine global with no
+        # ~/.pyschemerc -- the same state the .log test runner reboots into, so a
+        # subprocess interpreter can run the golden battery without rc pollution.
+        self.reboot(load_rc=load_rc)
 
     def _wire_ctx_leval(self):
         """Bind ctx.lEval to a callable (env, expr) -> Value using this context."""
