@@ -326,6 +326,30 @@ def _prim_log_match_p(ctx, env, args, app_node):
     return make_boolean(output_ok and retval_ok and error_ok)
 
 
+def _prim_log_match_detail(ctx, env, args, app_node):
+    # (log-match-detail exp-output exp-retval exp-error
+    #                   act-output act-retval act-error timed-out?)
+    # -> the 3-element list (output-ok? retval-ok? error-ok?) of per-channel match
+    # results under the SAME .log semantics as log-match? (which is their AND).  Lets
+    # the interpreter differ name WHICH channel diverged, so it can emit a per-channel
+    # .run report like the listener's own runner.  cppScheme2/pyScheme extension.
+    from pyscheme import Utils
+    from pyscheme.AST import is_boolean, as_boolean
+    i = 0
+    while i < 6:
+        if not is_string(args[i]):
+            raise SchemeTypeError(
+                'log-match-detail: arguments 1-6 must be strings', app_node)
+        i = i + 1
+    timed_out = not (is_boolean(args[6]) and not as_boolean(args[6]))
+    output_ok, retval_ok, error_ok = Utils.log_match(
+        as_string(args[0]), as_string(args[1]), as_string(args[2]),
+        as_string(args[3]), as_string(args[4]), as_string(args[5]), timed_out)
+    return list_from_items([make_boolean(output_ok),
+                            make_boolean(retval_ok),
+                            make_boolean(error_ok)])
+
+
 def _prim_eval_cycle(ctx, env, args, app_node):
     # (eval-cycle input env [timeout-secs]) -> (values output retval error timed-out?)
     # Evaluate INPUT as ONE REPL cycle in ENV (a make-environment env; state persists
@@ -955,6 +979,16 @@ def register():
         "accept any raised error; '%%% %optional-error%' models R7RS \"it is an\n"
         "error\" (passes either way); a true TIMED-OUT? always fails.  Args 1-6\n"
         "are strings.  cppScheme2/pyScheme extension."),
+        category=CATEGORY)
+
+    register_primitive('log-match-detail', (7, 7), _prim_log_match_detail,
+                       usage='(log-match-detail exp-output exp-retval exp-error '
+                             'act-output act-retval act-error timed-out?)',
+                       doc=(
+        "Like log-match?, but return the per-channel list (output-ok? retval-ok?\n"
+        "error-ok?) instead of their AND, so a caller can report WHICH channel\n"
+        "diverged (e.g. a per-channel .run report).  Same .log match semantics and\n"
+        "string arguments.  cppScheme2/pyScheme extension."),
         category=CATEGORY)
 
     register_primitive('eval-cycle', (2, 3), _prim_eval_cycle,
