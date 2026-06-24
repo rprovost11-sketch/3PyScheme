@@ -1190,7 +1190,7 @@ class Listener:
                 os.makedirs(runsDir, exist_ok=True)
                 timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
                 runFilename = os.path.join(
-                    runsDir, timestamp + '-PyScheme.run')
+                    runsDir, timestamp + '-PyScheme-' + self._version + '.run')
                 runFile = open(runFilename, 'w', encoding='utf-8')
             except OSError:
                 runFile = None
@@ -1518,7 +1518,7 @@ class Listener:
                 os.makedirs(runsDir, exist_ok=True)
                 timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
                 shared_filename = os.path.join(
-                    runsDir, timestamp + '-' + tag + '.run')
+                    runsDir, timestamp + '-' + tag + '-' + self._version + '.run')
                 self._shared_run_file = open(shared_filename, 'w',
                                              encoding='utf-8')
                 self._shared_run_filename = shared_filename
