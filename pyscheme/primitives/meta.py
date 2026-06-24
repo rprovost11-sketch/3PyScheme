@@ -204,6 +204,24 @@ def _prim_directory_files(ctx, env, args, app_node):
     return list_from_items([make_string(n) for n in names])
 
 
+def _prim_create_directory(ctx, env, args, app_node):
+    # (create-directory path) -> create PATH and any missing parent dirs;
+    # idempotent (no error if it already exists).  Mirrors the runner's
+    # os.makedirs(exist_ok=True) so a pure-Scheme test (e.g. the differ) can make
+    # its own output dir -- the differ's runs/ -- without depending on the runner.
+    # Returns unspecified.  Deliberately NOT SRFI 170 create-directory (which
+    # errors if the dir exists and does not create parents).
+    import os
+    if not is_string(args[0]):
+        raise SchemeTypeError(
+            'create-directory: argument must be a string', app_node)
+    try:
+        os.makedirs(as_string(args[0]), exist_ok=True)
+    except OSError as e:
+        raise SchemeTypeError('create-directory: ' + str(e), app_node)
+    return VOID_VALUE
+
+
 def _prim_interpreter_argv(ctx, env, args, app_node):
     # (interpreter-argv) -> the argv list (of strings) that relaunches THIS
     # interpreter, for spawning self / sibling interpreters via run-process.
@@ -212,6 +230,15 @@ def _prim_interpreter_argv(ctx, env, args, app_node):
     import sys
     return list_from_items([make_string(sys.executable),
                             make_string('-m'), make_string('pyscheme')])
+
+
+def _prim_interpreter_version(ctx, env, args, app_node):
+    # (interpreter-version) -> the version string of THIS interpreter (pyScheme's
+    # __version__, lockstep with cppScheme2's CPPSCHEME2_VERSION).  Lets a Scheme
+    # test stamp the interpreter version into an artifact -- e.g. the differ's .run
+    # report filename -- parallel to interpreter-argv.
+    from pyscheme import __version__
+    return make_string(__version__)
 
 
 def _prim_run_process(ctx, env, args, app_node):
@@ -937,6 +964,16 @@ def register():
         "Models SRFI 170 directory-files.  cppScheme2/pyScheme extension."),
         category=CATEGORY)
 
+    register_primitive('create-directory', (1, 1), _prim_create_directory,
+                       usage='(create-directory path)',
+                       doc=(
+        "Create directory PATH and any missing parent dirs; idempotent (no error\n"
+        "if it already exists).  Mirrors the runner's create_directories so a\n"
+        "pure-Scheme test can make its own output dir (e.g. the differ's runs/).\n"
+        "Returns unspecified.  cppScheme2/pyScheme extension (cf. SRFI 170, whose\n"
+        "create-directory errors if the dir exists)."),
+        category=CATEGORY)
+
     register_primitive('interpreter-argv', (0, 0), _prim_interpreter_argv,
                        usage='(interpreter-argv)',
                        doc=(
@@ -945,6 +982,14 @@ def register():
         "(python -m pyscheme); cppScheme2: a one-element list (the exe path).\n"
         "cppScheme2/pyScheme extension."),
         category=CATEGORY)
+
+    register_primitive('interpreter-version', (0, 0), _prim_interpreter_version,
+                       usage='(interpreter-version)',
+                       doc=(
+        "Return the version string of THIS interpreter (e.g. \"0.8.1\"), so a\n"
+        "test can stamp it into an artifact such as the differ's .run report\n"
+        "filename.  cppScheme2/pyScheme extension; kept lockstep across ports."),
+                       category=CATEGORY)
 
     register_primitive('run-process', (1, 3), _prim_run_process,
                        usage='(run-process argv [stdin-string [timeout-secs]])',
