@@ -887,8 +887,14 @@ def cek_eval(expr, env, ctx=None):
     wind_depth_entry = len(ctx.wind_stack)
     handler_depth_entry = len(ctx.handler_stack)
     from pyscheme.Parser import SchemeSyntaxError
+    from pyscheme.Analyzer import SchemeAnalysisError
+    # SchemeAnalysisError is catchable too: a malformed form analyzed DURING
+    # evaluation (e.g. (eval '(lambda (1) 1) env), or a macro expanding to a bad
+    # form) should reach an in-scope guard, exactly as in cppScheme2 (whose guard
+    # catches all SchemeError).  Top-level program analyze errors are raised outside
+    # cek_eval and still abort, unchanged.
     _CATCHABLE = (SchemeRaised, SchemeTypeError, SchemeArityError,
-                  SchemeUnboundError, SchemeSyntaxError)
+                  SchemeUnboundError, SchemeSyntaxError, SchemeAnalysisError)
     try:
         return _cek_loop(expr, env, ctx)
     except _CATCHABLE as e:
@@ -1297,8 +1303,11 @@ def _cek_loop(expr, env, ctx):
     _enter_proc, so a continuation captured during handler execution
     sees the outer K-stack and not just the handler body's frames."""
     from pyscheme.Parser import SchemeSyntaxError
+    from pyscheme.Analyzer import SchemeAnalysisError
+    # See _CATCHABLE in cek_eval: an analyze error raised DURING evaluation must be
+    # routable to an in-scope guard handler (parity with cppScheme2).
     _CATCHABLE_LOCAL = (SchemeRaised, SchemeTypeError, SchemeArityError,
-                        SchemeUnboundError, SchemeSyntaxError)
+                        SchemeUnboundError, SchemeSyntaxError, SchemeAnalysisError)
     C = expr
     V = None
     E = env
