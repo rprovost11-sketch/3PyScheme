@@ -474,6 +474,104 @@ def _prim_eval_cycle(ctx, env, args, app_node):
                               make_boolean(timed_out)])
 
 
+def _prim_checked_eval(ctx, env, args, app_node):
+    # (checked-eval source env [timeout-secs]) -> (values output status payload)
+    # Evaluate the Scheme source string SOURCE in ENV through the EXACT checked
+    # pipeline the .log runner uses (parse -> expand -> analyze -> cek_eval, with
+    # cross-form static-env accumulation).  Returns THREE values: captured standard
+    # output (verbatim; the caller right-strips it), the symbol ok or error, and a
+    # payload -- on ok the LIST of the last form's result value(s) (empty list if no
+    # forms / zero values), on error the runner-formatted error STRING (via
+    # Listener._format_error).  The error is captured HERE at the boundary (no
+    # intervening Scheme frames) and RETURNED rather than raised, so its text carries
+    # no propagation backtrace and is byte-identical to eval-cycle's.  The caller
+    # (scheme-eval-cycle) formats the value list and right-strips output; this shrinks
+    # the host primitive from "the whole REPL cycle" to "checked evaluation + raw
+    # capture".  Unlike plain eval it does not skip the analyze checking pass (and so
+    # does not crash on malformed special forms).  cppScheme2/pyScheme extension.
+    import io
+    import time
+    from pyscheme.AST import (is_environment, as_environment, is_real, as_real,
+                              is_boolean, as_boolean, is_void, is_multi_values,
+                              as_multi_values_list, make_multi_values, make_symbol,
+                              list_from_items, src_of, NIL_VALUE, VOID_VALUE)
+    from pyscheme.Parser import parse
+    from pyscheme.Expander import expand
+    from pyscheme.Evaluator import cek_eval
+    from pyscheme.Analyzer import (analyze, extend_static_env_with_define,
+                                   PRIMITIVE_ARITIES)
+    from pyscheme.Environment import ReplExit, SchemeRuntimeError
+    from pyscheme.Listener import Listener
+    if not is_string(args[0]):
+        raise SchemeTypeError('checked-eval: first argument must be a string', app_node)
+    if not is_environment(args[1]):
+        raise SchemeTypeError(
+            'checked-eval: second argument must be an environment', app_node)
+    target = as_environment(args[1])
+    source = as_string(args[0])
+    timeout = None
+    if len(args) >= 3 and not (is_boolean(args[2]) and not as_boolean(args[2])):
+        if not (is_integer(args[2]) or is_real(args[2])):
+            raise SchemeTypeError(
+                'checked-eval: timeout must be a number of seconds or #f', app_node)
+        timeout = as_real(args[2]) if is_real(args[2]) else as_integer(args[2])
+
+    # Capture EVERYTHING written to standard output (display AND primitives like
+    # help/trace that write straight to ctx.outStrm), exactly as eval-cycle does,
+    # by redirecting the output stream; save/restore what we repurpose.
+    prev_out = ctx.outStrm
+    prev_deadline = ctx.timeout_at
+    saved_shadow = list(ctx.shadow_stack)
+    saved_handlers = list(ctx.handler_stack)
+    out_capture = io.StringIO()
+    ctx.outStrm = out_capture
+    ctx.shadow_stack.clear()
+    if timeout is not None:
+        ctx.timeout_at = time.monotonic() + timeout
+
+    errstr = None
+    last = VOID_VALUE
+    have = False
+    form = None
+    try:
+        forms = parse(source, None)
+        senv = dict(PRIMITIVE_ARITIES)
+        i = 0
+        while i < len(forms):
+            form = forms[i]
+            expanded = expand(form)
+            analyze(expanded, senv)
+            extend_static_env_with_define(senv, expanded)
+            last = cek_eval(expanded, target, ctx)
+            have = True
+            i = i + 1
+    except ReplExit:
+        errstr = '(exit)'
+    except RecursionError:
+        errstr = Listener._format_error(
+            SchemeRuntimeError('recursion depth exceeded', src_of(form)))
+    except Exception as e:
+        errstr = Listener._format_error(e)
+    finally:
+        ctx.outStrm = prev_out
+        ctx.timeout_at = prev_deadline
+        ctx.shadow_stack[:] = saved_shadow
+        ctx.handler_stack[:] = saved_handlers
+
+    if errstr is not None:
+        status = make_symbol('error')
+        payload = make_string(errstr)
+    else:
+        status = make_symbol('ok')
+        if not have:
+            payload = NIL_VALUE
+        elif is_multi_values(last):
+            payload = list_from_items(list(as_multi_values_list(last)))
+        else:
+            payload = list_from_items([last])
+    return make_multi_values([make_string(out_capture.getvalue()), status, payload])
+
+
 def _prim_make_record_type(ctx, env, args, app_node):
     # (%make-record-type 'name '(field-name ...))
     name_arg = args[0]
@@ -1048,6 +1146,21 @@ def register():
         "boolean.  Optional 3rd arg = a timeout in seconds (#f or omitted = none).\n"
         "The host port's in-process live runner for the interpreter differ.\n"
         "cppScheme2/pyScheme extension."),
+        category=CATEGORY)
+
+    register_primitive('checked-eval', (2, 3), _prim_checked_eval,
+                       usage='(checked-eval source env [timeout-secs])',
+                       doc=(
+        "Evaluate the Scheme source string SOURCE in environment ENV through the\n"
+        "exact checked pipeline the .log runner uses (parse -> expand -> analyze ->\n"
+        "cek_eval, with cross-form static-env accumulation).  Returns THREE values:\n"
+        "captured standard output (verbatim), the symbol ok or error, and a payload\n"
+        "-- on ok the LIST of the last form's result value(s) (empty if no forms/zero\n"
+        "values), on error the runner-formatted error string (class + location +\n"
+        "message).  The error is captured at the boundary and RETURNED (not raised),\n"
+        "so its text carries no propagation backtrace.  The caller formats the value\n"
+        "list and right-strips output.  Unlike plain eval it does not skip the\n"
+        "analyze checking pass.  cppScheme2/pyScheme extension."),
         category=CATEGORY)
 
     # Record plumbing: emitted by the Expander for (define-record-type ...).
