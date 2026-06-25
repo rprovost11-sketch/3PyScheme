@@ -199,7 +199,8 @@ def register_standard_libraries(global_env):
                        ['command-line', 'emergency-exit', 'exit',
                         'get-environment-variable', 'get-environment-variables'])
     _register_filtered(global_env, 'scheme.time',
-                       ['current-jiffy', 'current-second', 'jiffies-per-second'])
+                       ['current-jiffy', 'current-second', 'jiffies-per-second',
+                        'local-timezone-offset'])
     _register_filtered(global_env, 'scheme.cxr',  _SCHEME_CXR_NAMES)
     _register_filtered(global_env, 'srfi.39',     _SRFI_39_NAMES)
 

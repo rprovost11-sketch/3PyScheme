@@ -983,6 +983,25 @@ def _prim_current_jiffy(ctx, env, args, app_node):
     return make_integer(int(_time.monotonic() * 1000))
 
 
+def _prim_local_timezone_offset(ctx, env, args, app_node):
+    # (local-timezone-offset [epoch-seconds]) -> integer seconds east of UTC for the
+    # local time zone at the given POSIX time (DST-aware), or now if omitted/#f.  The
+    # one host capability SRFI 19 needs that R7RS lacks; exported from (scheme time)
+    # so a define-library (e.g. (srfi 19)) can import it.  cppScheme2/pyScheme ext.
+    import time as _time
+    from pyscheme.AST import make_integer, is_real, as_real, is_boolean, as_boolean
+    if len(args) == 0 or (is_boolean(args[0]) and not as_boolean(args[0])):
+        t = _time.time()
+    elif is_integer(args[0]):
+        t = as_integer(args[0])
+    elif is_real(args[0]):
+        t = as_real(args[0])
+    else:
+        raise SchemeTypeError(
+            'local-timezone-offset: argument must be epoch seconds or #f', app_node)
+    return make_integer(_time.localtime(t).tm_gmtoff)
+
+
 def _prim_jiffies_per_second(ctx, env, args, app_node):
     from pyscheme.AST import make_integer
     return make_integer(1000)
@@ -1318,6 +1337,14 @@ def register():
                        doc=('(current-second) returns the current UTC time as an inexact '
                             'real (seconds since 1970-01-01T00:00:00Z).  '
                             'R7RS §6.14 / (scheme time).'),
+                       category=CATEGORY)
+
+    register_primitive('local-timezone-offset', (0, 1), _prim_local_timezone_offset,
+                       usage='(local-timezone-offset [epoch-seconds])',
+                       doc=('Return the local time zone offset east of UTC in integer '
+                            'seconds (DST-aware) at the given POSIX time (or now if '
+                            'omitted/#f).  The host capability SRFI 19 needs for local '
+                            'time; exported from (scheme time).  cppScheme2/pyScheme extension.'),
                        category=CATEGORY)
 
     register_primitive('current-jiffy', (0, 0), _prim_current_jiffy,
