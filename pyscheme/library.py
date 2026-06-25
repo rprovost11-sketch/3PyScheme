@@ -294,10 +294,13 @@ _SCHEME_BASE_NAMES = [
     'read-char', 'peek-char', 'read-line', 'read-string', 'char-ready?',
     'read-u8', 'peek-u8', 'u8-ready?', 'read-bytevector', 'read-bytevector!',
     'newline', 'write-char', 'write-string', 'write-u8', 'flush-output-port',
-    # define-record-type expands to these helper primitives; a library body that
-    # uses define-record-type needs them importable from (scheme base).
+    # Helper primitives that standard MACROS expand into as free references; a
+    # library body using these macros needs the helpers importable from (scheme
+    # base), else expansion fails with "unbound variable: %...".  define-record-type
+    # -> the %*record* set; guard -> %guard-eval; parameterize -> %with-parameters.
     '%make-record-type', '%make-record', '%make-record-accessor',
     '%make-record-mutator', '%record-of-type?', '%record-ref',
+    '%guard-eval', '%with-parameters',
     # Help
     'help', 'apropos',
 ]
