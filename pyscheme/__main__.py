@@ -157,6 +157,16 @@ def main():
         except (AttributeError, ValueError):
             pass
 
+    # stdin is Unicode too: a parent (e.g. run-process) writes the child's stdin
+    # as UTF-8, but on Windows Python decodes it with the console code page by
+    # default, so non-ASCII bytes (e.g. the UTF-8 of "λ") get mis-decoded and a
+    # subsequent (string->utf8 ...) re-encodes the mojibake.  Force UTF-8 here so
+    # the stdin transport is byte-faithful, matching cppScheme2.
+    try:
+        sys.stdin.reconfigure(encoding='utf-8')
+    except (AttributeError, ValueError):
+        pass
+
     library_paths, target, eval_exprs, scheme_tests_cli, no_rc = _parse_args(sys.argv[1:])
 
     # Resolve the scheme-tests root: the -T/--scheme-tests option overrides the
