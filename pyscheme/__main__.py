@@ -23,19 +23,22 @@ Both prepend to the SCHEME_LIBRARY_PATH environment variable; the current
 directory is searched first.  The combined list seeds the global
 current-library-path parameter.
 
-Test-suite location (no path is hardcoded):
+Test-suite location:
     -T <dir>  / --scheme-tests <dir>   root of the "scheme-tests" folder (the
-                       one containing log-tests/).  Overrides the
-                       SCHEME_TESTS_DIR environment variable.  At runtime the
-                       ]scheme-tests command overrides both.  If none is set, the
-                       test commands (]feature/]compliance/]regression/]suites)
-                       print how to set it instead of running.
+                       one containing log-tests/).  Overrides the default, which
+                       is the scheme-tests/ subdirectory of the shared
+                       pyscheme-cppscheme2-common directory (located via
+                       $SCHEME_COMMON_DIR, else a walk-up from the interpreter).
+                       At runtime the ]scheme-tests command overrides both.  If
+                       none resolves, the test commands (]feature/]compliance/
+                       ]regression/]suites) print how to set it instead of running.
 """
 import os
 import signal
 import sys
 
 from pyscheme import __version__
+from pyscheme.common_dir import common_subdir
 from pyscheme.Interpreter import Interpreter
 from pyscheme.Listener import Listener
 
@@ -169,19 +172,21 @@ def main():
 
     library_paths, target, eval_exprs, scheme_tests_cli, no_rc = _parse_args(sys.argv[1:])
 
-    # Resolve the scheme-tests root: the -T/--scheme-tests option overrides the
-    # SCHEME_TESTS_DIR environment variable; the ]scheme-tests listener command
-    # can override both at runtime.  Nothing is hardcoded -- if none is given,
-    # the test commands explain how to set it.
+    # Resolve the scheme-tests root: the -T/--scheme-tests option overrides; the
+    # ]scheme-tests listener command can override at runtime.  Otherwise it comes
+    # from the scheme-tests/ subdirectory of the shared pyscheme-cppscheme2-common
+    # directory.  If none resolves, the test commands explain how to set it.
     if scheme_tests_cli is not None:
         scheme_tests_dir = scheme_tests_cli
         scheme_tests_source = '--scheme-tests option'
-    elif os.environ.get('SCHEME_TESTS_DIR'):
-        scheme_tests_dir = os.environ['SCHEME_TESTS_DIR']
-        scheme_tests_source = 'SCHEME_TESTS_DIR env'
     else:
-        scheme_tests_dir = None
-        scheme_tests_source = 'unset'
+        common_tests = common_subdir('scheme-tests')
+        if common_tests is not None:
+            scheme_tests_dir = common_tests
+            scheme_tests_source = 'pyscheme-cppscheme2-common'
+        else:
+            scheme_tests_dir = None
+            scheme_tests_source = 'unset'
 
     interp = Interpreter(library_paths=library_paths, load_rc=not no_rc)
 
@@ -222,7 +227,7 @@ def main():
 def _build_listener(interp, scheme_tests_dir, scheme_tests_source,
                     show_banner=True):
     """Construct the Listener.  The scheme-tests root is supplied by the caller
-    (resolved from -T/--scheme-tests or $SCHEME_TESTS_DIR), not hardcoded; the
+    (resolved from -T/--scheme-tests or the shared common directory); the
     Listener derives the per-suite subdirectories from it."""
     return Listener(
         interp,

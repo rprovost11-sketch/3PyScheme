@@ -11,10 +11,10 @@
                         otherwise do an apropos-style substring search.
 (apropos <string>)    - print every global name containing the substring.
 
-Help topics are plain-text files stored in pyscheme/help/.  Each file
-name (without extension) is the topic name.  Subdirectories under help/
-partition the topics by section (e.g., tutorial/, reference/) which is
-reflected in the listing.
+Help topics are plain-text (.txt) or Markdown (.md) files stored in
+pyscheme/help/.  Each file name (without extension) is the topic name.
+Subdirectories under help/ partition the topics by section (e.g.,
+tutorial/, reference/, evaluator/) which is reflected in the listing.
 """
 
 import os
@@ -29,14 +29,17 @@ from pyscheme.AST import (
     VOID_VALUE,
 )
 from pyscheme.Environment import SchemeTypeError
+from pyscheme.common_dir import common_subdir
 
 
 CATEGORY = 'help_sys'
 
 
-HELP_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    'help')
+# help/ lives in the shared pyscheme-cppscheme2-common directory (single-sourced
+# with cppScheme2), not inside the pyscheme package.  Resolve it there; an empty
+# string when the common dir is absent makes the topic walk below report no
+# topics rather than raising.
+HELP_DIR = common_subdir('help') or ''
 
 
 # ---- layout helper ----------------------------------------------------
@@ -124,8 +127,19 @@ def _columnize(items, width=78):
 # ---- topic discovery (file-system walk) -------------------------------
 
 
+HELP_EXTS = ('.txt', '.md')
+
+
+def _help_stem(name):
+    """If `name` is a recognized help file, return its stem; else None."""
+    stem, ext = os.path.splitext(name)
+    if ext.lower() in HELP_EXTS:
+        return stem
+    return None
+
+
 def _scan_dir(root, section, topics):
-    """Recurse into root; add .txt files under it to topics[section]."""
+    """Recurse into root; add help files under it to topics[section]."""
     entries = os.listdir(root)
     i = 0
     while i < len(entries):
@@ -136,11 +150,12 @@ def _scan_dir(root, section, topics):
                 _scan_dir(full, name, topics)
             else:
                 _scan_dir(full, section, topics)
-        elif name.endswith('.txt'):
-            stem = os.path.splitext(name)[0]
-            if section not in topics:
-                topics[section] = []
-            topics[section].append(stem)
+        else:
+            stem = _help_stem(name)
+            if stem is not None:
+                if section not in topics:
+                    topics[section] = []
+                topics[section].append(stem)
         i = i + 1
 
 
@@ -166,16 +181,17 @@ def _find_topic_in_dir(root, lo_name):
             found = _find_topic_in_dir(full, lo_name)
             if found is not None:
                 return found
-        elif entry.endswith('.txt'):
-            stem = os.path.splitext(entry)[0]
-            if stem.lower() == lo_name:
+        else:
+            stem = _help_stem(entry)
+            if stem is not None and stem.lower() == lo_name:
                 return full
         i = i + 1
     return None
 
 
 def _find_topic(name):
-    """Look for a topic file named '<name>.txt' anywhere under HELP_DIR."""
+    """Look for a topic file named '<name>.txt' or '<name>.md' anywhere
+    under HELP_DIR."""
     if not os.path.isdir(HELP_DIR):
         return None
     return _find_topic_in_dir(HELP_DIR, name.lower())

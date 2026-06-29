@@ -1794,6 +1794,29 @@ class Listener:
         return {'name': suite.get('_label', suite['name']), 'ok': nfail == 0,
                 'npass': npass, 'nfail': nfail, 'nxpass': nxpass, 'note': ''}
 
+    def _lisp_root(self):
+        """The workspace directory that holds the interpreter repos (4CPPScheme2 /
+        3PyScheme), found by walking up from the scheme-tests directory.  Adapts to
+        both the local layout (scheme-tests nested under pyscheme-cppscheme2-common)
+        and a flat CI checkout (all repos siblings).  Returns None if not found.
+
+        Substituted for {lisp-root} in a suite's (run ...) and exported as
+        $LISP_ROOT, so a suite can reach the sibling cpp executable without
+        hardcoding a layout-specific relative path."""
+        base = self._scheme_tests_dir
+        if not base:
+            return None
+        cur = os.path.abspath(base)
+        for _ in range(6):
+            if (os.path.isdir(os.path.join(cur, '4CPPScheme2'))
+                    or os.path.isdir(os.path.join(cur, '3PyScheme'))):
+                return cur
+            parent = os.path.dirname(cur)
+            if parent == cur:
+                break
+            cur = parent
+        return None
+
     def _run_external_suite(self, suite):
         """Spawn an external tool (the kind that can't be in-process) and judge
         pass by exit code or a (grep REGEX) of its output."""
@@ -1811,6 +1834,7 @@ class Listener:
         # another program (e.g. a shell wrapper) that re-splits it itself, so keep
         # it joined as before.
         run = suite['run']
+        lisp_root = self._lisp_root() or ''
         argv = []
         spliced_program = False
         for idx, tok in enumerate(run):
@@ -1818,7 +1842,8 @@ class Listener:
                 argv.extend([sys.executable, '-m', 'pyscheme'])
                 spliced_program = True
             else:
-                argv.append(tok.replace('{interp}', 'python -m pyscheme'))
+                argv.append(tok.replace('{interp}', 'python -m pyscheme')
+                            .replace('{lisp-root}', lisp_root))
         if not spliced_program and ('/' in argv[0] or '\\' in argv[0]):
             # a relative program path (e.g. a wrapper script) -> resolve vs cwd
             argv[0] = os.path.normpath(os.path.join(cwd, argv[0]))
@@ -1826,6 +1851,8 @@ class Listener:
         pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         env['PYTHONPATH'] = (pkg_parent + os.pathsep + env['PYTHONPATH']
                              if env.get('PYTHONPATH') else pkg_parent)
+        if lisp_root:
+            env['LISP_ROOT'] = lisp_root
         try:
             proc = subprocess.run(argv, cwd=cwd, env=env,
                                   stdout=subprocess.PIPE,

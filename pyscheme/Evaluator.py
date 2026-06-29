@@ -958,15 +958,27 @@ def _env_library_path_parts():
     return parts
 
 
+def _srfi_library_part():
+    """The shared SRFI/ directory from pyscheme-cppscheme2-common, if present,
+    as a one-element list (else []).  Appended to the library search path so
+    (srfi N) resolves without an explicit -L; user-supplied -L/SCHEME_LIBRARY_PATH
+    entries precede it and so win on conflicts."""
+    from pyscheme.common_dir import common_subdir
+    srfi = common_subdir('SRFI')
+    return [srfi] if srfi is not None else []
+
+
 def _default_library_path():
     """Default search path when no current-library-path parameter is in
-    effect: current directory first, then SCHEME_LIBRARY_PATH entries."""
-    return ['.'] + _env_library_path_parts()
+    effect: current directory, then SCHEME_LIBRARY_PATH entries, then the
+    shared SRFI/ directory."""
+    return ['.'] + _env_library_path_parts() + _srfi_library_part()
 
 
 def build_library_path_list(cli_paths):
-    """Build the initial library search path: current directory, then the
-    CLI -L/-I paths (in command-line order), then SCHEME_LIBRARY_PATH."""
+    """Build the initial library search path: current directory, then the CLI
+    -L/-I paths (in command-line order), then SCHEME_LIBRARY_PATH, then the
+    shared SRFI/ directory."""
     parts = ['.']
     i = 0
     while i < len(cli_paths):
@@ -974,6 +986,7 @@ def build_library_path_list(cli_paths):
             parts.append(cli_paths[i])
         i = i + 1
     parts.extend(_env_library_path_parts())
+    parts.extend(_srfi_library_part())
     return parts
 
 
