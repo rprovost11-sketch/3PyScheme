@@ -49,7 +49,8 @@ import pyscheme.Expander as _expander_mod
 
 # Suite subdirectories relative to the scheme-tests root.  Hardcoded for now;
 # a configuration file is the eventual home for these.  The root itself is NOT
-# hardcoded -- it comes from -T/--scheme-tests, $SCHEME_TESTS_DIR, or the
+# hardcoded -- it comes from -T/--scheme-tests, the pyscheme-cppscheme2-common
+# default (located via $SCHEME_COMMON_DIR, else a walk-up), or the
 # ]scheme-tests command (see Listener._set_scheme_tests_dir).
 _FEATURE_SUBDIR = os.path.join('log-tests', 'feature-tests')
 _COMPLIANCE_SUBDIR = os.path.join('log-tests', 'R7RS-Compliance-Tests')
@@ -346,7 +347,8 @@ class Listener:
         # Listener, so its (exit) still exits).  See primitives/meta.py:_prim_exit.
         self._interp.get_ctx().interactive = True
         # The scheme-tests root is not hardcoded -- it is supplied (or left
-        # unset) by the caller, who resolved -T/--scheme-tests vs $SCHEME_TESTS_DIR.
+        # unset) by the caller, who resolved -T/--scheme-tests vs the
+        # pyscheme-cppscheme2-common default ($SCHEME_COMMON_DIR / walk-up).
         # The per-suite subdirectories are derived from it; ]scheme-tests can
         # change it at runtime.  When unset, the test commands explain how to set it.
         self._scheme_tests_dir = None
@@ -1056,9 +1058,11 @@ class Listener:
     def _no_scheme_tests_message():
         """Explain that the scheme-tests root is unset and how to set it."""
         return ('the scheme-tests directory is not set, so tests cannot run.\n'
-                'Point it at the repo\'s scheme-tests folder (the one containing\n'
-                'log-tests/) in any of these ways (a later one overrides an earlier):\n'
-                '  1. environment variable:  SCHEME_TESTS_DIR=<path>/scheme-tests\n'
+                'It is normally found automatically: the scheme-tests/ folder inside\n'
+                'the shared pyscheme-cppscheme2-common directory.  If that directory\n'
+                'cannot be located, point at it in any of these ways (a later one\n'
+                'overrides an earlier):\n'
+                '  1. environment variable:  SCHEME_COMMON_DIR=<path>/pyscheme-cppscheme2-common\n'
                 '  2. command-line option:   python -m pyscheme --scheme-tests <path>/scheme-tests\n'
                 '  3. listener command:      ]scheme-tests <path>/scheme-tests')
 
@@ -1073,8 +1077,9 @@ class Listener:
         With no argument, show the current scheme-tests root (and where it was
         set from) plus the derived suite directories.  With a directory, set the
         root for this session, overriding the -T/--scheme-tests option and the
-        SCHEME_TESTS_DIR environment variable.  No path is hardcoded; this is one
-        of the three ways to point the interpreter at the test suites."""
+        pyscheme-cppscheme2-common default ($SCHEME_COMMON_DIR / walk-up).  No
+        path is hardcoded; this is one of the ways to point the interpreter at
+        the test suites."""
         if args:
             self._set_scheme_tests_dir(' '.join(args), 'listener command')
             note = ('' if os.path.isdir(self._scheme_tests_dir)
