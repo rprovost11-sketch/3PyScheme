@@ -9,7 +9,7 @@ from Environment - putting the errors here avoids a circular import.
 from pyscheme.AST import (
     SourceInfo, ConsCell, format_with_caret,
     make_error_object, make_file_error_object,
-    intern_symbol, symbol_name, gensym_display_name,
+    intern_symbol, symbol_name, gensym_display_name, UNASSIGNED_VALUE,
 )
 
 
@@ -258,6 +258,9 @@ class Environment:
         while scope:
             if sid in scope._bindings:
                 v = scope._bindings[sid]
+                if v is UNASSIGNED_VALUE:
+                    raise SchemeUnboundError(
+                        'variable used before its initialization: ' + _display_name(sid))
                 return v.read() if type(v) is _AliasCell else v
             scope = scope._parent
         raise SchemeUnboundError('unbound variable: ' + _display_name(sid))
@@ -267,6 +270,9 @@ class Environment:
         while scope:
             if sid in scope._bindings:
                 v = scope._bindings[sid]
+                if v is UNASSIGNED_VALUE:
+                    raise SchemeUnboundError(
+                        'variable used before its initialization: ' + _display_name(sid))
                 return v.read() if type(v) is _AliasCell else v
             scope = scope._parent
         raise SchemeUnboundError('unbound variable: ' + _display_name(sid))
@@ -328,6 +334,85 @@ class Environment:
             scope = scope._parent
         raise SchemeUnboundError(
             'set! on unbound variable: ' + _display_name(sid))
+
+
+# --- Chain-walk histogram (lexical-addressing feasibility probe) -------
+# Set PYSCHEME_CHAIN_HIST=<file> to record, for every successful lookup /
+# set, how many parent hops the walk took and whether the hit landed in
+# the global env.  The report is appended to <file> at exit.  When the
+# variable is unset the plain methods above are untouched (zero cost).
+
+def _install_chain_histogram(out_path):
+    import atexit
+    from collections import Counter
+
+    hist = {'lookup': Counter(), 'set': Counter()}
+    unbound = Counter()
+
+    def walk(scope, sid, kind):
+        hops = 0
+        while scope:
+            if sid in scope._bindings:
+                hist[kind][(hops, scope is scope._global_env)] += 1
+                return scope
+            scope = scope._parent
+            hops = hops + 1
+        unbound[kind] += 1
+        return None
+
+    orig_lookup_id = Environment.lookup_id
+    orig_set_id = Environment.set_id
+
+    def lookup_id(self, sid):
+        walk(self, sid, 'lookup')
+        return orig_lookup_id(self, sid)
+
+    def lookup(self, key):
+        return lookup_id(self, intern_symbol(key))
+
+    def set_id(self, sid, value):
+        walk(self, sid, 'set')
+        return orig_set_id(self, sid, value)
+
+    def set_(self, key, value):
+        return set_id(self, intern_symbol(key), value)
+
+    Environment.lookup_id = lookup_id
+    Environment.lookup = lookup
+    Environment.set_id = set_id
+    Environment.set = set_
+
+    def report():
+        lines = []
+        for kind in ('lookup', 'set'):
+            c = hist[kind]
+            total = sum(c.values())
+            lines.append('== %s: %d hits, %d unbound' % (kind, total, unbound[kind]))
+            if not total:
+                continue
+            lines.append('   hops  local        global       cum%')
+            cum = 0
+            for h in range(max(k[0] for k in c) + 1):
+                loc = c[(h, False)]
+                glb = c[(h, True)]
+                if not (loc or glb):
+                    continue
+                cum = cum + loc + glb
+                lines.append('   %4d  %-11d  %-11d  %5.1f' % (h, loc, glb, 100.0 * cum / total))
+            n_glb = sum(v for k, v in c.items() if k[1])
+            wasted = sum(k[0] * v for k, v in c.items())
+            lines.append('   global hits: %.1f%%   mean hops: %.2f   global mean hops: %.2f'
+                         % (100.0 * n_glb / total, wasted / total,
+                            sum(k[0] * v for k, v in c.items() if k[1]) / max(n_glb, 1)))
+        with open(out_path, 'a', encoding='utf-8') as f:
+            f.write('\n'.join(lines) + '\n')
+
+    atexit.register(report)
+
+
+import os as _os
+if _os.environ.get('PYSCHEME_CHAIN_HIST'):
+    _install_chain_histogram(_os.environ['PYSCHEME_CHAIN_HIST'])
 
 
 # --- Module self-test --------------------------------------------------

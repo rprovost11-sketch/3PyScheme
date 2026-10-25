@@ -308,9 +308,30 @@ def extend_static_env_with_define(static_env, sexpr):
 
 # ---- main entry --------------------------------------------------------
 
+# Definition context (R7RS 5.1 / 5.3).  A define may appear only at the top
+# level -- including inside a top-level begin -- or at the start of a body.
+# Body-leading defines never reach the Analyzer (the Expander rewrites them
+# into letrec*), so any define the Analyzer meets below the top level sits
+# in an expression context, e.g. (if c (define y 1)): conditionally creating
+# a variable.  That is rejected.  _def_ctx[0] is True while the form being
+# analyzed is in a definition context; each analyze() call clears it for its
+# subforms (a top-level begin passes it through) and restores it on exit, so
+# every external caller, which analyzes a top-level form, starts with True.
+_def_ctx = [True]
+
+
 def analyze(sexpr, static_env=None):
     """Validate sexpr in place.  Returns sexpr unchanged on success,
     raises SchemeAnalysisError / SchemeArityError otherwise."""
+    def_ok = _def_ctx[0]
+    _def_ctx[0] = def_ok and is_cons(sexpr) and _is_symbol_named(sexpr.car, 'begin')
+    try:
+        return _analyze_form(sexpr, static_env, def_ok)
+    finally:
+        _def_ctx[0] = def_ok
+
+
+def _analyze_form(sexpr, static_env, def_ok):
     if static_env is None:
         static_env = dict(PRIMITIVE_ARITIES)
 
@@ -345,6 +366,10 @@ def analyze(sexpr, static_env=None):
     if is_symbol(head):
         handler = _SPECIAL_FORMS.get(as_symbol(head))
         if handler is not None:
+            if handler is _analyze_define and not def_ok:
+                raise SchemeSyntaxError(
+                    'definition not allowed in an expression context',
+                    src_of(sexpr))
             handler(sexpr, static_env)
             return sexpr
 

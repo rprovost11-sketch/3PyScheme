@@ -256,6 +256,12 @@ class SyntaxTransformer:
 NIL_VALUE = (NIL,)
 VOID_VALUE = (VOID,)
 
+# Placeholder held by a letrec / letrec* (and so internal-define) variable
+# until its init has run.  A distinct (VOID,) tuple: printers and is_void
+# see an ordinary void, while Environment.lookup tells it apart by identity
+# and reports a read before initialization (R7RS 4.2.2).
+UNASSIGNED_VALUE = (VOID,)
+
 
 # --- Allocators --------------------------------------------------------
 

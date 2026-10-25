@@ -79,7 +79,7 @@ from pyscheme.Environment import (
     arity_mismatch_msg,
 )
 from pyscheme.AST import (
-    ConsCell, NIL_VALUE, VOID_VALUE, alloc_cons,
+    ConsCell, NIL_VALUE, VOID_VALUE, UNASSIGNED_VALUE, alloc_cons,
     is_cons, is_nil, is_void, is_symbol, is_boolean, is_integer, is_real,
     is_character, is_string, is_primitive,
     is_closure, is_promise,
@@ -1614,7 +1614,7 @@ def _cek_loop(expr, env, ctx):
                                 new_env = Environment(E)
                                 i = 0
                                 while i < len(pairs):
-                                    new_env.bind(pairs[i][0], VOID_VALUE)
+                                    new_env.bind(pairs[i][0], UNASSIGNED_VALUE)
                                     i = i + 1
                                 remaining = []
                                 i = 1
