@@ -28,7 +28,7 @@ from pyscheme.AST import (
     intern_symbol, symbol_name,
     VOID_VALUE,
 )
-from pyscheme.Environment import SchemeTypeError
+from pyscheme.Environment import SchemeTypeError, global_la_key
 from pyscheme.common_dir import common_subdir
 
 
@@ -239,9 +239,11 @@ def _collect_primitives_by_category():
 def _collect_closures(global_env):
     """Return a sorted list of the names bound to closure values in env."""
     closures = []
-    for sid, val in global_env._bindings.items():
+
+    def take(sid, val):
         if is_closure(val):
             closures.append(symbol_name(sid))
+    global_env.for_each_binding(take)
     closures.sort()
     return closures
 
@@ -443,10 +445,12 @@ def _show_topic(ctx, name):
 def _collect_matching_names(global_env, lo):
     """Names in global_env whose lowercase form contains lo."""
     result = []
-    for sid in global_env._bindings:
+
+    def take(sid, val):
         name = symbol_name(sid)
         if lo in name.lower():
             result.append(name)
+    global_env.for_each_binding(take)
     result.sort()
     return result
 
@@ -508,10 +512,13 @@ def _apropos(ctx, env, pattern):
 
 def _find_closure_name(global_env, closure):
     """Find the first global name bound to `closure` (by identity)."""
-    for sid, val in global_env._bindings.items():
-        if val is closure:
-            return symbol_name(sid)
-    return None
+    found = []
+
+    def take(sid, val):
+        if val is closure and not found:
+            found.append(symbol_name(sid))
+    global_env.for_each_binding(take)
+    return found[0] if found else None
 
 
 def _prim_help(ctx, env, args, app_node):
@@ -545,10 +552,11 @@ def _prim_help(ctx, env, args, app_node):
     if is_symbol(target):
         name = as_symbol(target)
         global_env = env.getGlobalEnv()
-        if intern_symbol(name) not in global_env._bindings:
+        k = global_la_key(intern_symbol(name))
+        if global_env.lookup_optional(k) is None:
             ctx.outStrm.write("No binding for '" + name + "'.\n")
             return VOID_VALUE
-        val = global_env.lookup(name)
+        val = global_env.lookup(k)
         if is_primitive(val):
             _show_primitive_entry(ctx, as_primitive_name(val))
         elif is_closure(val):

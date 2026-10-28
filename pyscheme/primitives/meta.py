@@ -35,7 +35,9 @@ from pyscheme.AST import (
     make_boolean, make_real, list_from_items, src_of,
     VOID_VALUE,
 )
-from pyscheme.Environment import SchemeTypeError, SchemeUserError, SchemeRaised
+from pyscheme.Environment import (
+    SchemeTypeError, SchemeUserError, SchemeRaised, GlobalEnvironment, global_la_key,
+)
 
 
 CATEGORY = 'meta'
@@ -105,11 +107,10 @@ def _prim_environment(ctx, env, args, app_node):
     # (environment <library-spec>...) returns a frozen env containing the
     # union of the named libraries' exports.  Each spec is a list of
     # symbols / integers (e.g. '(scheme base)).  R7RS forbids modifying
-    # the resulting env; we enforce that via Environment.freeze().
-    from pyscheme.Environment import Environment
+    # the resulting env; we enforce that via GlobalEnvironment.freeze().
     from pyscheme.library import library_name_to_key, library_lookup
     from pyscheme.PrettyPrinter import pretty_print
-    result = Environment(parent=None)
+    result = GlobalEnvironment()
     i = 0
     while i < len(args):
         spec = args[i]
@@ -126,8 +127,8 @@ def _prim_environment(ctx, env, args, app_node):
             raise SchemeTypeError(
                 'environment: library not found: ' + pretty_print(spec),
                 app_node)
-        for sid, val in lib_env._bindings.items():
-            result.bind(symbol_name(sid), val)
+        lib_env.for_each_binding(
+            lambda sid, val: result.bind(global_la_key(sid), val))
         i = i + 1
     result.freeze()
     return make_environment(result)
@@ -142,12 +143,11 @@ def _prim_make_environment(ctx, env, args, app_node):
     # (the single shared global) can give.  With library-specs it holds the union
     # of their exports (like `environment`, but not frozen).  Used with `eval` to
     # run a program in a clean sandbox (e.g. one ecraven benchmark per fresh env).
-    from pyscheme.Environment import Environment
     if len(args) == 0:
-        return make_environment(Environment(parent=env.getGlobalEnv()))
+        return make_environment(GlobalEnvironment(env.getGlobalEnv()))
     from pyscheme.library import library_name_to_key, library_lookup
     from pyscheme.PrettyPrinter import pretty_print
-    result = Environment(parent=None)
+    result = GlobalEnvironment()
     i = 0
     while i < len(args):
         spec = args[i]
@@ -164,8 +164,8 @@ def _prim_make_environment(ctx, env, args, app_node):
             raise SchemeTypeError(
                 'make-environment: library not found: ' + pretty_print(spec),
                 app_node)
-        for sid, val in lib_env._bindings.items():
-            result.bind(symbol_name(sid), val)
+        lib_env.for_each_binding(
+            lambda sid, val: result.bind(global_la_key(sid), val))
         i = i + 1
     return make_environment(result)  # deliberately NOT frozen -> mutable
 
@@ -180,12 +180,11 @@ def _prim_make_toplevel_environment(ctx, env, args, app_node):
     # so meta-circular tests -- e.g. (define x 1) then (eval 'x
     # (interaction-environment)) -- resolve against the SAME env, like the .log
     # runner.  cppScheme2/pyScheme extension.
-    from pyscheme.Environment import Environment
     g = env.getGlobalEnv()
-    fresh = Environment(parent=g)            # child of global: chain (apply ...) + isolation
-    for sid, val in g._bindings.items():
-        fresh.bind(symbol_name(sid), val)    # copy so help/apropos can introspect
-    fresh._global_env = fresh                 # but is its own global
+    fresh = GlobalEnvironment(g)              # child of global: chain (apply ...) + isolation
+    g.for_each_binding(                       # copy so help/apropos can introspect
+        lambda sid, val: fresh.bind(global_la_key(sid), val))
+    fresh.reroot_as_global()                  # but is its own global
     return make_environment(fresh)
 
 
@@ -785,7 +784,6 @@ def _prim_continuation_depth_unreached(ctx, env, args, app_node):
 
 
 def _prim_null_environment(ctx, env, args, app_node):
-    from pyscheme.Environment import Environment
     if not is_integer(args[0]):
         raise SchemeTypeError(
             'null-environment: version must be an integer', src_of(app_node))
@@ -795,7 +793,7 @@ def _prim_null_environment(ctx, env, args, app_node):
         raise SchemeTypeError(
             'null-environment: unsupported version (only 5 is supported)',
             src_of(app_node))
-    e = Environment(parent=None)
+    e = GlobalEnvironment()
     e.freeze()
     return make_environment(e)
 

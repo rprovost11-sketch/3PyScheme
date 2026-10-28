@@ -22,7 +22,7 @@ from pyscheme.AST import (
     as_symbol, as_integer,
     intern_symbol, symbol_name,
 )
-from pyscheme.Environment import Environment
+from pyscheme.Environment import GlobalEnvironment, global_la_key
 
 
 # Module-level library registry.  Populated at startup by
@@ -165,8 +165,10 @@ def resolve_import_set(import_set):
 
     # Copy every binding from exports_env.
     result = {}
-    for sid, val in exports_env._bindings.items():
+
+    def take(sid, val):
         result[symbol_name(sid)] = val
+    exports_env.for_each_binding(take)
     return result
 
 
@@ -182,7 +184,7 @@ def register_standard_libraries(global_env):
     # Empty env registration: the library's forms are special syntax
     # handled by the evaluator / expander, so there are no procedures to
     # export, but import should still succeed.
-    _empty_lib = Environment(parent=None)
+    _empty_lib = GlobalEnvironment()
     _empty_lib.freeze()
     library_register('scheme.case-lambda', _empty_lib)
     _register_filtered(global_env, 'scheme.r5rs', _SCHEME_R5RS_NAMES)
@@ -209,12 +211,12 @@ def _register_filtered(global_env, key, names):
     """Register a library under `key` containing bindings for each name in
     `names` that exists in global_env.  Missing names are skipped.  The
     resulting export environment is frozen: R7RS forbids modifying it."""
-    exports_env = Environment(parent=None)
+    exports_env = GlobalEnvironment()
     i = 0
     while i < len(names):
-        n = names[i]
-        if intern_symbol(n) in global_env._bindings:
-            exports_env.bind(n, global_env.lookup(n))
+        k = global_la_key(intern_symbol(names[i]))
+        if global_env.lookup_optional(k) is not None:
+            exports_env.bind(k, global_env.lookup(k))
         i = i + 1
     exports_env.freeze()
     library_register(key, exports_env)
@@ -428,8 +430,8 @@ if __name__ == '__main__':
         check('empty name raises', True)
 
     # register / lookup
-    env = Environment()
-    env.bind('x', 42)
+    env = GlobalEnvironment()
+    env.bind(global_la_key(intern_symbol('x')), 42)
     library_register('test.lib', env)
     check('lookup finds',       library_lookup('test.lib') is env)
     check('registered_p',       library_registered_p('test.lib'))
@@ -438,17 +440,17 @@ if __name__ == '__main__':
     # resolve_import_set: plain name
     bindings = resolve_import_set(make_name('test', 'lib'))
     # test.lib not registered; create one
-    env2 = Environment()
-    env2.bind('hello', 'world')
+    env2 = GlobalEnvironment()
+    env2.bind(global_la_key(intern_symbol('hello')), 'world')
     library_register('mylib', env2)
     bindings = resolve_import_set(make_name('mylib'))
     check('plain-name x',       bindings == {'hello': 'world'})
 
     # only
-    env3 = Environment()
-    env3.bind('a', 1)
-    env3.bind('b', 2)
-    env3.bind('c', 3)
+    env3 = GlobalEnvironment()
+    env3.bind(global_la_key(intern_symbol('a')), 1)
+    env3.bind(global_la_key(intern_symbol('b')), 2)
+    env3.bind(global_la_key(intern_symbol('c')), 3)
     library_register('abc', env3)
     only_form = alloc_cons(make_symbol('only'),
                            alloc_cons(make_name('abc'),

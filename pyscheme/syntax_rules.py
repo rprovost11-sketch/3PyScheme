@@ -37,7 +37,7 @@ from pyscheme.AST import (
     alloc_cons, make_symbol, make_vector, list_from_items, src_of, eqv_atom,
     make_syntax_transformer, is_syntax_transformer,
     is_closure, is_primitive,
-    paint_mark, strip_marks, gensym_display_name,
+    paint_mark, strip_marks, gensym_display_name, intern_symbol,
     NIL_VALUE, SYMBOL, GENSYM_PREFIX,
 )
 
@@ -1016,7 +1016,8 @@ def parse_syntax_rules(tail, def_env, name, form_src=None):
                     # would build a cyclic _AliasCell.  Leave the existing binding.
                     if fid.startswith(GENSYM_PREFIX):
                         continue
-                    global_env.register_alias(gs, fid, env, def_env[fid])
+                    global_env.register_alias(intern_symbol(gs), intern_symbol(fid), env,
+                                              def_env[fid])
         except ImportError:
             pass
     t = make_syntax_transformer(name, literals, ellipsis_sym, rules,

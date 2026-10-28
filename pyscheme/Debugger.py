@@ -18,7 +18,7 @@ from pyscheme.AST import (
     is_cons, is_nil, is_symbol, is_closure, is_primitive, is_case_closure,
     is_continuation,
     as_symbol, as_closure_params, as_closure_body, as_closure_rest_name,
-    symbol_name,
+    symbol_name, intern_symbol,
 )
 from pyscheme.Environment import SchemeUnboundError, SchemeRuntimeError
 from pyscheme.PrettyPrinter import pretty_print
@@ -95,26 +95,29 @@ class Debugger:
     def _collect_locals(env):
         result = {}
         current = env
-        global_env = env._global_env
+        global_env = env.getGlobalEnv()
+
+        def take(sid, val):
+            if sid not in result:
+                result[sid] = val
         while current is not None and current is not global_env:
-            for sid, val in current._bindings.items():
-                if sid not in result:
-                    result[sid] = val
-            current = current._parent
+            current.for_each_binding(take)
+            current = current.getParent()
         return result
 
     @staticmethod
     def _print_scoped_locals(env, max_depth=None):
         current = env
-        global_env = env._global_env
+        global_env = env.getGlobalEnv()
         scope_num = 0
         while current is not None and current is not global_env:
             if max_depth is not None and scope_num >= max_depth:
                 break
+            in_scope = {}
+            current.for_each_binding(in_scope.__setitem__)
             names_in_scope = []
-            for sid in current._bindings:
-                val = current._bindings[sid]
-                if not Debugger._is_callable(val):
+            for sid in in_scope:
+                if not Debugger._is_callable(in_scope[sid]):
                     names_in_scope.append(sid)
             if names_in_scope:
                 names_in_scope.sort(key=symbol_name)
@@ -123,10 +126,10 @@ class Debugger:
                 while i < len(names_in_scope):
                     sid = names_in_scope[i]
                     print(symbol_name(sid) + ':   ' +
-                          pretty_print(current._bindings[sid]))
+                          pretty_print(in_scope[sid]))
                     i = i + 1
                 scope_num = scope_num + 1
-            current = current._parent
+            current = current.getParent()
 
     @staticmethod
     def _print_named_vars(env, names):
@@ -134,7 +137,7 @@ class Debugger:
         while i < len(names):
             name = names[i]
             try:
-                val = env.lookup(name)
+                val = env.lookup(env.resolve(intern_symbol(name)))
                 print(name + ':   ' + pretty_print(val))
             except SchemeUnboundError:
                 print(name + ':   <unbound>')
@@ -796,7 +799,7 @@ class Debugger:
             return
         fn_name = rest.strip()
         try:
-            fn = env.lookup(fn_name)
+            fn = env.lookup(env.resolve(intern_symbol(fn_name)))
         except SchemeUnboundError:
             print(fn_name + ' is not defined.')
             return
@@ -991,7 +994,7 @@ class Debugger:
             fn_name = entry[3]
             fn_obj = entry[4]
             try:
-                current_fn = env.lookup(fn_name)
+                current_fn = env.lookup(env.resolve(intern_symbol(fn_name)))
             except SchemeUnboundError:
                 current_fn = None
             if current_fn is not fn_obj:
@@ -1036,7 +1039,7 @@ class Debugger:
             print('Cannot resolve inner breakpoint without an environment.')
             return
         try:
-            fn = env.lookup(fn_name)
+            fn = env.lookup(env.resolve(intern_symbol(fn_name)))
         except SchemeUnboundError:
             print(fn_name + ' is not defined.')
             return

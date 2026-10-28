@@ -28,9 +28,9 @@ Public exports:
     install_primitives  - bind every registered primitive into an env
 """
 
-from pyscheme.AST import make_primitive, is_integer, as_integer, src_of
+from pyscheme.AST import make_primitive, is_integer, as_integer, src_of, intern_symbol
 from pyscheme.Environment import (
-    SchemeArityError, SchemeTypeError, arity_mismatch_msg,
+    SchemeArityError, SchemeTypeError, arity_mismatch_msg, global_la_key,
 )
 
 
@@ -251,5 +251,5 @@ def install_primitives(env):
     i = 0
     while i < len(_REGISTRY):
         entry = _REGISTRY[i]
-        env.bind(entry[0], make_primitive(entry[0], entry[2]))
+        env.bind(global_la_key(intern_symbol(entry[0])), make_primitive(entry[0], entry[2]))
         i = i + 1

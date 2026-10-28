@@ -28,13 +28,13 @@ from pyscheme.Analyzer import (
 from pyscheme.Evaluator import cek_eval, set_global_env, make_library_path_param
 from pyscheme.primitives.ports import reset_current_port_params
 from pyscheme.primitives import install_primitives, PRIMITIVE_ARITIES
-from pyscheme.Environment import Environment, SchemeRuntimeError
+from pyscheme.Environment import GlobalEnvironment, global_la_key, SchemeRuntimeError
 from pyscheme.Context import Context
 from pyscheme.Listener import InterpreterBase
 from pyscheme.Debugger import Debugger
 from pyscheme.Tracer import Tracer
 from pyscheme.PrettyPrinter import pretty_print
-from pyscheme.AST import is_void, is_multi_values, as_multi_values_list, src_of
+from pyscheme.AST import is_void, is_multi_values, as_multi_values_list, src_of, intern_symbol
 from pyscheme.library import register_standard_libraries
 from pyscheme.Expander import set_runtime_env
 
@@ -81,7 +81,7 @@ class Interpreter(InterpreterBase):
         self._ctx.debugger = Debugger()
         self._ctx.tracer.reset()
         reset_current_port_params()
-        self._env = Environment()
+        self._env = GlobalEnvironment()
         install_primitives(self._env)
         # Populate the R7RS library registry from global env.  Must happen
         # after install_primitives so (scheme base) etc. can see them.
@@ -96,7 +96,7 @@ class Interpreter(InterpreterBase):
         # '.' + CLI -L/-I paths + SCHEME_LIBRARY_PATH.  Bound in the global
         # env so programs can read it or rebind it via parameterize;
         # set-library-path! replaces it persistently.
-        self._env.bind('current-library-path',
+        self._env.bind(global_la_key(intern_symbol('current-library-path')),
                        make_library_path_param(self._cli_library_paths))
         # Parallel static env: maps name -> (min, max) arity signature
         # for statically-known operators (primitives, top-level lambda

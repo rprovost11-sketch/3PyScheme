@@ -4,6 +4,37 @@ Also holds the Scheme runtime-error hierarchy.  The errors live here
 (not in Evaluator) because Environment.lookup / Environment.set need
 to raise SchemeUnboundError directly, and Evaluator already imports
 from Environment - putting the errors here avoids a circular import.
+
+The scope classes, for lexical addressing:
+
+  Environment       abstract base: parent pointer, cached global pointer,
+                    and the virtual interface
+  LocalEnvironment  procedure call, let, let* step, letrec, named let:
+                    values in a list
+  GlobalEnvironment global / library, and the dict scopes chained under
+                    them (Expander macro scopes, (environment ...),
+                    make-environment): a name -> value dict
+
+Every lookup / set / bind takes the same argument, an LA key (lexical
+addressing key): a tuple (depth, index, name) built by the Analyzer:
+
+  depth  hops up the chain to the owning local scope; -1 = a global
+  index  slot within that local scope
+  name   symbol id
+
+LocalEnvironment reads only depth and index; GlobalEnvironment reads only
+name.  A global LA key (depth -1) met by a local scope is passed to the
+nearest dict scope above it, which falls through by name to its parents,
+so the Evaluator calls E.lookup(la_key) uniformly.
+
+By-name callers (the Expander, macro alias cells, aux-keyword checks,
+library / help / environment code) build a global LA key with
+global_la_key(sid): they only ever reach dict scopes, or -- for the
+aux-keyword check -- a name alpha-renaming guarantees no local carries.
+A name met in code running in a scope becomes an LA key with
+E.resolve(sid), which answers exactly as the Analyzer would for code in
+that scope; the debugger uses it, and so does the Evaluator until the
+Analyzer emits LA keys itself.
 """
 
 from pyscheme.AST import (
@@ -180,8 +211,9 @@ class _AliasCell:
     body-scan scope, as for library-internal helpers -- it falls back to `copy`,
     the def-time snapshot that keeps such references reachable.
 
-    Stored in `_bindings` (not a side table) so it rides through the library
-    export/import machinery, which moves `_bindings`, with no special handling:
+    Stored as a binding's value (not in a side table) so it rides through the
+    library export/import machinery, which copies bindings as stored, with no
+    special handling:
     `lookup` resolves it to a plain value, so an exported macro's alias is
     carried as the def-time value exactly as before."""
 
@@ -192,48 +224,218 @@ class _AliasCell:
         self.def_env = def_env
         self.copy = copy
 
-    def read(self):
-        v = self.def_env.lookup_optional_id(self.target)
-        return v if v is not None else self.copy
 
-    def write(self, value):
-        if self.def_env.lookup_optional_id(self.target) is not None:
-            self.def_env.set_id(self.target, value)
-        else:
-            self.copy = value
+GLOBAL_DEPTH = -1
+
+
+def global_la_key(sid: int):
+    """The LA key of a global variable: what the Analyzer emits for a name
+    no local scope binds, and what by-name callers use."""
+    return (GLOBAL_DEPTH, 0, sid)
+
+
+def _unassigned_error(sid: int):
+    return SchemeUnboundError(
+        'variable used before its initialization: ' + _display_name(sid))
+
+
+def _alias_read(cell):
+    """Live value of an alias cell's target in its def_env (always a dict
+    scope), else the def-time copy."""
+    v = cell.def_env.lookup_optional(global_la_key(cell.target))
+    return v if v is not None else cell.copy
+
+
+def _alias_write(cell, value):
+    la_key = global_la_key(cell.target)
+    if cell.def_env.lookup_optional(la_key) is not None:
+        cell.def_env.set(la_key, value)
+    else:
+        cell.copy = value
 
 
 class Environment:
-    """Lexical environment: a binding table plus a parent pointer.
-    The global scope is the root of the parent chain and every
-    child caches a pointer to it for fast global lookups."""
+    """Abstract base of the two scope classes.  The virtual interface takes
+    the same arguments in both subclasses:
 
-    def __init__(self, parent=None, initialBindings=None):
-        self._bindings = {}
-        if initialBindings is not None:
-            for k in initialBindings:
-                self._bindings[intern_symbol(k)] = initialBindings[k]
+      lookup(la_key)            value of the variable la_key names; raises
+                                SchemeUnboundError if it is unbound
+      lookup_optional(la_key)   that value, or None if it is unbound
+      set(la_key, value)        update that variable
+      bind(la_key, value)       create or overwrite it in THIS scope
+      resolve(sid, depth=0)     the LA key the Analyzer would give sid in
+                                code running in this scope (depth counts
+                                the local scopes already passed)
+      for_each_binding(fn)      call fn(sid, value) for each binding in
+                                THIS scope; values are passed as stored
+                                (an alias cell as the cell)"""
+
+    def __init__(self, parent):
         self._parent = parent
+        self._global_env = self if parent is None else parent._global_env
+        # The nearest dict scope at or above this one, where a local scope
+        # looks up a global LA key.  It is the root global env unless code
+        # runs in a dict scope chained under the root (make-environment, an
+        # Expander macro scope): a variable defined there must still be found.
+        self._dict_env = self if parent is None else parent._dict_env
+
+    def getGlobalEnv(self):
+        return self._global_env
+
+    def getParent(self):
+        return self._parent
+
+    def lookup(self, la_key):
+        raise NotImplementedError
+
+    def lookup_optional(self, la_key):
+        raise NotImplementedError
+
+    def set(self, la_key, value):
+        raise NotImplementedError
+
+    def bind(self, la_key, value):
+        raise NotImplementedError
+
+    def resolve(self, sid: int, depth: int = 0):
+        raise NotImplementedError
+
+    def for_each_binding(self, fn):
+        raise NotImplementedError
+
+
+class LocalEnvironment(Environment):
+    """A local scope: one per procedure call, let, let* step, letrec and
+    named let.  Its values sit in a list at the indexes the Analyzer
+    assigned; _names is the Analyzer's tuple of symbol ids for the scope
+    (static, shared, index-aligned with _values), used only by resolve and
+    for_each_binding.  A local scope always has a parent, has a fixed size,
+    is never frozen, and never holds an alias cell (those live in the
+    global env)."""
+
+    def __init__(self, parent, names, values):
+        Environment.__init__(self, parent)
+        self._names = names
+        self._values = values
+
+    def _owner(self, depth):
+        scope = self
+        while depth:
+            scope = scope._parent
+            depth = depth - 1
+        return scope
+
+    def lookup(self, la_key):
+        depth, index, name = la_key
+        if depth == GLOBAL_DEPTH:
+            return self._dict_env.lookup(la_key)
+        v = self._owner(depth)._values[index]
+        if v is UNASSIGNED_VALUE:
+            raise _unassigned_error(name)
+        return v
+
+    def lookup_optional(self, la_key):
+        depth, index, name = la_key
+        if depth == GLOBAL_DEPTH:
+            return self._dict_env.lookup_optional(la_key)
+        return self._owner(depth)._values[index]
+
+    def set(self, la_key, value):
+        depth, index, name = la_key
+        if depth == GLOBAL_DEPTH:
+            return self._dict_env.set(la_key, value)
+        self._owner(depth)._values[index] = value
+        return value
+
+    def bind(self, la_key, value):
+        """Store into a slot of this scope.  A global LA key here can only
+        come from a define typed at a debugger prompt paused in this scope:
+        a local scope has no room for a new name, so that is an error."""
+        depth, index, name = la_key
+        if depth == GLOBAL_DEPTH:
+            raise SchemeTypeError(
+                "cannot define '" + _display_name(name) + "' in a local scope")
+        assert depth == 0, 'bind is always into this scope'
+        self._values[index] = value
+        return value
+
+    def resolve(self, sid: int, depth: int = 0):
+        names = self._names
+        if sid in names:
+            return (depth, names.index(sid), sid)
+        return self._parent.resolve(sid, depth + 1)
+
+    def for_each_binding(self, fn):
+        i = 0
+        while i < len(self._names):
+            fn(self._names[i], self._values[i])
+            i = i + 1
+
+
+class GlobalEnvironment(Environment):
+    """Global / library scope: bindings in a name -> value dict.  The root
+    of every runtime chain.  Also used with a parent for the Expander's
+    compile-time macro scopes and (environment ...) isolation scopes; that
+    parent is always another GlobalEnvironment, and a name this scope does
+    not hold is looked up there."""
+
+    def __init__(self, parent=None):
+        Environment.__init__(self, parent)
+        self._dict_env = self
+        self._bindings = {}
         self._is_immutable = False
-        if parent is None:
-            self._global_env = self
-        else:
-            self._global_env = parent._global_env
 
-    def bind(self, key: str, value):
-        sid = intern_symbol(key)
+    def lookup(self, la_key):
+        depth, index, name = la_key
+        if name in self._bindings:
+            v = self._bindings[name]
+            if v is UNASSIGNED_VALUE:
+                raise _unassigned_error(name)
+            return _alias_read(v) if type(v) is _AliasCell else v
+        if self._parent is not None:
+            return self._parent.lookup(la_key)
+        raise SchemeUnboundError('unbound variable: ' + _display_name(name))
+
+    def lookup_optional(self, la_key):
+        depth, index, name = la_key
+        if name in self._bindings:
+            v = self._bindings[name]
+            return _alias_read(v) if type(v) is _AliasCell else v
+        if self._parent is not None:
+            return self._parent.lookup_optional(la_key)
+        return None
+
+    def set(self, la_key, value):
+        depth, index, name = la_key
+        if name in self._bindings:
+            if self._is_immutable:
+                raise SchemeTypeError(
+                    "set! on '" + _display_name(name) + "' in a frozen environment")
+            v = self._bindings[name]
+            if type(v) is _AliasCell:
+                _alias_write(v, value)
+            else:
+                self._bindings[name] = value
+            return value
+        if self._parent is not None:
+            return self._parent.set(la_key, value)
+        raise SchemeUnboundError(
+            'set! on unbound variable: ' + _display_name(name))
+
+    def bind(self, la_key, value):
+        depth, index, name = la_key
         if self._is_immutable:
             raise SchemeTypeError(
-                "cannot define '" + _display_name(sid) + "' in a frozen environment")
-        self._bindings[sid] = value
+                "cannot define '" + _display_name(name) + "' in a frozen environment")
+        self._bindings[name] = value
         return value
 
-    def bind_id(self, sid: int, value):
-        if self._is_immutable:
-            raise SchemeTypeError(
-                "cannot define '" + _display_name(sid) + "' in a frozen environment")
-        self._bindings[sid] = value
-        return value
+    def resolve(self, sid: int, depth: int = 0):
+        return global_la_key(sid)
+
+    def for_each_binding(self, fn):
+        for name in self._bindings:
+            fn(name, self._bindings[name])
 
     def freeze(self):
         """Mark this environment immutable: subsequent bind / set on a binding
@@ -241,106 +443,23 @@ class Environment:
         for environments returned by R7RS (environment ...).  Idempotent."""
         self._is_immutable = True
 
-    def getGlobalEnv(self):
-        return self._global_env
+    def reroot_as_global(self):
+        """Make this scope its own global root while keeping its parent chain
+        for lookups (make-toplevel-environment)."""
+        self._global_env = self
 
-    def register_alias(self, gs_name: str, target_name: str, def_env, copy_value):
-        """Bind gs_name (a macro free-identifier gensym) in the global env to an
-        _AliasCell indirecting to target_name in def_env (see _AliasCell)."""
-        self._global_env._bindings[intern_symbol(gs_name)] = _AliasCell(
-            intern_symbol(target_name), def_env, copy_value)
-
-    def lookup(self, key: str):
-        """Walk the parent chain; return the value of the first binding found.
-        Raises SchemeUnboundError if no binding is found."""
-        sid = intern_symbol(key)
-        scope = self
-        while scope:
-            if sid in scope._bindings:
-                v = scope._bindings[sid]
-                if v is UNASSIGNED_VALUE:
-                    raise SchemeUnboundError(
-                        'variable used before its initialization: ' + _display_name(sid))
-                return v.read() if type(v) is _AliasCell else v
-            scope = scope._parent
-        raise SchemeUnboundError('unbound variable: ' + _display_name(sid))
-
-    def lookup_id(self, sid: int):
-        scope = self
-        while scope:
-            if sid in scope._bindings:
-                v = scope._bindings[sid]
-                if v is UNASSIGNED_VALUE:
-                    raise SchemeUnboundError(
-                        'variable used before its initialization: ' + _display_name(sid))
-                return v.read() if type(v) is _AliasCell else v
-            scope = scope._parent
-        raise SchemeUnboundError('unbound variable: ' + _display_name(sid))
-
-    def lookup_optional(self, key: str):
-        """Walk the parent chain; return value or None if not found."""
-        sid = intern_symbol(key)
-        scope = self
-        while scope:
-            if sid in scope._bindings:
-                v = scope._bindings[sid]
-                return v.read() if type(v) is _AliasCell else v
-            scope = scope._parent
-        return None
-
-    def lookup_optional_id(self, sid: int):
-        """Walk the parent chain; return value or None if not found."""
-        scope = self
-        while scope:
-            if sid in scope._bindings:
-                v = scope._bindings[sid]
-                return v.read() if type(v) is _AliasCell else v
-            scope = scope._parent
-        return None
-
-    def set(self, key: str, value):
-        """Update the nearest binding of key.  Raises SchemeUnboundError if
-        no binding is found; raises SchemeTypeError if the owning scope is frozen."""
-        sid = intern_symbol(key)
-        scope = self
-        while scope:
-            if sid in scope._bindings:
-                if scope._is_immutable:
-                    raise SchemeTypeError(
-                        "set! on '" + _display_name(sid) + "' in a frozen environment")
-                v = scope._bindings[sid]
-                if type(v) is _AliasCell:
-                    v.write(value)
-                else:
-                    scope._bindings[sid] = value
-                return value
-            scope = scope._parent
-        raise SchemeUnboundError(
-            'set! on unbound variable: ' + _display_name(sid))
-
-    def set_id(self, sid: int, value):
-        scope = self
-        while scope:
-            if sid in scope._bindings:
-                if scope._is_immutable:
-                    raise SchemeTypeError(
-                        "set! on '" + _display_name(sid) + "' in a frozen environment")
-                v = scope._bindings[sid]
-                if type(v) is _AliasCell:
-                    v.write(value)
-                else:
-                    scope._bindings[sid] = value
-                return value
-            scope = scope._parent
-        raise SchemeUnboundError(
-            'set! on unbound variable: ' + _display_name(sid))
+    def register_alias(self, gs: int, target: int, def_env, copy_value):
+        """Bind gs (a macro free-identifier gensym) in the global env to an
+        alias cell indirecting to target in def_env."""
+        self._global_env.bind(global_la_key(gs),
+                              _AliasCell(target, def_env, copy_value))
 
 
 # --- Chain-walk histogram (lexical-addressing feasibility probe) -------
 # Set PYSCHEME_CHAIN_HIST=<file> to record, for every successful lookup /
-# set, how many parent hops the walk took and whether the hit landed in
-# the global env.  The report is appended to <file> at exit.  When the
-# variable is unset the plain methods above are untouched (zero cost).
+# set, how many parent hops a by-name walk would take and whether the hit
+# lands in the global env.  The report is appended to <file> at exit.  When
+# the variable is unset the plain methods above are untouched (zero cost).
 
 def _install_chain_histogram(out_path):
     import atexit
@@ -348,39 +467,40 @@ def _install_chain_histogram(out_path):
 
     hist = {'lookup': Counter(), 'set': Counter()}
     unbound = Counter()
+    busy = [False]  # count the outermost call only, not its forwards
 
-    def walk(scope, sid, kind):
+    def walk(scope, la_key, kind):
+        depth = la_key[0]
+        if depth != GLOBAL_DEPTH:
+            hist[kind][(depth, False)] += 1
+            return
         hops = 0
-        while scope:
-            if sid in scope._bindings:
+        while type(scope) is LocalEnvironment:
+            scope = scope._parent
+            hops = hops + 1
+        while scope is not None:
+            if la_key[2] in scope._bindings:
                 hist[kind][(hops, scope is scope._global_env)] += 1
-                return scope
+                return
             scope = scope._parent
             hops = hops + 1
         unbound[kind] += 1
-        return None
 
-    orig_lookup_id = Environment.lookup_id
-    orig_set_id = Environment.set_id
+    def wrap(orig, kind):
+        def probe(self, la_key, *value):
+            if busy[0]:
+                return orig(self, la_key, *value)
+            busy[0] = True
+            try:
+                walk(self, la_key, kind)
+                return orig(self, la_key, *value)
+            finally:
+                busy[0] = False
+        return probe
 
-    def lookup_id(self, sid):
-        walk(self, sid, 'lookup')
-        return orig_lookup_id(self, sid)
-
-    def lookup(self, key):
-        return lookup_id(self, intern_symbol(key))
-
-    def set_id(self, sid, value):
-        walk(self, sid, 'set')
-        return orig_set_id(self, sid, value)
-
-    def set_(self, key, value):
-        return set_id(self, intern_symbol(key), value)
-
-    Environment.lookup_id = lookup_id
-    Environment.lookup = lookup
-    Environment.set_id = set_id
-    Environment.set = set_
+    for cls in (LocalEnvironment, GlobalEnvironment):
+        cls.lookup = wrap(cls.lookup, 'lookup')
+        cls.set = wrap(cls.set, 'set')
 
     def report():
         lines = []
@@ -430,99 +550,11 @@ if __name__ == '__main__':
             print('[FAIL] ' + label)
             n_fail = n_fail + 1
 
-    # Basic construction.
-    root = Environment()
-    check('root has no parent',        root._parent is None)
-    check('root is its own global',    root.getGlobalEnv() is root)
-    check('empty bindings',            root._bindings == {})
-
-    # Initial bindings.
-    e0 = Environment(initialBindings={'a': 1, 'b': 2})
-    check('initial bind a',            e0.lookup('a') == 1)
-    check('initial bind b',            e0.lookup('b') == 2)
-
-    # bind and lookup.
-    e0.bind('c', 3)
-    check('bind returns value',        e0.bind('d', 4) == 4)
-    check('lookup after bind',         e0.lookup('c') == 3)
-    check('lookup d',                  e0.lookup('d') == 4)
-
-    # Child scope lookup walks up.
-    child = Environment(parent=e0)
-    check('child parent is e0',        child._parent is e0)
-    check('child global is root-of-e0', child.getGlobalEnv() is e0)
-    check('child lookup finds parent', child.lookup('a') == 1)
-
-    # Child shadowing.
-    child.bind('a', 100)
-    check('child shadows a',           child.lookup('a') == 100)
-    check('parent a unchanged',        e0.lookup('a') == 1)
-
-    # set walks up and updates nearest binding.
-    child.set('b', 222)
-    check('set updates parent b',      e0.lookup('b') == 222)
-    check('child has no b binding',    intern_symbol('b') not in child._bindings)
-
-    # Rebind same key overwrites.
-    e0.bind('x', 'first')
-    e0.bind('x', 'second')
-    check('rebind overwrites',         e0.lookup('x') == 'second')
-
-    # Unbound lookup.
-    try:
-        root.lookup('missing')
-        check('lookup missing raises',  False)
-    except SchemeUnboundError as e:
-        check('lookup missing raises',  True)
-        check('lookup missing msg',     e.msg == 'unbound variable: missing')
-        check('lookup missing src None', e.src is None)
-
-    # Unbound set.
-    try:
-        root.set('missing', 42)
-        check('set missing raises',     False)
-    except SchemeUnboundError as e:
-        check('set missing raises',     True)
-        check('set missing msg',        e.msg ==
-              'set! on unbound variable: missing')
-
-    # Freeze: bind and set raise on a frozen env.
-    frozen = Environment()
-    frozen.bind('a', 1)
-    check('frozen flag default False', frozen._is_immutable is False)
-    frozen.freeze()
-    check('freeze sets flag',          frozen._is_immutable is True)
-    try:
-        frozen.bind('b', 2)
-        check('bind on frozen raises',  False)
-    except SchemeTypeError as e:
-        check('bind on frozen raises',  True)
-        check('bind frozen msg',        "cannot define 'b'" in e.msg)
-    try:
-        frozen.set('a', 99)
-        check('set on frozen raises',   False)
-    except SchemeTypeError as e:
-        check('set on frozen raises',   True)
-        check('set frozen msg',         "set! on 'a'" in e.msg)
-    check('frozen value unchanged',    frozen.lookup('a') == 1)
-    # set on a child scope updating a frozen-parent binding also raises.
-    child_of_frozen = Environment(parent=frozen)
-    try:
-        child_of_frozen.set('a', 99)
-        check('child set walking to frozen raises', False)
-    except SchemeTypeError:
-        check('child set walking to frozen raises', True)
-    # set on a child's own (unfrozen) binding still works.
-    child_of_frozen.bind('z', 7)
-    child_of_frozen.set('z', 8)
-    check('child unfrozen set works', child_of_frozen.lookup('z') == 8)
-    # freeze is idempotent.
-    frozen.freeze()
-    check('freeze idempotent',         frozen._is_immutable is True)
+    # The scope classes are tested in undercarriage-tests/environment_test.py.
 
     # SchemeUnboundError caller can mutate src after construction.
     try:
-        child.lookup('nothere')
+        GlobalEnvironment().lookup(global_la_key(intern_symbol('nothere')))
     except SchemeUnboundError as e:
         e.src = SourceInfo(2, 5, 'line', '<test>')
         check('e.src mutation',         e.src.line == 2 and e.src.col == 5)

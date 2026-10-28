@@ -72,7 +72,7 @@ from __future__ import annotations
 import time
 
 from pyscheme.Environment import (
-    Environment,
+    LocalEnvironment, GlobalEnvironment, global_la_key,
     _PositionedSchemeError,
     SchemeArityError, SchemeUnboundError, SchemeTypeError,
     SchemeRuntimeError, SchemeUserError, SchemeRaised, SchemeFileError,
@@ -431,10 +431,12 @@ def _beta_reduce_core(params, body, clo_env, rest, arg_values, app_node):
             raise SchemeArityError(
                 arity_mismatch_msg('', n_fixed, None, n_args),
                 src_of(app_node) if app_node is not None else None)
-    new_env = Environment(clo_env)
+    names = []
+    values = []
     i = 0
     while i < n_fixed:
-        new_env.bind(params[i], arg_values[i])
+        names.append(intern_symbol(params[i]))
+        values.append(arg_values[i])
         i = i + 1
     if rest is not None:
         rest_value = NIL_VALUE
@@ -442,7 +444,9 @@ def _beta_reduce_core(params, body, clo_env, rest, arg_values, app_node):
         while i >= n_fixed:
             rest_value = alloc_cons(arg_values[i], rest_value, None)
             i = i - 1
-        new_env.bind(rest, rest_value)
+        names.append(intern_symbol(rest))
+        values.append(rest_value)
+    new_env = LocalEnvironment(clo_env, tuple(names), values)
     return _BetaResult(new_env, body)
 
 
@@ -848,7 +852,7 @@ def _is_aux_keyword(sym, name, env):
         return False
     if env is None:
         return True
-    return env.lookup_optional(name) is None
+    return env.lookup_optional(global_la_key(intern_symbol(name))) is None
 
 
 def _classify_cond_clause(clause, env=None):
@@ -1072,7 +1076,8 @@ def _library_load_path():
 def _load_py_extension(path):
     """Import a .py extension file and call its register(env) entry point.
     The module receives the global environment so it can install new
-    primitives with env.bind(name, make_primitive(name, fn)).  It may
+    primitives with env.bind(global_la_key(intern_symbol(name)),
+    make_primitive(name, fn)).  It may
     also call library_register directly if it is a standalone module
     without a companion .sld file."""
     import importlib.util
@@ -1240,7 +1245,7 @@ def define_library_setup(C, ctx):
     except ValueError as e:
         raise SchemeSyntaxError('define-library: ' + str(e), src_of(C))
 
-    lib_env = Environment(parent=None)
+    lib_env = GlobalEnvironment()
     export_names = []          # Python list of (internal, external) pairs
     eval_forms = []            # begin / unknown-decl forms, in declaration order
     import_sets = []           # import-set sexprs, in declaration order
@@ -1261,17 +1266,18 @@ def _finalize_define_library(lib_env, export_names, key, C):
     # Build exports env: copy each (internal, external) entry out of
     # lib_env; missing names are hard errors.
     from pyscheme.AST import is_syntax_transformer
-    exports_env = Environment(parent=None)
+    exports_env = GlobalEnvironment()
     i = 0
     while i < len(export_names):
         internal = export_names[i][0]
         external = export_names[i][1]
-        if intern_symbol(internal) not in lib_env._bindings:
+        internal_key = global_la_key(intern_symbol(internal))
+        if lib_env.lookup_optional(internal_key) is None:
             raise SchemeSyntaxError(
                 'define-library: exported name not defined: ' + internal,
                 src_of(C))
-        val = lib_env.lookup(internal)
-        exports_env.bind(external, val)
+        val = lib_env.lookup(internal_key)
+        exports_env.bind(global_la_key(intern_symbol(external)), val)
         # A macro's free-identifier aliases (gensyms bound to the library's
         # def-time values) are part of its hygiene closure.  They were bound in
         # lib_env (the library's own parentless "global"), so carry them into the
@@ -1280,9 +1286,10 @@ def _finalize_define_library(lib_env, export_names, key, C):
         if is_syntax_transformer(val):
             for fid in val.free_id_map:
                 gs = val.free_id_map[fid]
-                gs_sid = intern_symbol(gs)
-                if gs_sid in lib_env._bindings and gs_sid not in exports_env._bindings:
-                    exports_env.bind(gs, lib_env.lookup(gs))
+                gs_key = global_la_key(intern_symbol(gs))
+                if (lib_env.lookup_optional(gs_key) is not None
+                        and exports_env.lookup_optional(gs_key) is None):
+                    exports_env.bind(gs_key, lib_env.lookup(gs_key))
         i = i + 1
     exports_env.freeze()
     library_register(key, exports_env)
@@ -1541,11 +1548,11 @@ def _cek_loop(expr, env, ctx):
                                         params.append(pairs[i][0])
                                         init_exprs.append(pairs[i][1])
                                         i = i + 1
-                                    loop_env = Environment(E)
-                                    loop_env.bind(loop_name, VOID_VALUE)
+                                    loop_env = LocalEnvironment(
+                                        E, (intern_symbol(loop_name),), [VOID_VALUE])
                                     closure = make_closure(params, body_cons, loop_env,
                                                            None, '')
-                                    loop_env.bind(loop_name, closure)
+                                    loop_env.bind((0, 0, intern_symbol(loop_name)), closure)
                                     # Now evaluate (name init1 init2 ...) - i.e., apply closure to init values
                                     # Set up FRAME_ARG-style call: but we don't have an "AST" for this synthesized call.
                                     # Use FRAME_ARG with init_exprs as args list and the current C as app_node.
@@ -1611,11 +1618,14 @@ def _cek_loop(expr, env, ctx):
                                     if is_cons(body_cons.cdr):
                                         K.append((FRAME_SEQ, body_cons.cdr, E))
                                     continue
-                                new_env = Environment(E)
+                                names = []
+                                values = []
                                 i = 0
                                 while i < len(pairs):
-                                    new_env.bind(pairs[i][0], UNASSIGNED_VALUE)
+                                    names.append(intern_symbol(pairs[i][0]))
+                                    values.append(UNASSIGNED_VALUE)
                                     i = i + 1
+                                new_env = LocalEnvironment(E, tuple(names), values)
                                 remaining = []
                                 i = 1
                                 while i < len(pairs):
@@ -1669,7 +1679,7 @@ def _cek_loop(expr, env, ctx):
 
                     if is_symbol(C):
                         try:
-                            V = E.lookup_id(as_symbol_id(C))
+                            V = E.lookup(E.resolve(as_symbol_id(C)))
                         except SchemeUnboundError as e:
                             e.src = src_of(C)
                             raise
@@ -1702,7 +1712,7 @@ def _cek_loop(expr, env, ctx):
                     if ftag == FRAME_DEFINE:
                         E = frame[2]
                         try:
-                            E.bind_id(as_symbol_id(frame[1]), V)
+                            E.bind(global_la_key(as_symbol_id(frame[1])), V)
                         except SchemeTypeError as e:
                             e.src = src_of(frame[1])
                             raise
@@ -1712,7 +1722,7 @@ def _cek_loop(expr, env, ctx):
                     if ftag == FRAME_SET:
                         E = frame[2]
                         try:
-                            E.set_id(as_symbol_id(frame[1]), V)
+                            E.set(E.resolve(as_symbol_id(frame[1])), V)
                         except (SchemeUnboundError, SchemeTypeError) as e:
                             e.src = frame[3]
                             raise
@@ -1979,7 +1989,7 @@ def _cek_loop(expr, env, ctx):
                             raise SchemeSyntaxError(
                                 im_prefix + str(ie), _isrc)
                         for n in bindings:
-                            im_env.bind(n, bindings[n])
+                            im_env.bind(global_la_key(intern_symbol(n)), bindings[n])
                         K.append((FRAME_IMPORT_STEP, im_sets, im_i + 1,
                                   im_env, False, im_prefix))
                         continue
@@ -2014,7 +2024,7 @@ def _cek_loop(expr, env, ctx):
                             _src = _fh.read()
                             _fh.close()
                             K.append((FRAME_EVAL_FORMS, parse(_src, _sld),
-                                      Environment(parent=None), 0, {}, False))
+                                      GlobalEnvironment(), 0, {}, False))
                         continue
 
                     if ftag == FRAME_CWV_CONSUMER:
@@ -3021,11 +3031,12 @@ def _cek_loop(expr, env, ctx):
                         new_collected = list(collected)
                         new_collected.append(V)
                         if len(remaining) == 0:
-                            new_env = Environment(saved_env)
+                            sids = []
                             i = 0
                             while i < len(names):
-                                new_env.bind(names[i], new_collected[i])
+                                sids.append(intern_symbol(names[i]))
                                 i = i + 1
+                            new_env = LocalEnvironment(saved_env, tuple(sids), new_collected)
                             E = new_env
                             C = body.car
                             if is_cons(body.cdr):
@@ -3047,8 +3058,7 @@ def _cek_loop(expr, env, ctx):
                         remaining = frame[2]
                         body = frame[3]
                         saved_env = frame[4]
-                        new_env = Environment(saved_env)
-                        new_env.bind(name, V)
+                        new_env = LocalEnvironment(saved_env, (intern_symbol(name),), [V])
                         if len(remaining) == 0:
                             E = new_env
                             C = body.car
@@ -3072,7 +3082,7 @@ def _cek_loop(expr, env, ctx):
                         remaining = frame[2]
                         body = frame[3]
                         saved_env = frame[4]
-                        saved_env.set(name, V)
+                        saved_env.set(saved_env.resolve(intern_symbol(name)), V)
                         if len(remaining) == 0:
                             E = saved_env
                             C = body.car
@@ -3358,7 +3368,7 @@ if __name__ == '__main__':
 
     def fresh_state():
         from pyscheme.library import register_standard_libraries
-        env = Environment()
+        env = GlobalEnvironment()
         install_primitives(env)
         register_standard_libraries(env)
         static_env = dict(PRIMITIVE_ARITIES)

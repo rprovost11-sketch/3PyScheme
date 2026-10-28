@@ -46,6 +46,7 @@ from pyscheme.AST import (
 from pyscheme.syntax_rules import (
     hygiene_gensym, formals_bound_names, let_binding_names,
 )
+from pyscheme.Environment import GlobalEnvironment, global_la_key
 
 
 # Runtime environment reference - the Interpreter installs this before
@@ -87,7 +88,7 @@ def _lookup_macro(sym):
     env = _runtime_env_ref[0]
     if env is None:
         return None
-    val = env.lookup_optional(strip_marks(as_symbol(sym)))
+    val = env.lookup_optional(global_la_key(intern_symbol(strip_marks(as_symbol(sym)))))
     if val is not None and is_syntax_transformer(val):
         return val
     return None
@@ -100,11 +101,13 @@ def _current_macro_env():
     chain = []
     while env is not None:
         chain.append(env)
-        env = env._parent
+        env = env.getParent()
+
+    def take(sid, value):
+        merged[symbol_name(sid)] = value
     i = len(chain) - 1
     while i >= 0:
-        for k, v in chain[i]._bindings.items():
-            merged[symbol_name(k)] = v
+        chain[i].for_each_binding(take)
         i = i - 1
     return merged
 
@@ -267,7 +270,7 @@ def _expand_define_syntax(sexpr):
                            src_of(tr_expr))
     env = _runtime_env_ref[0]
     if env is not None:
-        env.bind(macro_name, t)
+        env.bind(global_la_key(intern_symbol(macro_name)), t)
     return VOID_VALUE
 
 
@@ -279,7 +282,6 @@ def _expand_let_syntax(sexpr, is_letrec):
     # letrec-syntax: switch to child env before parsing so siblings are visible.
     from pyscheme.Parser import SchemeSyntaxError
     from pyscheme.syntax_rules import parse_syntax_rules
-    from pyscheme.Environment import Environment
     if not is_cons(sexpr.cdr):
         raise SchemeSyntaxError('let-syntax: malformed', src_of(sexpr))
     bindings = sexpr.cdr.car
@@ -287,10 +289,7 @@ def _expand_let_syntax(sexpr, is_letrec):
     if not is_cons(body):
         raise SchemeSyntaxError('let-syntax: empty body', src_of(sexpr))
     outer_env = _runtime_env_ref[0]
-    if outer_env is None:
-        child_env = Environment()
-    else:
-        child_env = Environment(parent=outer_env)
+    child_env = GlobalEnvironment(outer_env)
     src = sexpr.src
     if is_letrec:
         _runtime_env_ref[0] = child_env
@@ -313,12 +312,12 @@ def _expand_let_syntax(sexpr, is_letrec):
             t = parse_syntax_rules(tr_expr.cdr, _current_macro_env(), bname,
                                    src_of(tr_expr))
             if is_letrec:
-                child_env.bind(bname, t)
+                child_env.bind(global_la_key(intern_symbol(bname)), t)
             else:
                 # let-syntax: bind under a gensym so sibling templates can't see
                 # each other; rename body references via let_rename_table.
                 gs = hygiene_gensym(bname)
-                child_env.bind(gs, t)
+                child_env.bind(global_la_key(intern_symbol(gs)), t)
                 let_rename_table[bname] = gs
             transformers.append(t)
             cur = cur.cdr
@@ -327,11 +326,13 @@ def _expand_let_syntax(sexpr, is_letrec):
         # child_env value, not the outer env's shadowed binding.
         if is_letrec and transformers:
             global_env = child_env.getGlobalEnv()
+            own = {}
+            child_env.for_each_binding(own.__setitem__)
             for t_obj in transformers:
                 for fid, gs in t_obj.free_id_map.items():
                     fid_sid = intern_symbol(fid)
-                    if fid_sid in child_env._bindings:
-                        global_env.bind(gs, child_env._bindings[fid_sid])
+                    if fid_sid in own:
+                        global_env.bind(global_la_key(intern_symbol(gs)), own[fid_sid])
         _runtime_env_ref[0] = child_env
         # Wrap the body in (let () body...) -- NOT (begin body...).  A begin in a
         # definition context splices its internal defines into the *enclosing*
@@ -406,10 +407,8 @@ def _ensure_local_env(local_env_ref):
     """Create a child env for internal define-syntax if not yet created.
     Saves the outer env in local_env_ref[0] for _expand_body to restore."""
     if local_env_ref[0] is None:
-        from pyscheme.Environment import Environment
         outer = _runtime_env_ref[0]
-        child = Environment(
-            parent=outer) if outer is not None else Environment()
+        child = GlobalEnvironment(outer)
         local_env_ref[0] = outer
         _runtime_env_ref[0] = child
 
