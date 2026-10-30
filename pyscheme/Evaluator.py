@@ -1445,7 +1445,7 @@ def _cek_loop(expr, env, ctx):
                                 K.append(
                                     (FRAME_LIB_FINALIZE, _dl_env, _dl[2], _dl[3], C))
                                 K.append((FRAME_EVAL_FORMS, _dl[1], _dl_env,
-                                          0, {}, False))
+                                          0, {}, True))
                                 # Imports run first (frame-driven, loading library
                                 # files on the K stack if needed), before the begin
                                 # forms; pushed last so APPLY pops it first.
@@ -1967,9 +1967,9 @@ def _cek_loop(expr, env, ctx):
                         # THE MAIN K STACK (load / library loading), instead of a
                         # re-entrant cek_eval per form.  Each form is expanded and
                         # evaluated; its result is discarded.  do_analyze gates the
-                        # Analyzer pass (load analyzes + accumulates defines into
-                        # static_env; define-library's begin/decl forms are not
-                        # analyzed, matching the old cek_eval(expand(form)) path).
+                        # Analyzer pass, which accumulates defines into static_env.
+                        # Every current push site analyzes (load, define-library's
+                        # begin/decl forms, a .sld file's top-level forms).
                         # Yields VOID when the forms are exhausted.
                         ef_forms = frame[1]
                         ef_env = frame[2]
@@ -2081,7 +2081,7 @@ def _cek_loop(expr, env, ctx):
                             _src = _fh.read()
                             _fh.close()
                             K.append((FRAME_EVAL_FORMS, parse(_src, _sld),
-                                      GlobalEnvironment(), 0, {}, False))
+                                      GlobalEnvironment(), 0, {}, True))
                         continue
 
                     if ftag == FRAME_CWV_CONSUMER:
