@@ -395,7 +395,7 @@ def _prim_eval_cycle(ctx, env, args, app_node):
     from pyscheme.Expander import expand
     from pyscheme.Evaluator import cek_eval
     from pyscheme.Analyzer import (analyze, extend_static_env_with_define,
-                                   PRIMITIVE_ARITIES)
+                                   PRIMITIVE_ARITIES, scope_of_env)
     from pyscheme.PrettyPrinter import pretty_print
     from pyscheme.Environment import ReplExit, SchemeRuntimeError
     from pyscheme.Listener import Listener
@@ -431,8 +431,8 @@ def _prim_eval_cycle(ctx, env, args, app_node):
     form = None
     try:
         forms = parse(source, None)
-        # Mirror Interpreter.rawEval: analyze (a checking pass -- its result is
-        # discarded; cek_eval runs the un-analyzed form) then accumulate user defines
+        # Mirror Interpreter.rawEval: analyze (validating, and resolving the
+        # form's variables; cek_eval runs the rewritten form) then accumulate user defines
         # so cross-form arity checks fire, exactly as the .log runner does.  The static
         # env is seeded with the primitive/special-form arities.
         senv = dict(PRIMITIVE_ARITIES)
@@ -441,8 +441,7 @@ def _prim_eval_cycle(ctx, env, args, app_node):
         i = 0
         while i < len(forms):
             form = forms[i]
-            expanded = expand(form)
-            analyze(expanded, senv)
+            expanded = analyze(expand(form), senv, scope_of_env(target))
             extend_static_env_with_define(senv, expanded)
             last = cek_eval(expanded, target, ctx)
             have = True
@@ -498,7 +497,7 @@ def _prim_checked_eval(ctx, env, args, app_node):
     from pyscheme.Expander import expand
     from pyscheme.Evaluator import cek_eval
     from pyscheme.Analyzer import (analyze, extend_static_env_with_define,
-                                   PRIMITIVE_ARITIES)
+                                   PRIMITIVE_ARITIES, scope_of_env)
     from pyscheme.Environment import ReplExit, SchemeRuntimeError
     from pyscheme.Listener import Listener
     if not is_string(args[0]):
@@ -538,8 +537,7 @@ def _prim_checked_eval(ctx, env, args, app_node):
         i = 0
         while i < len(forms):
             form = forms[i]
-            expanded = expand(form)
-            analyze(expanded, senv)
+            expanded = analyze(expand(form), senv, scope_of_env(target))
             extend_static_env_with_define(senv, expanded)
             last = cek_eval(expanded, target, ctx)
             have = True
@@ -872,15 +870,15 @@ def _prim_load(ctx, env, args, app_node):
         raise SchemeTypeError('load: ' + str(e), src_of(app_node))
     from pyscheme.Parser import parse
     from pyscheme.Expander import expand
-    from pyscheme.Analyzer import analyze, extend_static_env_with_define
+    from pyscheme.Analyzer import (analyze, extend_static_env_with_define,
+                                   scope_of_env)
     from pyscheme.Evaluator import cek_eval
     forms = parse(source, abs_path)
     static_env = {}
     i = 0
     while i < len(forms):
         form = forms[i]
-        expanded = expand(form)
-        analyze(expanded, static_env)
+        expanded = analyze(expand(form), static_env, scope_of_env(eval_env))
         extend_static_env_with_define(static_env, expanded)
         cek_eval(expanded, eval_env, ctx)
         i = i + 1

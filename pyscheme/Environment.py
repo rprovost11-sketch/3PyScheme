@@ -530,9 +530,41 @@ def _install_chain_histogram(out_path):
     atexit.register(report)
 
 
+def _install_la_check():
+    """SCHEME_LA_CHECK set: prove the Analyzer's frame model against the
+    run-time chain.  Every lookup / set a local scope receives must carry
+    the LA key resolve finds by name from that scope, and a dict scope must
+    only ever receive a global key -- a wrong key there would otherwise go
+    unnoticed, since a dict scope reads only the name.  A mismatch raises
+    AssertionError, which no Scheme handler catches.  Off by default; for
+    running the test battery under."""
+    def wrap_local(orig):
+        def check(self, la_key, *value):
+            want = self.resolve(la_key[2])
+            if want != la_key:
+                raise AssertionError('LA key %r, but the scope resolves %s to %r'
+                                     % (la_key, _display_name(la_key[2]), want))
+            return orig(self, la_key, *value)
+        return check
+
+    def wrap_dict(orig):
+        def check(self, la_key, *value):
+            if la_key[0] != GLOBAL_DEPTH:
+                raise AssertionError('local LA key %r reached a dict scope' % (la_key,))
+            return orig(self, la_key, *value)
+        return check
+
+    LocalEnvironment.lookup = wrap_local(LocalEnvironment.lookup)
+    LocalEnvironment.set = wrap_local(LocalEnvironment.set)
+    GlobalEnvironment.lookup = wrap_dict(GlobalEnvironment.lookup)
+    GlobalEnvironment.set = wrap_dict(GlobalEnvironment.set)
+
+
 import os as _os
 if _os.environ.get('PYSCHEME_CHAIN_HIST'):
     _install_chain_histogram(_os.environ['PYSCHEME_CHAIN_HIST'])
+if 'SCHEME_LA_CHECK' in _os.environ:
+    _install_la_check()
 
 
 # --- Module self-test --------------------------------------------------

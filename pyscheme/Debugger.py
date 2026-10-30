@@ -18,7 +18,7 @@ from pyscheme.AST import (
     is_cons, is_nil, is_symbol, is_closure, is_primitive, is_case_closure,
     is_continuation,
     as_symbol, as_closure_params, as_closure_body, as_closure_rest_name,
-    symbol_name, intern_symbol,
+    symbol_name, intern_symbol, is_scope_names,
 )
 from pyscheme.Environment import SchemeUnboundError, SchemeRuntimeError
 from pyscheme.PrettyPrinter import pretty_print
@@ -248,7 +248,8 @@ class Debugger:
         parts = []
         cur = cell
         while is_cons(cur):
-            parts.append(Debugger._ann_flat(cur.car, annotations))
+            if not is_scope_names(cur.car):
+                parts.append(Debugger._ann_flat(cur.car, annotations))
             cur = cur.cdr
         if is_nil(cur):
             inner = ''
@@ -1145,7 +1146,7 @@ class Debugger:
         try:
             from pyscheme.Parser import parse
             from pyscheme.Expander import expand
-            from pyscheme.Analyzer import analyze
+            from pyscheme.Analyzer import analyze, scope_of_env
             print('  [watch]')
             i = 0
             while i < len(self.watch_list):
@@ -1156,7 +1157,7 @@ class Debugger:
                     j = 0
                     while j < len(forms):
                         form = expand(forms[j])
-                        analyze(form, {})
+                        form = analyze(form, {}, scope_of_env(env))
                         result = ctx.lEval(env, form)
                         j = j + 1
                     print('    ' + entry + ' = ' + pretty_print(result))
@@ -1172,7 +1173,7 @@ class Debugger:
         """Evaluate source in env, printing result.  Suppresses step hook."""
         from pyscheme.Parser import parse
         from pyscheme.Expander import expand
-        from pyscheme.Analyzer import analyze
+        from pyscheme.Analyzer import analyze, scope_of_env
         saved_hook = self._step_hook
         self._step_hook = None
         try:
@@ -1181,7 +1182,7 @@ class Debugger:
             i = 0
             while i < len(forms):
                 form = expand(forms[i])
-                analyze(form, {})
+                form = analyze(form, {}, scope_of_env(env))
                 result = ctx.lEval(env, form)
                 i = i + 1
             print('==> ' + pretty_print(result))
@@ -1194,7 +1195,7 @@ class Debugger:
         """Evaluate source, then interactively inspect.  Suppresses step hook."""
         from pyscheme.Parser import parse
         from pyscheme.Expander import expand
-        from pyscheme.Analyzer import analyze
+        from pyscheme.Analyzer import analyze, scope_of_env
         from pyscheme.primitives.debug import _run_inspect
         saved_hook = self._step_hook
         self._step_hook = None
@@ -1204,7 +1205,7 @@ class Debugger:
             i = 0
             while i < len(forms):
                 form = expand(forms[i])
-                analyze(form, {})
+                form = analyze(form, {}, scope_of_env(env))
                 result = ctx.lEval(env, form)
                 i = i + 1
             _run_inspect(result, ctx.outStrm, self.input_fn)
@@ -1217,14 +1218,14 @@ class Debugger:
         """Evaluate source with breakpoints active (no step hook suppression)."""
         from pyscheme.Parser import parse
         from pyscheme.Expander import expand
-        from pyscheme.Analyzer import analyze
+        from pyscheme.Analyzer import analyze, scope_of_env
         try:
             forms = parse(source, '<debug>')
             result = NIL_VALUE
             i = 0
             while i < len(forms):
                 form = expand(forms[i])
-                analyze(form, {})
+                form = analyze(form, {}, scope_of_env(env))
                 result = ctx.lEval(env, form)
                 i = i + 1
             print('==> ' + pretty_print(result))
@@ -1376,13 +1377,13 @@ class Debugger:
             try:
                 from pyscheme.Parser import parse
                 from pyscheme.Expander import expand
-                from pyscheme.Analyzer import analyze
+                from pyscheme.Analyzer import analyze, scope_of_env
                 forms = parse(cond_src, '<cond>')
                 result = NIL_VALUE
                 i = 0
                 while i < len(forms):
                     form = expand(forms[i])
-                    analyze(form, {})
+                    form = analyze(form, {}, scope_of_env(E))
                     result = ctx.lEval(E, form)
                     i = i + 1
                 from pyscheme.Evaluator import isFalse

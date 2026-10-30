@@ -27,7 +27,7 @@ from pyscheme.AST import (
     is_record, is_parameter, is_error_object, is_continuation,
     is_syntax_transformer, is_environment,
     is_record_accessor, is_record_mutator, is_vector, is_bytevector,
-    is_port, is_eof,
+    is_port, is_eof, is_scope_names,
     as_boolean, as_integer, as_real, as_character, as_string, as_symbol,
     as_rational_num, as_rational_den, as_complex_real, as_complex_imag,
     as_exact_complex_real, as_exact_complex_imag,
@@ -130,7 +130,9 @@ def _render_structure(val, render_leaf):
             elems = []
             cur = x
             while is_cons(cur):
-                elems.append(cur.car)
+                # An analyzed let form's scope-names node is not source text.
+                if not is_scope_names(cur.car):
+                    elems.append(cur.car)
                 cur = cur.cdr
             # push in reverse so tasks pop in print order: ( e0 e1 ... [. tail] )
             stack.append(('e', ')'))
@@ -357,7 +359,8 @@ def _shared_render(val, labels, next_label, seen):
                 if cur is not x and ck in labels:
                     tail = cur
                     break
-                items.append(cur.car)
+                if not is_scope_names(cur.car):
+                    items.append(cur.car)
                 cur = cur.cdr
                 if is_cons(cur) and id(cur) in seen:
                     tail = cur

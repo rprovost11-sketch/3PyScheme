@@ -102,6 +102,26 @@ def _substring(s, start, end):
     return result
 
 
+def _clock_str(fmt):
+    """Local wall-clock time now, formatted by strftime fmt (suite timing
+    lines)."""
+    return datetime.datetime.now().strftime(fmt)
+
+
+def _fmt_elapsed(secs):
+    """Elapsed seconds as '14s' / '2m 14s' / '1h 05m 09s' (suite timing
+    lines)."""
+    total = int(secs + 0.5)
+    h = total // 3600
+    m = (total % 3600) // 60
+    s = total % 60
+    if h > 0:
+        return '%dh %02dm %02ds' % (h, m, s)
+    if m > 0:
+        return '%dm %02ds' % (m, s)
+    return '%ds' % s
+
+
 # ---- InterpreterBase --------------------------------------------------
 
 
@@ -1502,9 +1522,13 @@ class Listener:
                 skipped.append((label, eff['ports']))
 
         BOLD, GREEN, RED, RESET = self._colors('bold', 'green', 'red', 'reset')
+        start_date = _clock_str('%Y-%m-%d')
+        start_stamp = _clock_str('%Y-%m-%d %H:%M:%S')
+        start_t = time.monotonic()
         print()
         print(BOLD + '; running suites: '
-              + ', '.join(s['_label'] for s in runnable) + RESET)
+              + ', '.join(s['_label'] for s in runnable) + RESET
+              + '   (started ' + start_stamp + ')')
         for label, ports in skipped:
             print('  (skipping ' + label + ' -- ' + ports + '-only on this port)')
         print()
@@ -1533,10 +1557,12 @@ class Listener:
                 self._shared_run_filename = ''
 
         results = []   # dicts: name, ok, npass, nfail, nxpass, note
+        elapsed = []   # seconds per suite, parallel to results
         try:
             for s in runnable:
                 print(BOLD + '-- ' + s['_label'] + ' (' + (s['kind'] or '?')
-                      + ') --' + RESET)
+                      + ') --' + RESET + '  [' + _clock_str('%H:%M:%S') + ']')
+                suite_t = time.monotonic()
                 if s['kind'] == 'log':
                     results.append(self._run_log_suite(s))
                 elif s['kind'] == 'scheme':
@@ -1547,6 +1573,8 @@ class Listener:
                     results.append({'name': s['name'], 'ok': False, 'npass': 0,
                                     'nfail': 1, 'nxpass': 0,
                                     'note': 'unknown kind ' + repr(s['kind'])})
+                elapsed.append(time.monotonic() - suite_t)
+                print('    (finished in ' + _fmt_elapsed(elapsed[-1]) + ')')
                 print()
         finally:
             self._shared_run_file = None
@@ -1555,21 +1583,33 @@ class Listener:
         total_fail = sum(r['nfail'] for r in results)
         total_pass = sum(r['npass'] for r in results)
         total_xpass = sum(r['nxpass'] for r in results)
+        # Finish line: the date is repeated only when the run crossed midnight.
+        end_fmt = ('%H:%M:%S' if _clock_str('%Y-%m-%d') == start_date
+                   else '%Y-%m-%d %H:%M:%S')
+        timing_line = ('  started ' + start_stamp + ', finished '
+                       + _clock_str(end_fmt) + ', total '
+                       + _fmt_elapsed(time.monotonic() - start_t))
 
         print(BOLD + '===== SUITES COMPLETE =====' + RESET)
-        for r in results:
+        for i, r in enumerate(results):
+            # plain = the detail's visible text, for padding the time column
             if not r['ok']:
                 note = ' -- ' + r['note'] if r['note'] else ''
-                detail = RED + 'FAILED' + note + RESET
+                plain = 'FAILED' + note
+                detail = RED + plain + RESET
             elif r['nxpass'] > 0:
-                detail = (GREEN + 'passed' + RESET + ' ' + BOLD
-                          + ('(%d now-passing expect-fail -- promote it)'
-                             % r['nxpass']) + RESET)
+                note = '(%d now-passing expect-fail -- promote it)' % r['nxpass']
+                plain = 'passed ' + note
+                detail = GREEN + 'passed' + RESET + ' ' + BOLD + note + RESET
             elif r['npass']:
-                detail = GREEN + str(r['npass']) + ' passed' + RESET
+                plain = str(r['npass']) + ' passed'
+                detail = GREEN + plain + RESET
             else:
-                detail = GREEN + 'ok' + RESET
-            print('  ' + r['name'].ljust(22) + ' ' + detail)
+                plain = 'ok'
+                detail = GREEN + plain + RESET
+            print('  ' + r['name'].ljust(24) + ' ' + detail
+                  + ' ' * max(0, 16 - len(plain))
+                  + _fmt_elapsed(elapsed[i]).rjust(10))
         if total_fail == 0:
             print(BOLD + GREEN + '  ALL SUITES PASSED' + RESET)
         else:
@@ -1577,17 +1617,20 @@ class Listener:
         if total_xpass:
             print(BOLD + '  (' + str(total_xpass) + ' known-open expect-fail '
                   'case(s) now pass -- update the pins)' + RESET)
+        print(timing_line)
 
         if shared is not None:
             print('', file=shared)
             print('===== SUITES COMPLETE =====', file=shared)
-            for r in results:
+            for i, r in enumerate(results):
                 detail = ('FAILED' if not r['ok']
                           else (str(r['npass']) + ' passed' if r['npass']
                                 else 'ok'))
-                print('  ' + r['name'].ljust(22) + ' ' + detail, file=shared)
+                print('  ' + r['name'].ljust(24) + ' ' + detail.ljust(16)
+                      + _fmt_elapsed(elapsed[i]).rjust(10), file=shared)
             print('  ALL SUITES PASSED' if total_fail == 0
                   else '  SUITE FAILURES: ' + str(total_fail), file=shared)
+            print(timing_line, file=shared)
             shared.close()
             print()
             print('Test output: ' + shared_filename)

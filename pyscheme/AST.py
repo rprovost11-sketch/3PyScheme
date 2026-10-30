@@ -52,6 +52,9 @@ PORT = 24
 EOF = 25
 EXACT_COMPLEX = 26
 SYMBOL = 100
+# Not a value: the Analyzer's scope-names node, placed right after the head
+# of a let-family form (see make_scope_names).
+SCOPE_NAMES = 101
 
 
 # --- REPL filename sentinel --------------------------------------------
@@ -409,14 +412,62 @@ def make_symbol(name, src=None):
     return (SYMBOL, intern_symbol(name), src)
 
 
-def make_closure(params, body, env, rest_name, docstring):
+def resolve_symbol(sym, la_key):
+    """A variable reference the Analyzer has resolved: the same symbol with
+    its LA key (depth, index, sid) as a fourth slot.  is_symbol, as_symbol,
+    as_symbol_id and src_of read it exactly as the plain symbol."""
+    return (SYMBOL, sym[1], sym[2], la_key)
+
+
+def symbol_la_key(sym):
+    """The LA key a resolved symbol carries, or None if it is unresolved."""
+    return sym[3] if len(sym) > 3 else None
+
+
+def make_scope_names(scopes):
+    """The Analyzer's scope-names node for a let-family form: a tuple of the
+    scopes the form creates at run time, in order, each a tuple of symbol ids
+    (let / letrec: one scope; let*: one per binding; named let: the loop-name
+    scope, then the loop procedure's parameters).  It sits right after the
+    form's head, so the Evaluator need not rebuild the names on every run.
+    Never a value; printers skip it."""
+    return (SCOPE_NAMES, scopes)
+
+
+def is_scope_names(val):
+    return isinstance(val, tuple) and len(val) == 2 and val[0] == SCOPE_NAMES
+
+
+def as_scope_names(val):
+    return val[1]
+
+
+def closure_scope_names(params, rest_name):
+    """The tuple of symbol ids for a procedure's call scope: the fixed
+    parameters, then the rest parameter."""
+    names = []
+    i = 0
+    while i < len(params):
+        names.append(intern_symbol(params[i]))
+        i = i + 1
+    if rest_name is not None:
+        names.append(intern_symbol(rest_name))
+    return tuple(names)
+
+
+def make_closure(params, body, env, rest_name, docstring, scope_names=None):
     """Build a CLOSURE value.
-       params    - tuple of name strings (positional)
-       body      - cons chain of body expressions
-       env       - definition-time environment (lexical capture)
-       rest_name - str or None, name for the rest-parameter (variadic)
-       docstring - str"""
-    return (CLOSURE, params, body, env, rest_name, docstring)
+       params      - tuple of name strings (positional)
+       body        - cons chain of body expressions
+       env         - definition-time environment (lexical capture)
+       rest_name   - str or None, name for the rest-parameter (variadic)
+       docstring   - str
+       scope_names - the call scope's names (closure_scope_names), when the
+                     caller already has them; otherwise computed here
+    The names are computed once, here, rather than on every call."""
+    if scope_names is None:
+        scope_names = closure_scope_names(params, rest_name)
+    return (CLOSURE, params, body, env, rest_name, docstring, scope_names)
 
 
 # Primitive kinds (#2).  PRIM_ORDINARY (0) is the common case; nonzero
@@ -499,7 +550,8 @@ def make_primitive(name, fn):
 
 def make_case_closure(clauses, env, docstring):
     """Build a case-lambda closure.  `clauses` is a Python list of
-    (params, body_cons, rest_name) triples.  At call time the evaluator
+    (params, body_cons, rest_name, scope_names) tuples, scope_names as
+    closure_scope_names gives it.  At call time the evaluator
     dispatches to the first clause whose param shape accepts the
     argument count."""
     return (CASE_CLOSURE, clauses, env, docstring)
@@ -848,6 +900,10 @@ def as_closure_rest_name(val):
 
 def as_closure_docstring(val):
     return val[5]
+
+
+def as_closure_scope_names(val):
+    return val[6]
 
 
 def as_primitive_name(val):
@@ -1261,7 +1317,26 @@ if __name__ == '__main__':
         make_primitive('apply', dummy_fn)) == PRIM_APPLY)
 
     # Case closure
-    case_cls = make_case_closure([(('x',), NIL_VALUE, None)], None, 'doc')
+    check('as_closure_scope_names',
+          as_closure_scope_names(cls) == (intern_symbol('x'),))
+    check('closure_scope_names rest last',
+          closure_scope_names(('a',), 'r') ==
+          (intern_symbol('a'), intern_symbol('r')))
+
+    # Resolved symbol and scope-names node
+    rs = resolve_symbol(sym2, (1, 2, as_symbol_id(sym2)))
+    check('resolved is_symbol',      is_symbol(rs))
+    check('resolved as_symbol',      as_symbol(rs) == 'y')
+    check('resolved src_of',         src_of(rs) is si)
+    check('resolved symbol_la_key',  symbol_la_key(rs) == (1, 2, as_symbol_id(sym2)))
+    check('plain symbol_la_key',     symbol_la_key(sym2) is None)
+    sn = make_scope_names(((intern_symbol('x'),),))
+    check('is_scope_names',          is_scope_names(sn))
+    check('scope names not symbol',  not is_symbol(sn))
+    check('as_scope_names',          as_scope_names(sn) == ((intern_symbol('x'),),))
+
+    case_cls = make_case_closure([(('x',), NIL_VALUE, None, (intern_symbol('x'),))],
+                                 None, 'doc')
     check('is_case_closure',          is_case_closure(case_cls))
     check('as_case_closure_clauses',  len(
         as_case_closure_clauses(case_cls)) == 1)

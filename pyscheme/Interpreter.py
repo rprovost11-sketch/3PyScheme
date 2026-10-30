@@ -131,8 +131,7 @@ class Interpreter(InterpreterBase):
             i = 0
             while i < len(forms):
                 form = forms[i]
-                expanded = expand(form)
-                analyze(expanded, self._static_env)
+                expanded = analyze(expand(form), self._static_env)
                 extend_static_env_with_define(self._static_env, expanded)
                 last = cek_eval(expanded, self._env, self._ctx)
                 i = i + 1

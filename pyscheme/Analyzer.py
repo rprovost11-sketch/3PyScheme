@@ -1,17 +1,21 @@
-"""Semantic analyzer: validates expanded S-expressions in place.
+"""Semantic analyzer: validates expanded S-expressions and resolves
+their variable references to lexical addresses.
 
 Pipeline position:
     source -> Parser.parse -> Expander.expand -> Analyzer.analyze
                               -> Evaluator.cek_eval
 
 The Analyzer takes fully-expanded S-expressions (cons cells + atoms)
-from the Expander and walks the tree.  It does NOT transform: it
-returns the input cons-cell tree unchanged.  Its job is twofold:
+from the Expander, walks the tree, and returns a rewritten copy (see
+"Lexical addressing" below); the input tree is never edited.  Its job
+is threefold:
 
     1. Shape validation - reject malformed special forms so the
        Evaluator can trust the structures it dispatches on.
     2. Static arity check - reject calls whose argument count
        cannot match the operator's arity.
+    3. Lexical addressing - resolve each variable reference to the
+       LA key (depth, index, name) the Evaluator looks it up by.
 
 Shape rules enforced (matches R7RS where applicable):
 
@@ -43,11 +47,36 @@ Static arity checking:
     checks through that name (its runtime arity is unknown).
     Primitives seed the env via primitives.PRIMITIVE_ARITIES.
 
+Lexical addressing:
+
+    The Analyzer threads a compile-time scope chain that mirrors the
+    chain of local scopes the Evaluator builds at run time (see the
+    table above _resolve).  The rewritten tree differs from the input
+    in two ways only:
+
+    - A variable reference -- including a set! target -- becomes a
+      resolved symbol (AST.resolve_symbol): still a symbol to every
+      reader, carrying its LA key.  Quoted data, parameter and binding
+      names, case datums, else / => and special-form heads stay plain.
+    - A let, let*, letrec, letrec* or named let gets a scope-names node
+      (AST.make_scope_names) right after its head, holding the names of
+      the scopes it creates, so the Evaluator does not rebuild them on
+      every run.  Printers skip it.
+
+    The Evaluator still resolves a plain (unanalyzed) symbol by name,
+    and runs a let-family form without the node, so code that never
+    passed through here keeps working.
+
 Public API:
-    analyze(sexpr, static_env=None)
-        Returns sexpr unchanged on success, or raises
+    analyze(sexpr, static_env=None, scope=None)
+        Returns the rewritten tree on success, or raises
         SchemeAnalysisError / SchemeArityError.
         static_env defaults to a fresh dict seeded with PRIMITIVE_ARITIES.
+        scope is the compile-time scope chain the code will run in:
+        None for a dict scope (top level, library, eval environment).
+
+    scope_of_env(env)
+        The scope chain for code that will run in the run-time env env.
 
     extend_static_env_with_define(static_env, sexpr)
         Mutates static_env: if sexpr is a top-level (define name value)
@@ -60,6 +89,7 @@ Public API:
 """
 from pyscheme.Environment import (
     _PositionedSchemeError, SchemeArityError, arity_mismatch_msg,
+    LocalEnvironment, global_la_key,
 )
 from pyscheme.Parser import SchemeSyntaxError
 from pyscheme.primitives import PRIMITIVE_ARITIES
@@ -69,6 +99,8 @@ from pyscheme.AST import (
     as_symbol, as_integer, as_real, as_string, as_character, as_boolean,
     as_rational_num, as_rational_den, as_complex_real, as_complex_imag,
     src_of, gensym_display_name,
+    alloc_cons, intern_symbol, as_symbol_id, resolve_symbol,
+    make_scope_names, is_scope_names, closure_scope_names,
 )
 
 
@@ -141,7 +173,8 @@ def _render(sexpr):
         parts = []
         cur = sexpr
         while is_cons(cur):
-            parts.append(_render(cur.car))
+            if not is_scope_names(cur.car):
+                parts.append(_render(cur.car))
             cur = cur.cdr
         if is_nil(cur):
             return '(' + ' '.join(parts) + ')'
@@ -306,6 +339,146 @@ def extend_static_env_with_define(static_env, sexpr):
     static_env.pop(name, None)
 
 
+# ---- lexical addressing ------------------------------------------------
+#
+# Each variable reference is resolved to an LA key against a compile-time
+# scope chain that mirrors, scope for scope, the chain the Evaluator builds
+# at run time.  A scope chain is None when the code runs in a dict scope
+# (global, library, eval / make-environment), or a pair (names, outer):
+# names is the tuple of symbol ids of one run-time local scope, in slot
+# order.  The scopes the Evaluator builds, and so the ones pushed here:
+#
+#   lambda, case-lambda clause  one scope: fixed parameters, then rest
+#                               (closure_scope_names, as the closure gets)
+#   delay, delay-force          one empty scope (the promise's thunk call)
+#   let                         inits outside; body in one scope of all names
+#   let*                        one scope per binding; each init sees the
+#                               scopes of the bindings before it
+#   letrec, letrec*             one scope; the inits are inside it
+#   named let                   a scope holding the loop name, which the
+#                               inits also run in, then the loop procedure's
+#                               parameter scope under it for the body
+#
+# An empty let / let* / letrec builds no scope.  A name no scope binds gets
+# a global LA key.  _resolve answers exactly as LocalEnvironment.resolve
+# does at run time (the first matching slot, innermost scope first).
+
+def _resolve(scope, sid):
+    depth = 0
+    while scope is not None:
+        names = scope[0]
+        i = 0
+        while i < len(names):
+            if names[i] == sid:
+                return (depth, i, sid)
+            i = i + 1
+        scope = scope[1]
+        depth = depth + 1
+    return global_la_key(sid)
+
+
+def _ref(sym, scope):
+    """sym resolved against scope: the same symbol carrying its LA key."""
+    return resolve_symbol(sym, _resolve(scope, as_symbol_id(sym)))
+
+
+def scope_of_env(env):
+    """The compile-time scope chain for code that will run in env: one entry
+    per local scope from env up to the nearest dict scope, read off the live
+    chain.  None when env is itself a dict scope, the usual case.  Used for
+    forms analyzed at run time -- a debugger prompt paused in a procedure,
+    or load called inside one -- so their locals get the keys real code
+    gets."""
+    chain = []
+    e = env
+    while isinstance(e, LocalEnvironment):
+        names = []
+        e.for_each_binding(lambda sid, val: names.append(sid))
+        chain.append(tuple(names))
+        e = e.getParent()
+    scope = None
+    i = len(chain) - 1
+    while i >= 0:
+        scope = (chain[i], scope)
+        i = i - 1
+    return scope
+
+
+# ---- rebuilding --------------------------------------------------------
+#
+# The Analyzer returns a rewritten copy of the tree, never edits it: macro
+# expansion can share one subtree between two expansions in different
+# scopes, and an in-place rewrite would give the shared node one scope's
+# keys in both.  A subtree nothing changed in is reused as it is.
+
+def _rebuild(cell, car, cdr):
+    """cell itself if neither field changed, else a fresh cell with its src."""
+    if car is cell.car and cdr is cell.cdr:
+        return cell
+    return alloc_cons(car, cdr, cell.src)
+
+
+def _analyze_seq(cell, static_env, scope):
+    """Analyze each element of a list as an expression, in order; return the
+    rebuilt list.  An improper tail is kept as it is."""
+    cells = []
+    items = []
+    cur = cell
+    while is_cons(cur):
+        cells.append(cur)
+        items.append(analyze(cur.car, static_env, scope))
+        cur = cur.cdr
+    result = cur
+    i = len(cells) - 1
+    while i >= 0:
+        result = _rebuild(cells[i], items[i], result)
+        i = i - 1
+    return result
+
+
+def _strip_scope_names(sexpr):
+    """An already analyzed let-family form, with its scope-names node
+    dropped, so analyzing it again builds a fresh node."""
+    if is_cons(sexpr.cdr) and is_scope_names(sexpr.cdr.car):
+        return alloc_cons(sexpr.car, sexpr.cdr.cdr, sexpr.src)
+    return sexpr
+
+
+def _with_scope_names(sexpr, scopes, rest):
+    """(head <scope-names> . rest) for the let-family form sexpr."""
+    return alloc_cons(
+        sexpr.car,
+        alloc_cons(make_scope_names(scopes), rest, None),
+        sexpr.src)
+
+
+def _rebuild_bindings(bindings_sexpr, inits):
+    """The binding list with each (name init) rebuilt around its analyzed
+    init, inits[i] for the i-th binding."""
+    cells = []
+    cur = bindings_sexpr
+    while is_cons(cur):
+        cells.append(cur)
+        cur = cur.cdr
+    result = cur
+    i = len(cells) - 1
+    while i >= 0:
+        b = cells[i].car
+        new_b = _rebuild(b, b.car, _rebuild(b.cdr, inits[i], b.cdr.cdr))
+        result = _rebuild(cells[i], new_b, result)
+        i = i - 1
+    return result
+
+
+def _name_sids(pairs):
+    sids = []
+    i = 0
+    while i < len(pairs):
+        sids.append(intern_symbol(pairs[i][0]))
+        i = i + 1
+    return tuple(sids)
+
+
 # ---- main entry --------------------------------------------------------
 
 # Definition context (R7RS 5.1 / 5.3).  A define may appear only at the top
@@ -320,18 +493,20 @@ def extend_static_env_with_define(static_env, sexpr):
 _def_ctx = [True]
 
 
-def analyze(sexpr, static_env=None):
-    """Validate sexpr in place.  Returns sexpr unchanged on success,
-    raises SchemeAnalysisError / SchemeArityError otherwise."""
+def analyze(sexpr, static_env=None, scope=None):
+    """Validate sexpr and resolve its variable references against scope (a
+    compile-time scope chain; None for code that runs in a dict scope).
+    Returns the rewritten tree, raises SchemeAnalysisError /
+    SchemeArityError otherwise."""
     def_ok = _def_ctx[0]
     _def_ctx[0] = def_ok and is_cons(sexpr) and _is_symbol_named(sexpr.car, 'begin')
     try:
-        return _analyze_form(sexpr, static_env, def_ok)
+        return _analyze_form(sexpr, static_env, def_ok, scope)
     finally:
         _def_ctx[0] = def_ok
 
 
-def _analyze_form(sexpr, static_env, def_ok):
+def _analyze_form(sexpr, static_env, def_ok, scope):
     if static_env is None:
         static_env = dict(PRIMITIVE_ARITIES)
 
@@ -360,6 +535,7 @@ def _analyze_form(sexpr, static_env, def_ok):
                 if _lookup_macro(sexpr) is not None:
                     raise SchemeSyntaxError(
                         'keyword used as expression: ' + name, src_of(sexpr))
+            return _ref(sexpr, scope)
         return sexpr
 
     head = sexpr.car
@@ -370,8 +546,7 @@ def _analyze_form(sexpr, static_env, def_ok):
                 raise SchemeSyntaxError(
                     'definition not allowed in an expression context',
                     src_of(sexpr))
-            handler(sexpr, static_env)
-            return sexpr
+            return handler(sexpr, static_env, scope)
 
     # Application: walk fn and arg sub-expressions.
     if _proper_list_length(sexpr) < 0:
@@ -386,28 +561,27 @@ def _analyze_form(sexpr, static_env, def_ok):
     # Don't fire keyword check for the fn/head position: a keyword in head
     # position is a malformed special form, and the arity check below gives a
     # better error.  Keywords in arg positions are still checked.
+    new_fn = fn_sexpr
     if not (is_symbol(fn_sexpr)
             and as_symbol(fn_sexpr) in _SYNTACTIC_KEYWORDS
             and static_env.get(as_symbol(fn_sexpr)) is not None):
-        analyze(fn_sexpr, static_env)
-    i = 0
-    while i < len(args):
-        analyze(args[i], static_env)
-        i = i + 1
+        new_fn = analyze(fn_sexpr, static_env, scope)
+    new_args = _analyze_seq(sexpr.cdr, static_env, scope)
     _check_app_arity(fn_sexpr, args, static_env, sexpr)
-    return sexpr
+    return _rebuild(sexpr, new_fn, new_args)
 
 
 # ---- special-form handlers ---------------------------------------------
 #
-# Each handler validates shape and recurses into sub-expressions.
-# It does NOT return a transformed expression - the top-level analyze()
-# returns the input sexpr unchanged.
+# Each handler validates shape, recurses into sub-expressions with the
+# scope chain they will run in, and returns the rewritten form.
 
-def _analyze_lambda_shape(params_sexpr, body_cons, form_name, outer_src, static_env):
-    """Validate the formals + body of a lambda-shaped form.  Shared by
-    _analyze_lambda and _analyze_case_lambda; `form_name` ('lambda' or
-    'case-lambda') is used verbatim in error messages."""
+def _analyze_lambda_shape(params_sexpr, body_cons, form_name, outer_src,
+                          static_env, scope):
+    """Validate the formals + body of a lambda-shaped form and return the
+    analyzed body.  Shared by _analyze_lambda and _analyze_case_lambda;
+    `form_name` ('lambda' or 'case-lambda') is used verbatim in error
+    messages."""
     if is_symbol(params_sexpr):
         fixed_names = []
         fixed_srcs = []
@@ -474,13 +648,11 @@ def _analyze_lambda_shape(params_sexpr, body_cons, form_name, outer_src, static_
         raise SchemeAnalysisError(
             form_name + " body cannot be empty", outer_src)
 
-    cur = body_cons
-    while is_cons(cur):
-        analyze(cur.car, body_env)
-        cur = cur.cdr
+    body_scope = (closure_scope_names(fixed_names, rest_name), scope)
+    return _analyze_seq(body_cons, body_env, body_scope)
 
 
-def _analyze_lambda(sexpr, static_env):
+def _analyze_lambda(sexpr, static_env, scope):
     # Three forms:
     #   (lambda (a b c) body...)       fixed arity
     #   (lambda args body...)          pure variadic (args is bound to all args)
@@ -489,11 +661,13 @@ def _analyze_lambda(sexpr, static_env):
         raise SchemeAnalysisError(
             "lambda requires a parameter list and at least one body expression",
             src_of(sexpr))
-    _analyze_lambda_shape(
-        sexpr.cdr.car, sexpr.cdr.cdr, 'lambda', src_of(sexpr), static_env)
+    body = _analyze_lambda_shape(
+        sexpr.cdr.car, sexpr.cdr.cdr, 'lambda', src_of(sexpr), static_env, scope)
+    return _rebuild(sexpr, sexpr.car,
+                    _rebuild(sexpr.cdr, sexpr.cdr.car, body))
 
 
-def _analyze_define(sexpr, static_env):
+def _analyze_define(sexpr, static_env, scope):
     n = _proper_list_length(sexpr) - 1
     if n != 2:
         raise SchemeAnalysisError(
@@ -510,10 +684,14 @@ def _analyze_define(sexpr, static_env):
     if arity is not None:
         value_env = dict(static_env)
         value_env[name] = arity
-    analyze(value_sexpr, value_env)
+    value = analyze(value_sexpr, value_env, scope)
+    # The name is not resolved: define always binds into the dict scope.
+    return _rebuild(sexpr, sexpr.car,
+                    _rebuild(sexpr.cdr, name_sexpr,
+                             _rebuild(sexpr.cdr.cdr, value, sexpr.cdr.cdr.cdr)))
 
 
-def _analyze_set(sexpr, static_env):
+def _analyze_set(sexpr, static_env, scope):
     n = _proper_list_length(sexpr) - 1
     if n != 2:
         raise SchemeAnalysisError(
@@ -522,26 +700,23 @@ def _analyze_set(sexpr, static_env):
     name_sexpr = sexpr.cdr.car
     value_sexpr = sexpr.cdr.cdr.car
     _require_symbol(name_sexpr, 'set!')
-    analyze(value_sexpr, static_env)
+    value = analyze(value_sexpr, static_env, scope)
+    return _rebuild(sexpr, sexpr.car,
+                    _rebuild(sexpr.cdr, _ref(name_sexpr, scope),
+                             _rebuild(sexpr.cdr.cdr, value, sexpr.cdr.cdr.cdr)))
 
 
-def _analyze_if(sexpr, static_env):
+def _analyze_if(sexpr, static_env, scope):
     n = _proper_list_length(sexpr) - 1
     if n != 2 and n != 3:
         raise SchemeAnalysisError(
             "if requires 2 or 3 arguments (test, then, optional else), got " + str(n),
             src_of(sexpr))
-    analyze(sexpr.cdr.car,         static_env)
-    analyze(sexpr.cdr.cdr.car,     static_env)
-    if n == 3:
-        analyze(sexpr.cdr.cdr.cdr.car, static_env)
+    return _rebuild(sexpr, sexpr.car, _analyze_seq(sexpr.cdr, static_env, scope))
 
 
-def _analyze_begin(sexpr, static_env):
-    cur = sexpr.cdr
-    while is_cons(cur):
-        analyze(cur.car, static_env)
-        cur = cur.cdr
+def _analyze_begin(sexpr, static_env, scope):
+    return _rebuild(sexpr, sexpr.car, _analyze_seq(sexpr.cdr, static_env, scope))
 
 
 def _check_unique_let_names(pairs, form_name, sexpr):
@@ -587,22 +762,24 @@ def _parse_let_bindings(bindings_sexpr, form_name):
     return pairs
 
 
-def _analyze_let(sexpr, static_env):
+def _analyze_let(sexpr, static_env, scope):
     # R7RS 4.2.2: (let <bindings> <body>)  OR  (let <name> <bindings> <body>)
+    sexpr = _strip_scope_names(sexpr)
     if _proper_list_length(sexpr) < 3:
         raise SchemeAnalysisError(
             "let requires a binding list and at least one body expression",
             src_of(sexpr))
     if is_symbol(sexpr.cdr.car):
-        _analyze_named_let(sexpr, static_env)
-        return
-    pairs = _parse_let_bindings(sexpr.cdr.car, 'let')
+        return _analyze_named_let(sexpr, static_env, scope)
+    bindings_sexpr = sexpr.cdr.car
+    pairs = _parse_let_bindings(bindings_sexpr, 'let')
     # R7RS 4.2.2: a binding name must not appear twice.
     _check_unique_let_names(pairs, 'let', sexpr)
     # All val_exprs evaluated in the enclosing env.
+    inits = []
     i = 0
     while i < len(pairs):
-        analyze(pairs[i][1], static_env)
+        inits.append(analyze(pairs[i][1], static_env, scope))
         i = i + 1
     names = []
     i = 0
@@ -613,49 +790,66 @@ def _analyze_let(sexpr, static_env):
     body_cons = sexpr.cdr.cdr
     if _proper_list_length(body_cons) <= 0:
         raise SchemeAnalysisError("let body cannot be empty", src_of(sexpr))
-    cur = body_cons
-    while is_cons(cur):
-        analyze(cur.car, body_env)
-        cur = cur.cdr
+    if pairs:
+        sids = _name_sids(pairs)
+        scopes = (sids,)
+        body_scope = (sids, scope)
+    else:
+        scopes = ()
+        body_scope = scope
+    body = _analyze_seq(body_cons, body_env, body_scope)
+    return _with_scope_names(
+        sexpr, scopes,
+        alloc_cons(_rebuild_bindings(bindings_sexpr, inits), body, sexpr.cdr.src))
 
 
-def _analyze_let_star(sexpr, static_env):
+def _analyze_let_star(sexpr, static_env, scope):
     # R7RS 4.2.2: each val_expr sees the preceding bindings.
+    sexpr = _strip_scope_names(sexpr)
     if _proper_list_length(sexpr) < 3:
         raise SchemeAnalysisError(
             "let* requires a binding list and at least one body expression",
             src_of(sexpr))
-    pairs = _parse_let_bindings(sexpr.cdr.car, 'let*')
+    bindings_sexpr = sexpr.cdr.car
+    pairs = _parse_let_bindings(bindings_sexpr, 'let*')
     current_env = static_env
+    current_scope = scope
+    inits = []
+    scopes = []
     i = 0
     while i < len(pairs):
-        analyze(pairs[i][1], current_env)
+        inits.append(analyze(pairs[i][1], current_env, current_scope))
         current_env = _shadow(current_env, [pairs[i][0]])
+        sids = (intern_symbol(pairs[i][0]),)
+        scopes.append(sids)
+        current_scope = (sids, current_scope)
         i = i + 1
     body_cons = sexpr.cdr.cdr
     if _proper_list_length(body_cons) <= 0:
         raise SchemeAnalysisError("let* body cannot be empty", src_of(sexpr))
-    cur = body_cons
-    while is_cons(cur):
-        analyze(cur.car, current_env)
-        cur = cur.cdr
+    body = _analyze_seq(body_cons, current_env, current_scope)
+    return _with_scope_names(
+        sexpr, tuple(scopes),
+        alloc_cons(_rebuild_bindings(bindings_sexpr, inits), body, sexpr.cdr.src))
 
 
-def _analyze_letrec(sexpr, static_env):
-    _analyze_letrec_family(sexpr, static_env, 'letrec')
+def _analyze_letrec(sexpr, static_env, scope):
+    return _analyze_letrec_family(sexpr, static_env, 'letrec', scope)
 
 
-def _analyze_letrec_star(sexpr, static_env):
-    _analyze_letrec_family(sexpr, static_env, 'letrec*')
+def _analyze_letrec_star(sexpr, static_env, scope):
+    return _analyze_letrec_family(sexpr, static_env, 'letrec*', scope)
 
 
-def _analyze_letrec_family(sexpr, static_env, name):
+def _analyze_letrec_family(sexpr, static_env, name, scope):
     # R7RS 4.2.2: all names visible in every val_expr.
+    sexpr = _strip_scope_names(sexpr)
     if _proper_list_length(sexpr) < 3:
         raise SchemeAnalysisError(
             name + " requires a binding list and at least one body expression",
             src_of(sexpr))
-    pairs = _parse_let_bindings(sexpr.cdr.car, name)
+    bindings_sexpr = sexpr.cdr.car
+    pairs = _parse_let_bindings(bindings_sexpr, name)
     # R7RS 4.2.2: a binding name must not appear twice in letrec / letrec*.
     _check_unique_let_names(pairs, name, sexpr)
     names = []
@@ -664,21 +858,29 @@ def _analyze_letrec_family(sexpr, static_env, name):
         names.append(pairs[i][0])
         i = i + 1
     inner_env = _shadow(static_env, names)
+    if pairs:
+        sids = _name_sids(pairs)
+        scopes = (sids,)
+        inner_scope = (sids, scope)
+    else:
+        scopes = ()
+        inner_scope = scope
+    inits = []
     i = 0
     while i < len(pairs):
-        analyze(pairs[i][1], inner_env)
+        inits.append(analyze(pairs[i][1], inner_env, inner_scope))
         i = i + 1
     body_cons = sexpr.cdr.cdr
     if _proper_list_length(body_cons) <= 0:
         raise SchemeAnalysisError(
             name + " body cannot be empty", src_of(sexpr))
-    cur = body_cons
-    while is_cons(cur):
-        analyze(cur.car, inner_env)
-        cur = cur.cdr
+    body = _analyze_seq(body_cons, inner_env, inner_scope)
+    return _with_scope_names(
+        sexpr, scopes,
+        alloc_cons(_rebuild_bindings(bindings_sexpr, inits), body, sexpr.cdr.src))
 
 
-def _analyze_named_let(sexpr, static_env):
+def _analyze_named_let(sexpr, static_env, scope):
     # R7RS 4.2.4: (let <name> <bindings> <body>)
     # Equivalent to (letrec ((name (lambda (v1 ...) body))) (name e1 ...))
     if _proper_list_length(sexpr) < 4:
@@ -686,7 +888,8 @@ def _analyze_named_let(sexpr, static_env):
             "named let requires a name, a binding list, and at least one body expression",
             src_of(sexpr))
     name = as_symbol(sexpr.cdr.car)
-    pairs = _parse_let_bindings(sexpr.cdr.cdr.car, 'named let')
+    bindings_sexpr = sexpr.cdr.cdr.car
+    pairs = _parse_let_bindings(bindings_sexpr, 'named let')
     params = []
     i = 0
     while i < len(pairs):
@@ -702,10 +905,16 @@ def _analyze_named_let(sexpr, static_env):
                 src_of(sexpr.cdr.cdr.car))
         seen.add(p)
         i = i + 1
-    # Inits evaluate in the enclosing env.
+    # The Evaluator evaluates the inits inside the scope that holds the loop
+    # name, so they are resolved there.  They cannot see the name itself: the
+    # Expander renames the binding (R7RS 4.2.4).  Arity-wise they are still
+    # checked against the enclosing static env, as before.
+    loop_sids = (intern_symbol(name),)
+    loop_scope = (loop_sids, scope)
+    inits = []
     i = 0
     while i < len(pairs):
-        analyze(pairs[i][1], static_env)
+        inits.append(analyze(pairs[i][1], static_env, loop_scope))
         i = i + 1
     # Body sees `name` with arity (n, n) and its params shadow outer names.
     name_env = dict(static_env)
@@ -715,13 +924,17 @@ def _analyze_named_let(sexpr, static_env):
     if _proper_list_length(body_cons) <= 0:
         raise SchemeAnalysisError(
             "named let body cannot be empty", src_of(sexpr))
-    cur = body_cons
-    while is_cons(cur):
-        analyze(cur.car, body_env)
-        cur = cur.cdr
+    param_sids = closure_scope_names(params, None)
+    body = _analyze_seq(body_cons, body_env, (param_sids, loop_scope))
+    return _with_scope_names(
+        sexpr, (loop_sids, param_sids),
+        alloc_cons(sexpr.cdr.car,
+                   alloc_cons(_rebuild_bindings(bindings_sexpr, inits), body,
+                              sexpr.cdr.cdr.src),
+                   sexpr.cdr.src))
 
 
-def _analyze_cond(sexpr, static_env):
+def _analyze_cond(sexpr, static_env, scope):
     # R7RS 4.2.1 clause forms:
     #   (<test>)
     #   (<test> <expr>...)
@@ -732,6 +945,7 @@ def _analyze_cond(sexpr, static_env):
             "cond must have at least one clause", src_of(sexpr))
     clauses = _cons_to_list(sexpr.cdr)
     total = len(clauses)
+    new_clauses = []
     i = 0
     while i < total:
         clause = clauses[i]
@@ -758,25 +972,57 @@ def _analyze_cond(sexpr, static_env):
                 raise SchemeAnalysisError(
                     "cond 'else' clause must have at least one expression",
                     src_of(clause))
-            cur = body_cons
-            while is_cons(cur):
-                analyze(cur.car, static_env)
-                cur = cur.cdr
+            new_clauses.append(_rebuild(
+                clause, head, _analyze_seq(body_cons, static_env, scope)))
         elif head_is_arrow:
-            analyze(clause.car,             static_env)   # test
-            analyze(clause.cdr.cdr.car,     static_env)   # proc
-        elif clen == 1:
-            analyze(clause.car, static_env)               # test only
+            test = analyze(clause.car, static_env, scope)
+            arrow_cell = clause.cdr
+            proc_cell = arrow_cell.cdr
+            proc = analyze(proc_cell.car, static_env, scope)
+            new_clauses.append(_rebuild(
+                clause, test,
+                _rebuild(arrow_cell, arrow_cell.car,
+                         _rebuild(proc_cell, proc, proc_cell.cdr))))
         else:
-            analyze(clause.car, static_env)               # test
-            cur = clause.cdr
-            while is_cons(cur):
-                analyze(cur.car, static_env)
-                cur = cur.cdr
+            # (<test>) or (<test> <expr>...)
+            new_clauses.append(_analyze_seq(clause, static_env, scope))
         i = i + 1
+    return _rebuild(sexpr, sexpr.car, _rebuild_list(sexpr.cdr, new_clauses))
 
 
-def _analyze_case(sexpr, static_env):
+def _rebuild_list(cell, items):
+    """The proper list cell with its i-th element replaced by items[i],
+    reusing every cell whose element and tail are unchanged."""
+    cells = []
+    cur = cell
+    while is_cons(cur):
+        cells.append(cur)
+        cur = cur.cdr
+    result = cur
+    i = len(cells) - 1
+    while i >= 0:
+        result = _rebuild(cells[i], items[i], result)
+        i = i - 1
+    return result
+
+
+def _analyze_case_body(clause, body_cons, static_env, scope, arrow_ok, msg):
+    """The clause rebuilt around its analyzed body: (=> proc) when arrow_ok
+    and the body starts with =>, else a sequence of expressions."""
+    if (arrow_ok and is_cons(body_cons)
+            and _is_symbol_named(body_cons.car, '=>')):
+        if not (is_cons(body_cons.cdr) and is_nil(body_cons.cdr.cdr)):
+            raise SchemeAnalysisError(msg, src_of(clause))
+        proc_cell = body_cons.cdr
+        proc = analyze(proc_cell.car, static_env, scope)
+        return _rebuild(clause, clause.car,
+                        _rebuild(body_cons, body_cons.car,
+                                 _rebuild(proc_cell, proc, proc_cell.cdr)))
+    return _rebuild(clause, clause.car,
+                    _analyze_seq(body_cons, static_env, scope))
+
+
+def _analyze_case(sexpr, static_env, scope):
     # R7RS 4.2.1: (case <key> <clause>...)
     # Each non-else clause: ((<datum>...) <expr>...)
     # else clause:          (else <expr>...)   (must be last)
@@ -784,9 +1030,10 @@ def _analyze_case(sexpr, static_env):
     if _proper_list_length(sexpr) < 3:
         raise SchemeAnalysisError(
             "case requires a key and at least one clause", src_of(sexpr))
-    analyze(sexpr.cdr.car, static_env)   # the key
+    key = analyze(sexpr.cdr.car, static_env, scope)   # the key
     clauses = _cons_to_list(sexpr.cdr.cdr)
     total = len(clauses)
+    new_clauses = []
     i = 0
     while i < total:
         clause = clauses[i]
@@ -802,21 +1049,10 @@ def _analyze_case(sexpr, static_env):
             if i != total - 1:
                 raise SchemeAnalysisError(
                     "case 'else' clause must be the last clause", src_of(clause))
-            body_cons = clause.cdr
-            if (is_cons(body_cons)
-                and _is_symbol_named(body_cons.car, '=>')
-                    and '=>' not in static_env):
-                # (else => proc-expr)
-                if not (is_cons(body_cons.cdr) and is_nil(body_cons.cdr.cdr)):
-                    raise SchemeAnalysisError(
-                        "case 'else =>' clause must have exactly one expression",
-                        src_of(clause))
-                analyze(body_cons.cdr.car, static_env)
-            else:
-                cur = body_cons
-                while is_cons(cur):
-                    analyze(cur.car, static_env)
-                    cur = cur.cdr
+            # (else => proc-expr) or (else <expr>...)
+            new_clauses.append(_analyze_case_body(
+                clause, clause.cdr, static_env, scope, '=>' not in static_env,
+                "case 'else =>' clause must have exactly one expression"))
         else:
             if not (is_cons(head) or is_nil(head)):
                 raise SchemeAnalysisError(
@@ -826,23 +1062,17 @@ def _analyze_case(sexpr, static_env):
             if _proper_list_length(head) < 0:
                 raise SchemeAnalysisError(
                     "case datum list must be a proper list", src_of(head))
-            body_cons = clause.cdr
-            if (is_cons(body_cons) and _is_symbol_named(body_cons.car, '=>')):
-                # ((<datum>...) => proc-expr)
-                if not (is_cons(body_cons.cdr) and is_nil(body_cons.cdr.cdr)):
-                    raise SchemeAnalysisError(
-                        "case '=>' clause must have exactly one expression",
-                        src_of(clause))
-                analyze(body_cons.cdr.car, static_env)
-            else:
-                cur = body_cons
-                while is_cons(cur):
-                    analyze(cur.car, static_env)
-                    cur = cur.cdr
+            # ((<datum>...) => proc-expr) or ((<datum>...) <expr>...)
+            new_clauses.append(_analyze_case_body(
+                clause, clause.cdr, static_env, scope, True,
+                "case '=>' clause must have exactly one expression"))
         i = i + 1
+    return _rebuild(sexpr, sexpr.car,
+                    _rebuild(sexpr.cdr, key,
+                             _rebuild_list(sexpr.cdr.cdr, new_clauses)))
 
 
-def _analyze_unquote_outside(sexpr, static_env):
+def _analyze_unquote_outside(sexpr, static_env, scope):
     # unquote and unquote-splicing only have meaning inside a quasiquote.
     # At any other position, surface a clear diagnostic.
     head_name = as_symbol(sexpr.car)
@@ -851,12 +1081,13 @@ def _analyze_unquote_outside(sexpr, static_env):
         src_of(sexpr))
 
 
-def _analyze_case_lambda(sexpr, static_env):
+def _analyze_case_lambda(sexpr, static_env, scope):
     # (case-lambda <clause>...)  where each clause is (formals body...).
     # Zero clauses is permitted by R7RS §4.2.9; the resulting procedure raises
     # a SchemeArityError on any call (no matching clause).
     # Each clause is validated by the shared _analyze_lambda_shape, which
     # tags error messages with the form_name 'case-lambda'.
+    new_clauses = []
     cur = sexpr.cdr
     while is_cons(cur):
         clause = cur.car
@@ -868,12 +1099,15 @@ def _analyze_case_lambda(sexpr, static_env):
             raise SchemeAnalysisError(
                 "case-lambda clause must have formals and a non-empty body, got "
                 + _render(clause), src_of(clause))
-        _analyze_lambda_shape(
-            clause.car, clause.cdr, 'case-lambda', src_of(clause), static_env)
+        body = _analyze_lambda_shape(
+            clause.car, clause.cdr, 'case-lambda', src_of(clause),
+            static_env, scope)
+        new_clauses.append(_rebuild(clause, clause.car, body))
         cur = cur.cdr
+    return _rebuild(sexpr, sexpr.car, _rebuild_list(sexpr.cdr, new_clauses))
 
 
-def _analyze_cond_expand(sexpr, static_env):
+def _analyze_cond_expand(sexpr, static_env, scope):
     # Well-formed cond-expand is expanded away.  This handler fires only
     # when the Expander punted - either shape error or no clause matched.
     if _proper_list_length(sexpr) < 2:
@@ -894,7 +1128,7 @@ def _analyze_cond_expand(sexpr, static_env):
         "cond-expand: no clause matched", src_of(sexpr))
 
 
-def _analyze_include(sexpr, static_env):
+def _analyze_include(sexpr, static_env, scope):
     # (include "file1" "file2" ...)
     # Well-formed include is expanded by the Expander; this handler
     # fires only on shape errors (no args or non-string arg).
@@ -911,9 +1145,10 @@ def _analyze_include(sexpr, static_env):
                 _render(arg),
                 src_of(arg))
         cur = cur.cdr
+    return sexpr
 
 
-def _analyze_do(sexpr, static_env):
+def _analyze_do(sexpr, static_env, scope):
     # (do ((var init [step]) ...) (test result...) command...)
     # R7RS 4.2.4.  Well-formed do expressions are desugared by the
     # Expander; this handler fires only when the Expander punted on a
@@ -954,67 +1189,62 @@ def _analyze_do(sexpr, static_env):
         raise SchemeAnalysisError(
             "do test clause must be a proper list",
             src_of(test_sexpr))
+    return sexpr
 
 
-def _analyze_and(sexpr, static_env):
-    cur = sexpr.cdr
-    while is_cons(cur):
-        analyze(cur.car, static_env)
-        cur = cur.cdr
+def _analyze_and(sexpr, static_env, scope):
+    return _rebuild(sexpr, sexpr.car, _analyze_seq(sexpr.cdr, static_env, scope))
 
 
-def _analyze_or(sexpr, static_env):
-    cur = sexpr.cdr
-    while is_cons(cur):
-        analyze(cur.car, static_env)
-        cur = cur.cdr
+def _analyze_or(sexpr, static_env, scope):
+    return _rebuild(sexpr, sexpr.car, _analyze_seq(sexpr.cdr, static_env, scope))
 
 
-def _analyze_when(sexpr, static_env):
-    _analyze_when_unless(sexpr, static_env, 'when')
+def _analyze_when(sexpr, static_env, scope):
+    return _analyze_when_unless(sexpr, static_env, 'when', scope)
 
 
-def _analyze_unless(sexpr, static_env):
-    _analyze_when_unless(sexpr, static_env, 'unless')
+def _analyze_unless(sexpr, static_env, scope):
+    return _analyze_when_unless(sexpr, static_env, 'unless', scope)
 
 
-def _analyze_when_unless(sexpr, static_env, name):
+def _analyze_when_unless(sexpr, static_env, name, scope):
     if _proper_list_length(sexpr) < 3:
         raise SchemeAnalysisError(
             name + " requires a test and at least one body expression",
             src_of(sexpr))
-    analyze(sexpr.cdr.car, static_env)
-    cur = sexpr.cdr.cdr
-    while is_cons(cur):
-        analyze(cur.car, static_env)
-        cur = cur.cdr
+    return _rebuild(sexpr, sexpr.car, _analyze_seq(sexpr.cdr, static_env, scope))
 
 
-def _analyze_quote(sexpr, static_env):
+def _analyze_quote(sexpr, static_env, scope):
     n = _proper_list_length(sexpr) - 1
     if n != 1:
         raise SchemeAnalysisError(
             "quote requires exactly 1 argument, got " + str(n),
             src_of(sexpr))
     # Quoted data is literal - do NOT walk or analyze its contents.
+    return sexpr
 
 
-def _analyze_delay(sexpr, static_env):
+def _analyze_delay(sexpr, static_env, scope):
     name = as_symbol(sexpr.car)
     n = _proper_list_length(sexpr) - 1
     if n != 1:
         raise SchemeAnalysisError(
             name + " requires exactly 1 argument, got " + str(n),
             src_of(sexpr))
-    analyze(sexpr.cdr.car, static_env)
+    # The expression runs when the promise's thunk (no parameters) is called:
+    # in an empty scope under this one.
+    expr = analyze(sexpr.cdr.car, static_env, ((), scope))
+    return _rebuild(sexpr, sexpr.car, _rebuild(sexpr.cdr, expr, sexpr.cdr.cdr))
 
 
-def _analyze_library_form(sexpr, static_env):
+def _analyze_library_form(sexpr, static_env, scope):
     # define-library / import / export: shape is validated at evaluation
     # time in the Evaluator (where the library registry lives).  We just
     # accept the form here so it doesn't fall through to the generic
     # application path and arity-check against a fictitious primitive.
-    pass
+    return sexpr
 
 
 _SPECIAL_FORMS = {
@@ -1067,8 +1297,6 @@ if __name__ == '__main__':
     n_fail = 0
 
     # Happy-path: each source must analyze without raising.
-    # Analyzer no longer returns IR - it returns the input cons tree
-    # unchanged.  We just verify no exception is raised.
     happy = [
         '42', '3.14', '#t', '"hi"', 'x',
         '(lambda (x) x)',
@@ -1114,8 +1342,6 @@ if __name__ == '__main__':
             n_fail = n_fail + 1
             i = i + 1
             continue
-        # The Analyzer must return the input unchanged.
-        expanded = expand(parse_one(source))
         if got is not None:
             print("[ OK ] %r" % source)
             n_pass = n_pass + 1
